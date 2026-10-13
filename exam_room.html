@@ -602,6 +602,40 @@ $('modal').addEventListener('mousedown', e => { if (e.target.id === 'modal') clo
 
 db.auth.onAuthStateChange((_e, session) => setUser(session?.user || null));
 db.auth.getSession().then(({ data }) => { if (!user) setUser(data.session?.user || null); });
+/* ===== Khu vực GIÁO VIÊN: chặn tài khoản HỌC SINH =====
+   Giao diện chỉ là lớp chắn cho dễ hiểu; quyền thật vẫn do chính sách RLS (student_setup.sql) quyết định ở máy chủ. */
+(function guardStudent() {
+  const STUDENT_HOME = 'student_home.html';
+  let lastId = null, ov = null;
+  function overlay(on, email) {
+    if (!on) { if (ov) { ov.remove(); ov = null; document.body.style.overflow = ''; } return; }
+    if (ov) return;
+    ov = document.createElement('div');
+    ov.setAttribute('role', 'alertdialog');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(30,27,75,.92);display:flex;align-items:center;justify-content:center;padding:16px;font-family:system-ui,sans-serif';
+    ov.innerHTML = '<div style="background:#fff;max-width:420px;width:100%;border-radius:20px;padding:28px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.4)">'
+      + '<div style="font-size:44px">🔒</div>'
+      + '<h2 style="margin:8px 0 6px;font-size:20px;font-weight:800;color:#1e1b4b">Khu vực dành cho giáo viên</h2>'
+      + '<p style="margin:0 0 4px;color:#475569;font-size:14px;line-height:1.5">Tài khoản <b></b> là tài khoản học sinh nên không được soạn đề hay quản lý phòng thi.</p>'
+      + '<p style="margin:0 0 18px;color:#64748b;font-size:13px">Nếu bạn là giáo viên, hãy đăng xuất rồi đăng nhập bằng tài khoản giáo viên.</p>'
+      + '<a href="' + STUDENT_HOME + '" style="display:block;background:#4f46e5;color:#fff;font-weight:700;padding:12px;border-radius:12px;text-decoration:none;margin-bottom:8px">Về trang học sinh</a>'
+      + '<button type="button" style="width:100%;background:#fff;color:#4f46e5;border:2px solid #c7d2fe;font-weight:700;padding:10px;border-radius:12px;cursor:pointer">Đăng xuất</button></div>';
+    ov.querySelector('b').textContent = email || '';
+    ov.querySelector('button').onclick = () => db.auth.signOut();
+    document.body.appendChild(ov); document.body.style.overflow = 'hidden';
+  }
+  async function check(session) {
+    const u = session?.user || null;
+    if ((u?.id || null) === lastId) return;
+    lastId = u?.id || null;
+    if (!u) return overlay(false);
+    const { data, error } = await db.rpc('is_student');          // chưa chạy student_setup.sql → lỗi → coi như không phải học sinh
+    if (lastId !== u.id) return;
+    overlay(!error && data === true, u.email);
+  }
+  db.auth.getSession().then(({ data }) => check(data.session));
+  db.auth.onAuthStateChange((_e, s) => setTimeout(() => check(s), 0));   // setTimeout: tránh gọi Supabase ngay trong callback
+})();
 </script>
 </body>
 </html>
