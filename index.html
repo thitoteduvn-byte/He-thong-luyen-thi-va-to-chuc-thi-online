@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mystic Exam · Luyện thi & Phòng thi Online</title>
+<meta name="description" content="Nền tảng kiểm tra và tổ chức phòng thi online thông minh: luyện tập tự do, phòng thi theo ca, trộn đề, chấm điểm tự động, hỗ trợ công thức LaTeX.">
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+<script>tailwind.config = { theme: { extend: { fontFamily: { sans: ['"Be Vietnam Pro"', 'system-ui', 'sans-serif'] } } } }</script>
+<style>
+  html { scroll-behavior: smooth; }
+  body { font-family: 'Be Vietnam Pro', system-ui, sans-serif; background: #f8f7ff; color: #1e1b4b; overflow-x: hidden; }
+  .blob { position: absolute; border-radius: 9999px; filter: blur(60px); opacity: .55; pointer-events: none; animation: float 14s ease-in-out infinite; }
+  @keyframes float { 0%,100% { transform: translate3d(0,0,0) } 50% { transform: translate3d(20px,-24px,0) } }
+  .lift { transition: transform .25s ease, box-shadow .25s ease; }
+  .lift:hover { transform: translateY(-4px); box-shadow: 0 18px 40px -16px rgba(79,70,229,.35); }
+  .btn { transition: transform .15s ease, box-shadow .2s ease, background-color .2s ease; }
+  .btn:hover { transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+  :focus-visible { outline: 3px solid #fbbf24; outline-offset: 2px; }
+  .story-in { animation: storyIn .45s ease both; }
+  @keyframes storyIn { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
+  .dice-roll { animation: roll .6s ease; }
+  @keyframes roll { 0% { transform: rotate(0) } 100% { transform: rotate(360deg) } }
+  .katex { font-size: 1.05em; }
+  @media (prefers-reduced-motion: reduce) { .blob, .story-in, .dice-roll { animation: none !important; } html { scroll-behavior: auto; } .lift:hover, .btn:hover { transform: none; } }
+</style>
+</head>
+<body>
+
+<!-- ============ HEADER ============ -->
+<header class="sticky top-0 z-40 border-b border-indigo-100 bg-white/85 backdrop-blur">
+  <div class="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
+    <a href="index.html" class="flex items-center gap-2.5 font-extrabold text-indigo-900">
+      <span class="grid h-10 w-10 place-items-center rounded-xl bg-gradient-to-br from-indigo-600 to-violet-500 text-white shadow-md shadow-indigo-300/50" aria-hidden="true">
+        <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 8l10 5 10-5-10-5Z"/><path d="M6 10.5V16c0 1.5 2.7 3 6 3s6-1.5 6-3v-5.5"/></svg>
+      </span>
+      <span class="leading-tight">Mystic Exam<span class="block text-[11px] font-medium text-indigo-500">Luyện thi online</span></span>
+    </a>
+
+    <nav class="hidden items-center gap-1 text-sm font-semibold text-indigo-900 md:flex" aria-label="Điều hướng chính">
+      <a href="index.html" class="rounded-lg bg-indigo-50 px-3 py-2 text-indigo-700">Trang chủ</a>
+      <a data-link="practice" href="#" class="rounded-lg px-3 py-2 hover:bg-indigo-50">Luyện tập tự do</a>
+      <a href="#vao-thi" class="rounded-lg px-3 py-2 hover:bg-indigo-50">Phòng thi</a>
+      <a data-link="admin" href="#" class="rounded-lg px-3 py-2 hover:bg-indigo-50">Quản trị</a>
+    </nav>
+
+    <div class="flex items-center gap-2">
+      <a data-link="student" href="#" class="btn hidden items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-md shadow-indigo-300/50 hover:bg-indigo-700 sm:inline-flex">
+        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+        Đăng nhập / Đăng ký
+      </a>
+      <button id="menuBtn" class="grid h-10 w-10 place-items-center rounded-xl text-indigo-900 hover:bg-indigo-50 md:hidden" aria-label="Mở menu" aria-expanded="false" aria-controls="mobileNav">
+        <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+    </div>
+  </div>
+  <nav id="mobileNav" class="hidden border-t border-indigo-100 bg-white px-4 pb-3 pt-2 text-sm font-semibold md:hidden" aria-label="Menu di động">
+    <a href="index.html" class="block rounded-lg px-3 py-2.5 text-indigo-700">Trang chủ</a>
+    <a data-link="practice" href="#" class="block rounded-lg px-3 py-2.5 hover:bg-indigo-50">Luyện tập tự do</a>
+    <a href="#vao-thi" class="block rounded-lg px-3 py-2.5 hover:bg-indigo-50">Phòng thi</a>
+    <a data-link="admin" href="#" class="block rounded-lg px-3 py-2.5 hover:bg-indigo-50">Quản trị</a>
+    <a data-link="student" href="#" class="mt-2 block rounded-xl bg-indigo-600 px-3 py-2.5 text-center font-bold text-white">Đăng nhập / Đăng ký</a>
+  </nav>
+</header>
+
+<main>
+<!-- ============ HERO ============ -->
+<section class="relative isolate overflow-hidden">
+  <div class="blob -left-24 top-0 h-72 w-72 bg-violet-300" aria-hidden="true"></div>
+  <div class="blob -right-20 top-24 h-80 w-80 bg-teal-200" style="animation-delay:-5s" aria-hidden="true"></div>
+  <div class="blob left-1/3 -top-10 h-56 w-56 bg-amber-200" style="animation-delay:-9s" aria-hidden="true"></div>
+
+  <div class="mx-auto max-w-6xl px-4 pb-14 pt-12 sm:pt-16">
+    <div class="mx-auto max-w-3xl text-center">
+      <span class="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-white/80 px-3.5 py-1 text-xs font-bold uppercase tracking-wide text-indigo-600">
+        <span class="h-2 w-2 rounded-full bg-emerald-500"></span> Miễn phí · Không cần cài đặt
+      </span>
+      <h1 class="mt-5 text-3xl font-extrabold leading-tight text-indigo-950 sm:text-5xl">
+        Nền tảng Kiểm tra & Tổ chức <span class="bg-gradient-to-r from-indigo-600 to-violet-500 bg-clip-text text-transparent">Phòng thi Online</span> Thông minh
+      </h1>
+      <p class="mx-auto mt-4 max-w-2xl text-base text-indigo-900/70 sm:text-lg">
+        Học sinh vào thi bằng mã phòng, luyện tập mọi lúc. Giáo viên soạn đề, tổ chức ca thi và xem kết quả — tất cả trên một trang web.
+      </p>
+    </div>
+
+    <div class="mt-10 grid gap-6 lg:grid-cols-2" id="vao-thi">
+
+      <!-- ===== HỌC SINH ===== -->
+      <article class="lift relative overflow-hidden rounded-3xl bg-gradient-to-br from-indigo-700 via-indigo-600 to-teal-700 p-6 text-white shadow-xl shadow-indigo-300/40 sm:p-8" aria-labelledby="hsTitle">
+        <div class="pointer-events-none absolute -right-10 -top-10 h-44 w-44 rounded-full bg-white/10" aria-hidden="true"></div>
+        <div class="pointer-events-none absolute -bottom-14 -left-8 h-40 w-40 rounded-full bg-teal-300/20" aria-hidden="true"></div>
+
+        <div class="relative flex items-start justify-between gap-4">
+          <div>
+            <span class="rounded-full bg-white/15 px-3 py-1 text-xs font-bold uppercase tracking-wider">Dành cho học sinh</span>
+            <h2 id="hsTitle" class="mt-3 text-2xl font-extrabold sm:text-3xl">Vào thi & luyện tập</h2>
+            <p class="mt-1.5 text-sm text-indigo-50/90">Nhập mã do giáo viên cung cấp để vào đúng ca thi của em.</p>
+          </div>
+          <svg viewBox="0 0 96 96" class="hidden h-20 w-20 shrink-0 sm:block" aria-hidden="true">
+            <rect x="18" y="10" width="56" height="74" rx="8" fill="#fff" fill-opacity=".95"/>
+            <rect x="28" y="22" width="22" height="5" rx="2.5" fill="#4f46e5"/>
+            <g fill="none" stroke="#0d9488" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="m28 40 4 4 7-8"/><path d="m28 56 4 4 7-8"/></g>
+            <g fill="#c7d2fe"><rect x="46" y="38" width="20" height="5" rx="2.5"/><rect x="46" y="54" width="20" height="5" rx="2.5"/><rect x="28" y="70" width="38" height="5" rx="2.5"/></g>
+            <g transform="rotate(35 76 66)"><rect x="72" y="40" width="9" height="40" rx="3" fill="#fbbf24"/><path d="m72 80 4.5 9 4.5-9Z" fill="#fde68a"/></g>
+          </svg>
+        </div>
+
+        <form id="joinForm" class="relative mt-6 rounded-2xl bg-white p-4 text-indigo-950 shadow-lg" novalidate>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label for="roomCode" class="mb-1 block text-xs font-bold uppercase tracking-wide text-indigo-600">Mã phòng thi</label>
+              <input id="roomCode" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200" placeholder="VD: TOAN12A"
+                     class="w-full rounded-xl border-2 border-indigo-100 bg-indigo-50/40 px-3.5 py-3 font-semibold outline-none transition focus:border-indigo-500 focus:bg-white">
+            </div>
+            <div>
+              <label for="shiftCode" class="mb-1 block text-xs font-bold uppercase tracking-wide text-indigo-600">Mã ca thi</label>
+              <input id="shiftCode" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200" placeholder="VD: CA1"
+                     class="w-full rounded-xl border-2 border-indigo-100 bg-indigo-50/40 px-3.5 py-3 font-semibold outline-none transition focus:border-indigo-500 focus:bg-white">
+            </div>
+          </div>
+          <p class="mt-2 text-xs text-slate-500">Mẹo: dán nguyên đường link giáo viên gửi vào ô bất kỳ, hệ thống tự điền cả hai mã.</p>
+          <p id="joinMsg" role="alert" class="mt-2 hidden rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700"></p>
+          <button type="submit" class="btn mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-amber-400 px-5 py-3.5 text-base font-extrabold tracking-wide text-indigo-950 shadow-md shadow-amber-500/30 hover:bg-amber-300">
+            VÀO THI NGAY
+            <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+        </form>
+
+        <div class="relative mt-4 grid gap-3 sm:grid-cols-2">
+          <a data-link="practice" href="#" class="btn flex items-center justify-center gap-2 rounded-xl border border-white/40 bg-white/10 px-4 py-3 text-sm font-bold hover:bg-white/20">📝 Luyện tập tự do</a>
+          <a data-link="student" href="#" class="btn flex items-center justify-center gap-2 rounded-xl border border-white/40 bg-white/10 px-4 py-3 text-sm font-bold hover:bg-white/20">📊 Kết quả & lịch sử của tôi</a>
+        </div>
+      </article>
+
+      <!-- ===== GIÁO VIÊN ===== -->
+      <article class="lift relative flex flex-col overflow-hidden rounded-3xl bg-gradient-to-br from-violet-700 via-violet-600 to-emerald-700 p-6 text-white shadow-xl shadow-violet-300/40 sm:p-8" aria-labelledby="gvTitle">
+        <div class="pointer-events-none absolute -left-10 -top-12 h-44 w-44 rounded-full bg-white/10" aria-hidden="true"></div>
+        <div class="pointer-events-none absolute -bottom-16 -right-10 h-48 w-48 rounded-full bg-emerald-300/20" aria-hidden="true"></div>
+
+        <div class="relative flex items-start justify-between gap-4">
+          <div>
+            <span class="rounded-full bg-white/15 px-3 py-1 text-xs font-bold uppercase tracking-wider">Dành cho giáo viên</span>
+            <h2 id="gvTitle" class="mt-3 text-2xl font-extrabold sm:text-3xl">Soạn đề & tổ chức thi</h2>
+            <p class="mt-1.5 text-sm text-violet-50/90">Từ ngân hàng câu hỏi đến phòng thi có giám sát chỉ trong vài phút.</p>
+          </div>
+          <svg viewBox="0 0 96 96" class="hidden h-20 w-20 shrink-0 sm:block" aria-hidden="true">
+            <rect x="8" y="14" width="80" height="50" rx="8" fill="#fff" fill-opacity=".95"/>
+            <path d="M16 54 34 36l12 10 18-20 14 16" fill="none" stroke="#7c3aed" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="34" cy="36" r="4" fill="#059669"/><circle cx="64" cy="26" r="4" fill="#059669"/>
+            <rect x="36" y="64" width="24" height="6" fill="#ddd6fe"/><rect x="26" y="70" width="44" height="7" rx="3.5" fill="#fff" fill-opacity=".95"/>
+          </svg>
+        </div>
+
+        <div class="relative mt-6 flex flex-1 flex-col gap-3">
+          <a data-link="room" href="#" class="btn group flex items-center gap-4 rounded-2xl bg-white p-4 text-indigo-950 shadow-lg hover:bg-violet-50">
+            <span class="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-violet-100 text-2xl" aria-hidden="true">🏫</span>
+            <span class="flex-1"><span class="block text-base font-extrabold">Tạo & Quản lý Phòng thi</span><span class="block text-xs text-slate-500">Lập ca thi, đặt giờ, xem ai đang làm bài</span></span>
+            <span class="text-xl font-bold text-violet-600 transition group-hover:translate-x-1" aria-hidden="true">→</span>
+          </a>
+          <a data-link="admin" href="#" class="btn group flex items-center gap-4 rounded-2xl bg-white p-4 text-indigo-950 shadow-lg hover:bg-emerald-50">
+            <span class="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-emerald-100 text-2xl" aria-hidden="true">🗂️</span>
+            <span class="flex-1"><span class="block text-base font-extrabold">Soạn Ngân hàng Câu hỏi</span><span class="block text-xs text-slate-500">Phân loại theo lớp, môn, chương, dạng, mức độ</span></span>
+            <span class="text-xl font-bold text-emerald-600 transition group-hover:translate-x-1" aria-hidden="true">→</span>
+          </a>
+          <a data-link="teacher" href="#" class="btn mt-auto flex items-center justify-center gap-2 rounded-xl border border-white/40 bg-white/10 px-4 py-3 text-sm font-bold hover:bg-white/20">📈 Thống kê kết quả lớp học</a>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============ GÓC KHÁM PHÁ ============ -->
+<section class="mx-auto max-w-6xl px-4 pb-14" aria-labelledby="discTitle">
+  <div class="relative overflow-hidden rounded-3xl border border-amber-200 bg-gradient-to-br from-amber-50 via-rose-50 to-violet-50 p-6 shadow-lg shadow-amber-200/40 sm:p-8">
+    <div class="pointer-events-none absolute -right-8 -top-8 h-36 w-36 rounded-full bg-amber-200/50" aria-hidden="true"></div>
+    <div class="relative flex flex-wrap items-center justify-between gap-3">
+      <h2 id="discTitle" class="text-xl font-extrabold text-indigo-950 sm:text-2xl">💡 Góc Khám phá & Giai thoại Khoa học</h2>
+      <button id="storyBtn" type="button" class="btn inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-bold text-white shadow-md shadow-indigo-300/50 hover:bg-indigo-700">
+        <span id="diceIcon" class="inline-block" aria-hidden="true">🎲</span> Đổi câu chuyện khác
+      </button>
+    </div>
+
+    <div id="storyBox" class="relative mt-5 min-h-[190px]" aria-live="polite">
+      <div class="flex flex-wrap items-center gap-2">
+        <span id="storyTag" class="rounded-full bg-indigo-100 px-3 py-1 text-xs font-bold text-indigo-700"></span>
+        <span id="storyAi" class="hidden rounded-full bg-violet-100 px-3 py-1 text-xs font-bold text-violet-700">✨ Do AI viết</span>
+        <span id="storyCount" class="ml-auto text-xs font-semibold text-slate-400"></span>
+      </div>
+      <h3 id="storyTitle" class="mt-3 text-lg font-extrabold text-indigo-950 sm:text-xl"></h3>
+      <p id="storyBody" class="mt-2 max-w-3xl text-[15px] leading-relaxed text-slate-700"></p>
+      <p id="storyNote" class="mt-3 hidden max-w-3xl rounded-lg bg-white/70 px-3 py-2 text-xs text-slate-500"></p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ TÍNH NĂNG ============ -->
+<section class="mx-auto max-w-6xl px-4 pb-16" aria-labelledby="featTitle">
+  <div class="mb-7 text-center">
+    <h2 id="featTitle" class="text-2xl font-extrabold text-indigo-950 sm:text-3xl">Gọn nhẹ nhưng đủ dùng</h2>
+    <p class="mt-1.5 text-sm text-indigo-900/60">Những gì giáo viên và học sinh cần cho một bài kiểm tra trực tuyến.</p>
+  </div>
+  <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div class="lift rounded-2xl border border-indigo-100 bg-indigo-50 p-5">
+      <div class="grid h-12 w-12 place-items-center rounded-xl bg-white text-2xl shadow-sm" aria-hidden="true">📝</div>
+      <h3 class="mt-3 font-extrabold text-indigo-950">4 dạng câu hỏi chuẩn</h3>
+      <p class="mt-1 text-sm text-slate-600">Trắc nghiệm, Đúng/Sai, Trả lời ngắn và Tự luận.</p>
+    </div>
+    <div class="lift rounded-2xl border border-emerald-100 bg-emerald-50 p-5">
+      <div class="grid h-12 w-12 place-items-center rounded-xl bg-white text-2xl shadow-sm" aria-hidden="true">🎲</div>
+      <h3 class="mt-3 font-extrabold text-indigo-950">Trộn đề thông minh</h3>
+      <p class="mt-1 text-sm text-slate-600">Xáo trộn câu hỏi và phương án riêng cho từng học sinh.</p>
+    </div>
+    <div class="lift rounded-2xl border border-violet-100 bg-violet-50 p-5">
+      <div class="grid h-12 w-12 place-items-center rounded-xl bg-white text-2xl shadow-sm" aria-hidden="true">📐</div>
+      <h3 class="mt-3 font-extrabold text-indigo-950">Công thức LaTeX</h3>
+      <p class="mt-1 text-sm text-slate-600">Hiển thị công thức Toán, Lý, Hóa rõ nét, chuẩn xác: <span id="featMath">$\sqrt{a^2+b^2}$</span></p>
+    </div>
+    <div class="lift rounded-2xl border border-amber-100 bg-amber-50 p-5">
+      <div class="grid h-12 w-12 place-items-center rounded-xl bg-white text-2xl shadow-sm" aria-hidden="true">📊</div>
+      <h3 class="mt-3 font-extrabold text-indigo-950">Chấm điểm & lưu trữ</h3>
+      <p class="mt-1 text-sm text-slate-600">Tự động chấm điểm, lưu kết quả gọn nhẹ để xem lại bất cứ lúc nào.</p>
+    </div>
+  </div>
+</section>
+</main>
+
+<!-- ============ FOOTER ============ -->
+<footer class="border-t border-indigo-100 bg-white">
+  <div class="mx-auto grid max-w-6xl gap-6 px-4 py-8 text-sm text-slate-600 md:grid-cols-3">
+    <div>
+      <div class="flex items-center gap-2 font-extrabold text-indigo-900">
+        <span class="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-indigo-600 to-violet-500 text-white" aria-hidden="true">
+          <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 8l10 5 10-5-10-5Z"/><path d="M6 10.5V16c0 1.5 2.7 3 6 3s6-1.5 6-3v-5.5"/></svg>
+        </span>
+        Mystic Exam
+      </div>
+      <p class="mt-2">Hệ thống luyện thi và tổ chức phòng thi trực tuyến dành cho giáo viên và học sinh.</p>
+    </div>
+    <div>
+      <h3 class="font-bold text-indigo-900">Liên kết nhanh</h3>
+      <ul class="mt-2 space-y-1">
+        <li><a data-link="practice" href="#" class="hover:text-indigo-600">Luyện tập tự do</a></li>
+        <li><a href="#vao-thi" class="hover:text-indigo-600">Vào phòng thi</a></li>
+        <li><a data-link="student" href="#" class="hover:text-indigo-600">Góc học tập của học sinh</a></li>
+        <li><a data-link="admin" href="#" class="hover:text-indigo-600">Trang quản trị</a></li>
+      </ul>
+    </div>
+    <div>
+      <h3 class="font-bold text-indigo-900">Hỗ trợ</h3>
+      <p class="mt-2">Gặp sự cố khi vào thi? Liên hệ giáo viên phụ trách hoặc gửi thư về <a id="contactMail" href="#" class="font-semibold text-indigo-600 underline"></a>.</p>
+    </div>
+  </div>
+  <div class="border-t border-indigo-50 py-4 text-center text-xs text-slate-400">© <span id="year"></span> Mystic Exam. Bảo lưu mọi quyền.</div>
+</footer>
+
+<script>
+// ===================== CẤU HÌNH =====================
+const LINKS = {                                   // đổi thành địa chỉ https://… khi đưa lên mạng
+  practice: 'exam.html',                          // luyện tập tự do
+  room:     'exam_room.html',                     // giáo viên quản lý phòng thi
+  admin:    'admin.html',                         // ngân hàng câu hỏi
+  teacher:  'teacher_dashboard.html',             // thống kê kết quả
+  student:  'student_home.html'                   // đăng nhập, kết quả & lịch sử học sinh
+};
+const CONTACT_EMAIL = 'hotro@example.com';        // <<< thay bằng email hỗ trợ của bạn
+const AI_ENDPOINT = '';                           // (tuỳ chọn) địa chỉ của một API riêng, xem hàm fetchAiStory bên dưới
+// ====================================================
+
+const $ = id => document.getElementById(id);
+document.querySelectorAll('[data-link]').forEach(a => { a.href = LINKS[a.dataset.link] || '#'; });
+$('year').textContent = new Date().getFullYear();
+$('contactMail').textContent = CONTACT_EMAIL; $('contactMail').href = 'mailto:' + CONTACT_EMAIL;
+
+// ----- Menu di động -----
+$('menuBtn').addEventListener('click', () => {
+  const m = $('mobileNav'), open = m.classList.toggle('hidden') === false;
+  $('menuBtn').setAttribute('aria-expanded', String(open));
+});
+$('mobileNav').addEventListener('click', e => { if (e.target.closest('a')) { $('mobileNav').classList.add('hidden'); $('menuBtn').setAttribute('aria-expanded', 'false'); } });
+
+// ----- Vào thi bằng mã phòng + mã ca -----
+// exam.html chạy ở chế độ phòng thi khi URL có đủ ?room=…&shift=…
+const CODE_OK = /^[A-Za-z0-9_-]{2,40}$/;
+function parseLink(v) {                           // đọc room / shift từ một đường link hoặc đoạn văn bản dán vào
+  let room = '', shift = '';
+  try { const u = new URL(v); room = u.searchParams.get('room') || ''; shift = u.searchParams.get('shift') || ''; } catch (e) {}
+  if (!room) {
+    const m = v.match(/room=([^&\s#]+)/i), n = v.match(/shift=([^&\s#]+)/i);
+    try { room = m ? decodeURIComponent(m[1]) : ''; shift = n ? decodeURIComponent(n[1]) : shift; } catch (e) {}
+  }
+  return { room, shift };
+}
+function joinMsg(t) { const el = $('joinMsg'); el.textContent = t || ''; el.classList.toggle('hidden', !t); }
+['roomCode', 'shiftCode'].forEach(id => {
+  $(id).addEventListener('input', () => {
+    joinMsg('');
+    const v = $(id).value;
+    if (/room=|^https?:\/\//i.test(v)) {            // người dùng dán link
+      const p = parseLink(v);
+      if (p.room) { $('roomCode').value = p.room; if (p.shift) $('shiftCode').value = p.shift; }
+    }
+  });
+});
+$('joinForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const room = $('roomCode').value.trim(), shift = $('shiftCode').value.trim();
+  if (!room || !shift) return joinMsg('Hãy nhập cả mã phòng thi và mã ca thi (giáo viên sẽ cung cấp), hoặc dán đường link phòng thi.');
+  if (!CODE_OK.test(room) || !CODE_OK.test(shift)) return joinMsg('Mã chỉ gồm chữ không dấu, số, dấu - hoặc _ (2–40 ký tự). Kiểm tra lại giúp em nhé.');
+  location.href = LINKS.practice + '?room=' + encodeURIComponent(room) + '&shift=' + encodeURIComponent(shift);
+});
+
+// ----- Góc khám phá: giai thoại khoa học -----
+// Dùng $…$ cho công thức LaTeX. note = lời nhắc khi câu chuyện có thể đã được thêu dệt.
+const STORIES = [
+  { tag: 'Vật lý', title: 'Archimedes và tiếng hét "Eureka!"',
+    body: String.raw`Vua Hiero II nghi người thợ kim hoàn pha bạc vào chiếc vương miện vàng. Archimedes nghĩ mãi không ra cách kiểm tra mà không phá hỏng nó, cho đến khi bước vào bồn tắm và thấy nước tràn ra. Thể tích nước tràn chính là thể tích phần cơ thể chìm vào nước! Biết cả khối lượng lẫn thể tích, ông tính được khối lượng riêng $\rho=\dfrac{m}{V}$ và so với vàng nguyên chất.`,
+    note: 'Chuyện do kiến trúc sư Vitruvius kể lại gần hai thế kỷ sau, nên nhiều khả năng đã được thêu dệt. Nguyên lý lực đẩy Archimedes thì hoàn toàn có thật.' },
+  { tag: 'Vật lý', title: 'Quả táo của Newton',
+    body: String.raw`Newton kể rằng khi thấy một quả táo rơi trong vườn, ông tự hỏi: lực kéo quả táo xuống đất có phải cũng là lực giữ Mặt Trăng quay quanh Trái Đất? Câu hỏi đó dẫn tới định luật vạn vật hấp dẫn $F=G\dfrac{m_1m_2}{r^2}$, lực giảm theo bình phương khoảng cách.`,
+    note: 'Không có chuyện quả táo rơi trúng đầu — chi tiết này về sau mới được thêm vào cho kịch tính.' },
+  { tag: 'Vật lý', title: 'Chiếc đèn chùm và con lắc của Galileo',
+    body: String.raw`Theo lời học trò Viviani, chàng sinh viên Galileo ngồi trong nhà thờ ở Pisa, thấy chiếc đèn chùm đung đưa. Dùng nhịp mạch của chính mình làm đồng hồ, ông nhận ra mỗi lần đung đưa mất gần như cùng một thời gian dù biên độ lớn hay nhỏ. Về sau người ta viết được chu kỳ con lắc đơn dao động nhỏ: $T=2\pi\sqrt{\dfrac{\ell}{g}}$.`,
+    note: 'Đây là giai thoại do Viviani kể lại nhiều năm sau, chi tiết có thể không chính xác.' },
+  { tag: 'Toán học', title: 'Cậu bé Gauss cộng từ 1 đến 100',
+    body: String.raw`Để giữ lớp yên tĩnh, thầy giáo ra bài: tính $1+2+3+\dots+100$. Chỉ vài giây sau, cậu bé Gauss đã đưa đáp án. Cậu ghép cặp đầu với cuối: $1+100=101$, $2+99=101$, … được 50 cặp như vậy, nên tổng là $50\times101=5050$.`,
+    note: 'Một giai thoại nổi tiếng về thuở nhỏ của Gauss; các chi tiết thay đổi theo từng người kể.' },
+  { tag: 'Địa lý · Toán', title: 'Eratosthenes đo chu vi Trái Đất bằng… cái bóng',
+    body: String.raw`Khoảng 240 TCN, Eratosthenes nghe nói giữa trưa hạ chí ở Syene ánh nắng chiếu thẳng xuống giếng, còn ở Alexandria thì cọc đứng vẫn có bóng, lệch khoảng $7{,}2^\circ$, tức $\dfrac{1}{50}$ vòng tròn. Hai thành phố cách nhau khoảng 5000 stadia, vậy chu vi Trái Đất xấp xỉ $50\times5000=250\,000$ stadia — rất gần giá trị thật.`,
+    note: 'Đơn vị stadia có nhiều cách quy đổi nên không thể biết chính xác sai số của ông, nhưng phương pháp thì rất thông minh.' },
+  { tag: 'Vật lý', title: 'Năm kỳ diệu của một nhân viên sở bằng sáng chế',
+    body: String.raw`Năm 1905, Einstein đang làm thẩm định viên ở Bern, Thụy Sĩ. Trong một năm ông công bố bốn bài báo thay đổi vật lý: hiệu ứng quang điện, chuyển động Brown, thuyết tương đối hẹp và hệ thức khối lượng – năng lượng $E=mc^2$. Một lượng khối lượng nhỏ xíu cũng tương ứng năng lượng khổng lồ vì $c^2$ rất lớn.` },
+  { tag: 'Vật lý', title: 'Michael Faraday: từ cậu thợ đóng sách đến nhà bác học',
+    body: String.raw`Faraday không được học hành bài bản, chỉ là cậu học việc ở tiệm đóng sách và đọc ngấu nghiến những cuốn sách đi qua tay mình. Sau khi nghe Humphry Davy giảng, ông chép lại và đóng thành tập gửi cho Davy, rồi được nhận vào Viện Hoàng gia. Năm 1831, ông phát hiện cảm ứng điện từ: từ thông biến thiên sinh ra suất điện động, $\mathcal{E}=-\dfrac{\Delta\Phi}{\Delta t}$ — nền tảng của máy phát điện.` },
+  { tag: 'Hóa học', title: 'Mendeleev và những ô trống tiên tri',
+    body: String.raw`Năm 1869, Mendeleev xếp các nguyên tố đã biết theo khối lượng nguyên tử và tính chất hóa học. Ông dám chừa ô trống cho những nguyên tố chưa ai tìm thấy và dự đoán tính chất của chúng. Năm 1875, gali được phát hiện và khớp với "eka-nhôm" ông tiên đoán đến mức cả thế giới khâm phục bảng tuần hoàn.`,
+    note: 'Câu chuyện ông mơ thấy bảng tuần hoàn là giai thoại truyền miệng, chưa có bằng chứng xác nhận.' },
+  { tag: 'Hóa học · Vật lý', title: 'Marie Curie và những cuốn sổ còn phát sáng',
+    body: String.raw`Năm 1898, Marie và Pierre Curie phát hiện polonium và radium. Bà là người đầu tiên nhận hai giải Nobel ở hai lĩnh vực khác nhau: Vật lý 1903 và Hóa học 1911. Hơn một thế kỷ sau, sổ ghi chép của bà vẫn còn phóng xạ và được cất trong hộp lót chì; ai muốn xem phải ký giấy cam kết an toàn.` },
+  { tag: 'Vật lý', title: 'Tia X lóe sáng trong phòng tối',
+    body: String.raw`Tối 8/11/1895, Röntgen che kín ống phóng điện bằng bìa đen nhưng một tấm màn phát quang cách đó vẫn lóe sáng. Ông gọi bức xạ bí ẩn là "tia X". Ít tuần sau, ông chụp ảnh bàn tay vợ mình, thấy rõ xương và chiếc nhẫn. Năm 1901 ông nhận giải Nobel Vật lý đầu tiên trong lịch sử.` },
+  { tag: 'Y sinh', title: 'Chiếc đĩa bị mốc cứu hàng triệu người',
+    body: String.raw`Tháng 9/1928, Alexander Fleming đi nghỉ hè và quên dọn đĩa nuôi cấy tụ cầu khuẩn. Khi về, ông thấy nấm mốc mọc trên đĩa và vi khuẩn xung quanh nó đã biến mất. Chất mà mốc tiết ra là penicillin, kháng sinh đầu tiên của nhân loại, về sau được Florey và Chain biến thành thuốc điều trị.` }
+];
+
+const tagEl = $('storyTag'), titleEl = $('storyTitle'), bodyEl = $('storyBody'), noteEl = $('storyNote'), aiEl = $('storyAi'), countEl = $('storyCount');
+let current = -1, busy = false;
+
+function renderMath(el) {
+  if (typeof renderMathInElement !== 'function') return false;
+  try { renderMathInElement(el, { delimiters: [{ left: '$', right: '$', display: false }], throwOnError: false }); return true; } catch (e) { return false; }
+}
+function showStory(s, label) {
+  tagEl.textContent = s.tag; titleEl.textContent = s.title; bodyEl.textContent = s.body;
+  noteEl.textContent = s.note ? 'ℹ️ ' + s.note : ''; noteEl.classList.toggle('hidden', !s.note);
+  aiEl.classList.toggle('hidden', !s.ai); countEl.textContent = label || '';
+  renderMath(bodyEl);
+  const box = $('storyBox'); box.classList.remove('story-in'); void box.offsetWidth; box.classList.add('story-in');
+}
+function pickLocal() {                            // chọn ngẫu nhiên, không lặp lại câu vừa xem
+  let i; do { i = Math.floor(Math.random() * STORIES.length); } while (STORIES.length > 1 && i === current);
+  current = i; return STORIES[i];
+}
+// Nếu có AI_ENDPOINT: gửi POST {topic, exclude} và nhận về JSON {tag, title, body, note?}. Lỗi / quá 8 giây → dùng kho có sẵn.
+// LƯU Ý: không để khóa API trong trang này. Hãy gọi qua một máy chủ trung gian (ví dụ Supabase Edge Function) giữ khóa bí mật.
+async function fetchAiStory() {
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 8000);
+  try {
+    const r = await fetch(AI_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctl.signal,
+      body: JSON.stringify({ topic: 'giai thoại khoa học, vật lý, toán, hóa', exclude: titleEl.textContent }) });
+    if (!r.ok) throw new Error(r.status);
+    const j = await r.json();
+    if (!j || !j.title || !j.body) throw new Error('bad');
+    return { tag: String(j.tag || 'Khoa học').slice(0, 30), title: String(j.title).slice(0, 140), body: String(j.body).slice(0, 1200),
+             note: j.note ? String(j.note).slice(0, 300) : '', ai: true };
+  } finally { clearTimeout(t); }
+}
+async function nextStory() {
+  if (busy) return; busy = true;
+  const btn = $('storyBtn'), dice = $('diceIcon');
+  btn.disabled = true; btn.classList.add('opacity-70'); dice.classList.remove('dice-roll'); void dice.offsetWidth; dice.classList.add('dice-roll');
+  try {
+    let s = null;
+    if (AI_ENDPOINT) { try { s = await fetchAiStory(); } catch (e) { s = null; } }
+    if (s) showStory(s, 'Câu chuyện mới');
+    else { const st = pickLocal(); showStory(st, (current + 1) + ' / ' + STORIES.length); }
+  } finally { btn.disabled = false; btn.classList.remove('opacity-70'); busy = false; }
+}
+$('storyBtn').addEventListener('click', nextStory);
+
+// Khởi tạo: chọn ngẫu nhiên một câu chuyện để mỗi lần mở trang đều khác nhau
+(function init() {
+  const st = pickLocal(); showStory(st, (current + 1) + ' / ' + STORIES.length);
+})();
+// KaTeX tải bằng defer: khi tải xong thì vẽ lại công thức
+window.addEventListener('load', () => { renderMath(bodyEl); renderMath($('featMath')); });
+</script>
+</body>
+</html>
