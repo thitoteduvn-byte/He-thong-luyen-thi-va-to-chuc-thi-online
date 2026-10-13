@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Góc học tập của học sinh</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+
+<!--
+Chạy 1 lần trong Supabase → SQL Editor, THEO THỨ TỰ:  exam_room_setup.sql  →  student_setup.sql
+(Bật Authentication → Providers → Email → "Allow new users to sign up" để học sinh tự đăng ký.)
+-->
+
+<!-- ===== Chưa đăng nhập: Đăng nhập / Đăng ký ===== -->
+<div id="viewAuth" class="hidden min-h-screen flex items-center justify-center p-4">
+  <div class="w-full max-w-md">
+    <div class="text-center mb-5">
+      <div class="text-4xl">🎓</div>
+      <h1 class="text-2xl font-bold mt-1">Góc học tập</h1>
+      <p class="text-sm text-slate-500">Luyện thi online, vào phòng thi và theo dõi kết quả của bạn</p>
+    </div>
+    <div class="bg-white rounded-2xl shadow p-6">
+      <div class="grid grid-cols-2 gap-1 bg-slate-100 rounded-lg p-1 mb-4 text-sm font-semibold" role="tablist">
+        <button id="tabLogin" onclick="authMode('login')" role="tab" class="py-2 rounded-md">Đăng nhập</button>
+        <button id="tabSignup" onclick="authMode('signup')" role="tab" class="py-2 rounded-md">Đăng ký</button>
+      </div>
+      <form id="authForm" onsubmit="event.preventDefault(); submitAuth()" class="space-y-3">
+        <div id="signupFields" class="hidden space-y-3">
+          <label class="block text-sm font-medium">Họ và tên <input id="aName" autocomplete="name" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+          <div class="grid grid-cols-2 gap-3">
+            <label class="block text-sm font-medium">Mã học sinh <input id="aCode" autocomplete="off" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+            <label class="block text-sm font-medium">Lớp <span class="font-normal text-slate-400">(không bắt buộc)</span> <input id="aClass" autocomplete="off" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+          </div>
+        </div>
+        <label class="block text-sm font-medium">Email <input id="aEmail" type="email" autocomplete="username" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+        <label class="block text-sm font-medium">Mật khẩu <input id="aPass" type="password" autocomplete="current-password" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+        <div id="authMsg" class="hidden text-sm rounded-lg px-3 py-2" role="alert"></div>
+        <button id="authBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg py-2.5 font-semibold disabled:opacity-50">Đăng nhập</button>
+      </form>
+      <p class="text-xs text-slate-500 mt-4 text-center">Không muốn tạo tài khoản? Bạn vẫn <a class="text-indigo-600 underline examLink" href="exam.html">luyện thi</a> được, chỉ là kết quả sẽ không được lưu lại.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Đã đăng nhập nhưng chưa có hồ sơ học sinh ===== -->
+<div id="viewProfile" class="hidden min-h-screen flex items-center justify-center p-4">
+  <div class="w-full max-w-md bg-white rounded-2xl shadow p-6 space-y-3">
+    <h1 class="text-xl font-bold">Hoàn tất hồ sơ học sinh</h1>
+    <p class="text-sm text-slate-500">Tài khoản <b id="pEmail"></b> chưa có hồ sơ học sinh. Hãy điền thông tin để vào trang học tập.</p>
+    <label class="block text-sm font-medium">Họ và tên <input id="pName" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+    <div class="grid grid-cols-2 gap-3">
+      <label class="block text-sm font-medium">Mã học sinh <input id="pCode" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+      <label class="block text-sm font-medium">Lớp <input id="pClass" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+    </div>
+    <div id="pMsg" class="hidden text-sm rounded-lg px-3 py-2" role="alert"></div>
+    <div class="flex items-center gap-3">
+      <button id="pBtn" onclick="saveNewProfile()" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-5 py-2 font-semibold disabled:opacity-50">Lưu và vào trang học tập</button>
+      <button onclick="logout()" class="text-sm underline text-slate-500">Đăng xuất</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Ứng dụng ===== -->
+<div id="viewApp" class="hidden">
+  <header class="bg-white border-b sticky top-0 z-30">
+    <div class="max-w-6xl mx-auto px-4 h-14 flex items-center gap-3">
+      <div class="font-bold text-indigo-700 whitespace-nowrap">🎓 Góc học tập</div>
+      <nav class="hidden md:flex items-center gap-1 ml-4 text-sm font-medium" id="navDesk"></nav>
+      <div class="ml-auto flex items-center gap-3">
+        <button onclick="openProfile()" class="flex items-center gap-2 rounded-full pl-1 pr-3 py-1 hover:bg-slate-100" title="Sửa hồ sơ">
+          <span id="avatar" class="w-8 h-8 rounded-full bg-indigo-600 text-white grid place-items-center text-sm font-bold"></span>
+          <span class="text-sm text-left leading-tight hidden sm:block"><b id="hName" class="block"></b><span id="hSub" class="text-xs text-slate-500"></span></span>
+        </button>
+        <button onclick="logout()" class="text-sm text-slate-500 hover:text-slate-800 underline">Đăng xuất</button>
+      </div>
+    </div>
+    <nav class="md:hidden border-t flex overflow-x-auto text-sm font-medium px-2" id="navMob"></nav>
+  </header>
+
+  <main class="max-w-6xl mx-auto p-4 space-y-4">
+    <div id="loadErr" class="hidden text-sm rounded-lg px-3 py-2 bg-red-100 text-red-700" role="alert"></div>
+
+    <!-- Tổng quan -->
+    <section id="paneHome" class="space-y-4">
+      <div class="flex flex-wrap items-end gap-2">
+        <div>
+          <h1 id="greet" class="text-2xl font-bold"></h1>
+          <p class="text-sm text-slate-500">Tổng hợp kết quả luyện tập và phòng thi của bạn.</p>
+        </div>
+        <button onclick="reloadData()" class="ml-auto text-sm border bg-white rounded-lg px-3 py-1.5 hover:bg-slate-50">↻ Làm mới</button>
+      </div>
+
+      <div id="doingBox" class="hidden"></div>
+
+      <div id="statGrid" class="grid grid-cols-2 lg:grid-cols-4 gap-3"></div>
+
+      <div class="grid md:grid-cols-2 gap-3">
+        <a class="examLink group rounded-2xl p-5 text-white bg-gradient-to-br from-indigo-600 to-indigo-500 shadow hover:shadow-lg transition" href="exam.html">
+          <div class="text-3xl">📝</div>
+          <div class="text-lg font-bold mt-1">Luyện thi online</div>
+          <p class="text-sm text-indigo-100">Tự chọn môn, chương, mức độ và dạng câu hỏi để tạo đề luyện tập. Kết quả được lưu vào lịch sử của bạn.</p>
+          <div class="mt-3 text-sm font-semibold">Bắt đầu luyện tập →</div>
+        </a>
+        <button onclick="setTab('rooms')" class="text-left group rounded-2xl p-5 bg-white border shadow-sm hover:shadow transition">
+          <div class="text-3xl">🏫</div>
+          <div class="text-lg font-bold mt-1">Vào phòng thi</div>
+          <p class="text-sm text-slate-500">Nhập mã phòng và mã ca do giáo viên cung cấp (hoặc dán link phòng thi) để làm bài kiểm tra.</p>
+          <div class="mt-3 text-sm font-semibold text-indigo-600">Mở phòng thi →</div>
+        </button>
+      </div>
+
+      <div class="grid lg:grid-cols-5 gap-3">
+        <div class="lg:col-span-3 bg-white rounded-2xl shadow-sm border p-4">
+          <div class="flex items-center gap-2 mb-1">
+            <h2 class="font-semibold">Điểm qua các bài gần đây</h2>
+            <button id="trendToggle" onclick="toggleTrend()" class="ml-auto text-xs border rounded-md px-2 py-1 hover:bg-slate-50">Xem dạng bảng</button>
+          </div>
+          <div id="trendBox"></div>
+        </div>
+        <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border p-4">
+          <h2 class="font-semibold mb-2">Điểm trung bình theo môn</h2>
+          <div id="subjectBars" class="space-y-3"></div>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow-sm border p-4">
+        <div class="flex items-center mb-2"><h2 class="font-semibold">Hoạt động gần đây</h2>
+          <button onclick="setTab('history')" class="ml-auto text-sm text-indigo-600 hover:underline">Xem tất cả →</button></div>
+        <div id="recentList" class="divide-y"></div>
+      </div>
+    </section>
+
+    <!-- Luyện thi -->
+    <section id="panePractice" class="hidden space-y-4">
+      <div class="bg-white rounded-2xl shadow-sm border p-6">
+        <h1 class="text-xl font-bold">📝 Luyện thi online</h1>
+        <p class="text-sm text-slate-600 mt-1">Tạo một đề luyện tập theo ý bạn: chọn lớp, môn, các chương, mức độ nhận thức và dạng câu hỏi (trắc nghiệm, đúng/sai, trả lời ngắn, tự luận). Có thể làm đề chuẩn đủ 4 dạng hoặc chỉ 1–2 dạng.</p>
+        <ul class="text-sm text-slate-600 mt-3 list-disc pl-5 space-y-1">
+          <li>Câu hỏi được rút ngẫu nhiên từ ngân hàng chung, đề luôn chia theo từng phần (I, II, III, IV).</li>
+          <li>Nộp bài xong bạn xem ngay điểm, đáp án và lời giải; bài làm tự lưu vào lịch sử khi đã đăng nhập.</li>
+        </ul>
+        <a class="examLink inline-block mt-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-5 py-2.5 font-semibold" href="exam.html">Tạo đề luyện tập mới →</a>
+      </div>
+      <div class="bg-white rounded-2xl shadow-sm border p-4">
+        <h2 class="font-semibold mb-2">Các bài luyện tập gần đây</h2>
+        <div id="practiceList" class="divide-y"></div>
+      </div>
+    </section>
+
+    <!-- Phòng thi -->
+    <section id="paneRooms" class="hidden space-y-4">
+      <div class="bg-white rounded-2xl shadow-sm border p-6 space-y-3">
+        <h1 class="text-xl font-bold">🏫 Vào phòng thi</h1>
+        <p class="text-sm text-slate-600">Nhập mã phòng và mã ca giáo viên đã gửi, hoặc dán cả link phòng thi vào ô đầu tiên. Ca thi chỉ mở trong khung giờ quy định; có thể cần thêm mã vào ca ở bước sau.</p>
+        <label class="block text-sm font-medium">Dán link phòng thi <span class="font-normal text-slate-400">(không bắt buộc)</span>
+          <input id="jLink" oninput="parseJoinLink()" placeholder="https://…/exam.html?room=MA_PHONG&shift=MA_CA" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+        <div class="grid sm:grid-cols-2 gap-3">
+          <label class="block text-sm font-medium">Mã phòng <input id="jRoom" autocomplete="off" class="w-full border rounded-lg p-2 mt-1 font-normal uppercase"></label>
+          <label class="block text-sm font-medium">Mã ca <input id="jShift" autocomplete="off" class="w-full border rounded-lg p-2 mt-1 font-normal uppercase"></label>
+        </div>
+        <div id="jMsg" class="hidden text-sm rounded-lg px-3 py-2 bg-red-100 text-red-700" role="alert"></div>
+        <button onclick="goRoom()" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-5 py-2.5 font-semibold">Vào phòng thi →</button>
+      </div>
+      <div class="bg-white rounded-2xl shadow-sm border p-4">
+        <h2 class="font-semibold mb-1">Các phòng thi bạn đã tham gia</h2>
+        <p class="text-xs text-slate-500 mb-2">Chỉ hiện các bài làm khi bạn đã đăng nhập lúc vào thi.</p>
+        <div id="roomList" class="divide-y"></div>
+      </div>
+    </section>
+
+    <!-- Lịch sử & kết quả -->
+    <section id="paneHistory" class="hidden space-y-3">
+      <div class="flex flex-wrap items-end gap-2">
+        <h1 class="text-xl font-bold">📊 Lịch sử & kết quả</h1>
+        <button onclick="exportCsv()" class="ml-auto text-sm border bg-white rounded-lg px-3 py-1.5 hover:bg-slate-50">⬇ Xuất CSV</button>
+      </div>
+      <div class="bg-white rounded-2xl shadow-sm border p-3 grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+        <select id="hKind" onchange="histChanged()" aria-label="Loại bài" class="border rounded-lg p-2">
+          <option value="">Tất cả loại bài</option><option value="P">Luyện tập</option><option value="R">Phòng thi</option></select>
+        <select id="hSubject" onchange="histChanged()" aria-label="Môn" class="border rounded-lg p-2"><option value="">Mọi môn</option></select>
+        <input id="hQ" oninput="histTyped()" placeholder="Tìm theo tên bài" aria-label="Tìm kiếm" class="border rounded-lg p-2">
+        <select id="hSort" onchange="histChanged()" aria-label="Sắp xếp" class="border rounded-lg p-2">
+          <option value="new">Mới nhất</option><option value="old">Cũ nhất</option><option value="high">Điểm cao nhất</option><option value="low">Điểm thấp nhất</option></select>
+      </div>
+      <div id="histInfo" class="text-sm text-slate-500"></div>
+      <div id="histList" class="bg-white rounded-2xl shadow-sm border divide-y"></div>
+      <div id="histPager" class="flex items-center justify-center gap-3 text-sm"></div>
+    </section>
+  </main>
+</div>
+
+<!-- Sửa hồ sơ -->
+<div id="profModal" class="hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onclick="if (event.target === this) closeProfile()">
+  <div role="dialog" aria-modal="true" aria-labelledby="mpTitle" class="w-full max-w-md bg-white rounded-2xl shadow-xl p-6 space-y-3">
+    <h2 id="mpTitle" class="text-lg font-bold">Hồ sơ học sinh</h2>
+    <p class="text-xs text-slate-500">Email đăng nhập: <b id="mpEmail"></b></p>
+    <label class="block text-sm font-medium">Họ và tên <input id="mpName" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+    <div class="grid grid-cols-2 gap-3">
+      <label class="block text-sm font-medium">Mã học sinh <input id="mpCode" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+      <label class="block text-sm font-medium">Lớp <input id="mpClass" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+    </div>
+    <div id="mpMsg" class="hidden text-sm rounded-lg px-3 py-2" role="alert"></div>
+    <div class="flex justify-end gap-3">
+      <button onclick="closeProfile()" class="px-4 py-2 rounded-lg bg-slate-100 font-semibold">Hủy</button>
+      <button id="mpBtn" onclick="saveProfile()" class="px-5 py-2 rounded-lg bg-indigo-600 text-white font-semibold disabled:opacity-50">Lưu</button>
+    </div>
+  </div>
+</div>
+
+<div id="tip" class="hidden fixed z-[70] pointer-events-none bg-slate-900 text-white text-xs rounded-md px-2.5 py-1.5 shadow-lg max-w-xs"></div>
+<div id="toast" role="status" class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] bg-slate-800 text-white text-sm px-4 py-2 rounded-lg shadow-lg max-w-[90vw]"></div>
+
+<script>
+// ================== CẤU HÌNH (điền thông tin của bạn) ==================
+const SUPABASE_URL = 'https://xzznmfgihzjeqsmiuypi.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_dUldhQYF1ETrSCZ4jiy3Og_ygfkm9XW';
+const LINKS = { exam: 'exam.html', teacher: 'teacher_dashboard.html' };   // đổi thành địa chỉ https://… khi đưa lên mạng
+const PAGE = 15;                                                         // số dòng mỗi trang ở mục Lịch sử
+// ======================================================================
+
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+const lsDel = k => { try { localStorage.removeItem(k); } catch (e) {} };
+
+const S = { user: null, profile: null, practice: [], rooms: [], items: [], tab: 'home', authMode: 'login', routeSeq: 0, authReady: false,
+            hist: { page: 0 }, trendTable: false };
+const TABS = [['home', '🏠 Tổng quan'], ['practice', '📝 Luyện thi'], ['rooms', '🏫 Phòng thi'], ['history', '📊 Lịch sử & kết quả']];
+
+// ---------- Tiện ích ----------
+let toastTimer = null;
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.add('hidden'), 3500); }
+function box(id, kind, text, html) {
+  const el = $(id); if (!text && !html) { el.className = 'hidden'; el.textContent = ''; return; }
+  el.className = 'text-sm rounded-lg px-3 py-2 ' + ({ err: 'bg-red-100 text-red-700', ok: 'bg-green-100 text-green-700', warn: 'bg-amber-100 text-amber-800' }[kind] || 'bg-slate-100');
+  if (html) el.innerHTML = html; else el.textContent = text;
+}
+const fmtScore = n => n == null ? '—' : (+n).toFixed(2).replace(/\.?0+$/, '').replace('.', ',');
+const fmtDT = d => d ? new Date(d).toLocaleString('vi-VN', { hour12: false, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+const fmtD = d => d ? new Date(d).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }) : '';
+function fmtDur(sec) {
+  sec = Math.round(+sec || 0); if (!sec) return '0 phút';
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+  return h ? `${h} giờ ${m} phút` : m ? (m >= 10 || !s ? `${m} phút` : `${m} phút ${s} giây`) : `${s} giây`;
+}
+const scoreColor = n => n == null ? 'text-slate-400' : n >= 8 ? 'text-emerald-600' : n >= 5 ? 'text-indigo-600' : 'text-rose-600';
+const examUrl = (q = '') => LINKS.exam + (q ? '?' + q : '');
+document.querySelectorAll('.examLink').forEach(a => a.href = LINKS.exam);
+const errText = e => /student_profiles|is_student|student_register|practice_attempts|my_room_results|schema cache|does not exist|Could not find the function/i.test(e?.message || '')
+  ? 'Chưa cài đặt cơ sở dữ liệu cho học sinh: hãy chạy exam_room_setup.sql rồi student_setup.sql trong Supabase → SQL Editor. (' + e.message + ')' : (e?.message || String(e));
+
+// Tooltip dùng chung cho biểu đồ
+document.addEventListener('mousemove', e => {
+  const t = e.target.closest?.('[data-tip]'), tip = $('tip');
+  if (!t) return tip.classList.add('hidden');
+  tip.textContent = t.dataset.tip; tip.classList.remove('hidden');
+  const w = tip.offsetWidth, x = Math.min(e.clientX + 14, innerWidth - w - 8);
+  tip.style.left = Math.max(8, x) + 'px'; tip.style.top = (e.clientY + 16) + 'px';
+});
+document.addEventListener('scroll', () => $('tip').classList.add('hidden'), true);
+
+// ---------- Đăng nhập / đăng ký ----------
+function show(view) { ['viewAuth', 'viewProfile', 'viewApp'].forEach(v => $(v).classList.toggle('hidden', v !== view)); }
+function authMode(m) {
+  S.authMode = m; const su = m === 'signup';
+  $('signupFields').classList.toggle('hidden', !su);
+  $('tabLogin').className = 'py-2 rounded-md ' + (!su ? 'bg-white shadow text-indigo-700' : 'text-slate-500');
+  $('tabSignup').className = 'py-2 rounded-md ' + (su ? 'bg-white shadow text-indigo-700' : 'text-slate-500');
+  $('authBtn').textContent = su ? 'Tạo tài khoản học sinh' : 'Đăng nhập';
+  $('aPass').autocomplete = su ? 'new-password' : 'current-password';
+  box('authMsg');
+}
+async function submitAuth() {
+  const email = $('aEmail').value.trim(), pass = $('aPass').value, su = S.authMode === 'signup';
+  if (!email || !pass) return box('authMsg', 'err', 'Hãy nhập email và mật khẩu.');
+  let name = '', code = '', cls = '';
+  if (su) {
+    name = $('aName').value.trim(); code = $('aCode').value.trim(); cls = $('aClass').value.trim();
+    if (!name || !code) return box('authMsg', 'err', 'Hãy nhập họ tên và mã học sinh.');
+    if (pass.length < 6) return box('authMsg', 'err', 'Mật khẩu tối thiểu 6 ký tự.');
+  }
+  $('authBtn').disabled = true; box('authMsg', 'warn', su ? 'Đang tạo tài khoản…' : 'Đang đăng nhập…');
+  try {
+    if (!su) {
+      const { error } = await db.auth.signInWithPassword({ email, password: pass });
+      if (error) box('authMsg', 'err', /invalid login/i.test(error.message) ? 'Sai email hoặc mật khẩu.' : /not confirmed/i.test(error.message) ? 'Email chưa được xác nhận: hãy mở thư xác nhận rồi đăng nhập lại.' : error.message);
+      return;                                         // thành công: onAuthStateChange sẽ chuyển trang
+    }
+    lsSet('sh_pending', JSON.stringify({ email: email.toLowerCase(), name, code, cls }));
+    const { data, error } = await db.auth.signUp({ email, password: pass, options: { data: { full_name: name } } });
+    if (error) return box('authMsg', 'err', error.message);
+    if (!data.session) {
+      authMode('login'); $('aEmail').value = email; $('aPass').value = '';
+      box('authMsg', 'ok', 'Đã tạo tài khoản. Hãy mở email để xác nhận rồi quay lại đăng nhập; hồ sơ của bạn sẽ được tạo tự động.');
+    }
+  } finally { $('authBtn').disabled = false; }
+}
+async function logout() { S.user = null; S.profile = null; await db.auth.signOut(); show('viewAuth'); }
+
+async function registerProfile(name, code, cls) {
+  const { error } = await db.rpc('student_register', { p_name: name, p_code: code, p_class: cls || null });
+  if (error) throw error;
+}
+function showProfileForm(u, prefill, errHtml) {
+  $('pEmail').textContent = u.email || '';
+  $('pName').value = prefill?.name || u.user_metadata?.full_name || ''; $('pCode').value = prefill?.code || ''; $('pClass').value = prefill?.cls || '';
+  errHtml ? box('pMsg', 'err', '', errHtml) : box('pMsg');
+  show('viewProfile');
+}
+async function saveNewProfile() {
+  const name = $('pName').value.trim(), code = $('pCode').value.trim(), cls = $('pClass').value.trim();
+  if (!name || !code) return box('pMsg', 'err', 'Hãy nhập họ tên và mã học sinh.');
+  $('pBtn').disabled = true;
+  try { await registerProfile(name, code, cls); lsDel('sh_pending'); await route(S.user, true); }
+  catch (e) { teacherAware('pMsg', e); }
+  finally { $('pBtn').disabled = false; }
+}
+function teacherAware(id, e) {
+  if (/giáo viên/i.test(e.message || '')) box(id, 'err', '', `${esc(e.message)}. <a class="underline font-semibold" href="${esc(LINKS.teacher)}">Mở trang giáo viên</a> hoặc đăng xuất rồi dùng email khác để đăng ký học sinh.`);
+  else box(id, 'err', errText(e));
+}
+
+// ---------- Điều hướng sau khi có phiên đăng nhập ----------
+async function route(user, force) {
+  const seq = ++S.routeSeq;
+  if (!user) { S.user = null; S.profile = null; return show('viewAuth'); }
+  S.user = user;
+  const { data: isS, error } = await db.rpc('is_student');
+  if (seq !== S.routeSeq) return;
+  if (error) { showProfileForm(user, null, esc(errText(error))); return; }
+  if (!isS) {
+    let pend = null; try { pend = JSON.parse(lsGet('sh_pending') || 'null'); } catch (e) {}
+    if (pend && pend.email === (user.email || '').toLowerCase() && pend.name && pend.code) {       // đăng ký từ trước khi xác nhận email
+      try { await registerProfile(pend.name, pend.code, pend.cls); lsDel('sh_pending'); return route(user, true); }
+      catch (e) { if (seq !== S.routeSeq) return; showProfileForm(user, pend, /giáo viên/i.test(e.message) ? `${esc(e.message)}. <a class="underline font-semibold" href="${esc(LINKS.teacher)}">Mở trang giáo viên</a>` : esc(errText(e))); return; }
+    }
+    showProfileForm(user, pend); return;
+  }
+  const { data: p } = await db.from('student_profiles').select('full_name, student_code, class_name').eq('user_id', user.id).maybeSingle();
+  if (seq !== S.routeSeq) return;
+  S.profile = p || { full_name: user.email, student_code: '', class_name: '' };
+  renderHeader(); show('viewApp');
+  const t = new URLSearchParams(location.search).get('tab');
+  setTab(TABS.some(x => x[0] === t) ? t : (force ? 'home' : S.tab));
+  await loadData();
+}
+function renderHeader() {
+  const p = S.profile, nm = p.full_name || S.user.email || '';
+  $('avatar').textContent = (nm.trim().split(/\s+/).pop() || '?').charAt(0).toUpperCase();
+  $('hName').textContent = nm; $('hSub').textContent = [p.student_code && 'Mã ' + p.student_code, p.class_name && 'Lớp ' + p.class_name].filter(Boolean).join(' · ');
+  $('greet').textContent = 'Xin chào, ' + (nm.trim().split(/\s+/).pop() || nm) + ' 👋';
+}
+
+// ---------- Hồ sơ ----------
+function openProfile() {
+  $('mpEmail').textContent = S.user?.email || ''; $('mpName').value = S.profile.full_name || ''; $('mpCode').value = S.profile.student_code || ''; $('mpClass').value = S.profile.class_name || '';
+  box('mpMsg'); $('profModal').classList.remove('hidden'); $('mpName').focus();
+}
+function closeProfile() { $('profModal').classList.add('hidden'); }
+async function saveProfile() {
+  const name = $('mpName').value.trim(), code = $('mpCode').value.trim(), cls = $('mpClass').value.trim();
+  if (!name || !code) return box('mpMsg', 'err', 'Họ tên và mã học sinh không được để trống.');
+  $('mpBtn').disabled = true;
+  const { data, error } = await db.from('student_profiles').update({ full_name: name.slice(0, 100), student_code: code.slice(0, 40), class_name: cls ? cls.slice(0, 40) : null }).eq('user_id', S.user.id).select('full_name, student_code, class_name');
+  $('mpBtn').disabled = false;
+  if (error) return box('mpMsg', 'err', errText(error));
+  if (!data?.length) return box('mpMsg', 'err', 'Không lưu được hồ sơ (không có quyền cập nhật).');
+  S.profile = data[0]; renderHeader(); closeProfile(); toast('Đã lưu hồ sơ.');
+}
+
+// ---------- Tab ----------
+function setTab(t) {
+  S.tab = t;
+  const mk = mob => TABS.map(([k, l]) => `<button onclick="setTab('${k}')" aria-current="${k === t}" class="${mob ? 'whitespace-nowrap px-3 py-2.5' : 'px-3 py-1.5 rounded-lg'} ${k === t ? (mob ? 'text-indigo-700 border-b-2 border-indigo-600' : 'bg-indigo-50 text-indigo-700') : 'text-slate-600 hover:' + (mob ? 'text-slate-900' : 'bg-slate-100')}">${l}</button>`).join('');
+  $('navDesk').innerHTML = mk(false); $('navMob').innerHTML = mk(true);
+  TABS.forEach(([k]) => $('pane' + k[0].toUpperCase() + k.slice(1)).classList.toggle('hidden', k !== t));
+  scrollTo({ top: 0 });
+}
+
+// ---------- Dữ liệu ----------
+async function loadData() {
+  box('loadErr');
+  const [p, r] = await Promise.all([
+    db.from('practice_attempts').select('id, title, grade, subject, chapters, total, auto_total, right_count, answered, score, duration_seconds, created_at').order('created_at', { ascending: false }).limit(500),
+    db.rpc('my_room_results')]);
+  const errs = [p.error, r.error].filter(Boolean);
+  if (errs.length) { $('loadErr').className = 'text-sm rounded-lg px-3 py-2 bg-red-100 text-red-700'; $('loadErr').textContent = errText(errs[0]); }
+  S.practice = p.data || []; S.rooms = Array.isArray(r.data) ? r.data : [];
+  S.items = [
+    ...S.practice.map(x => ({ kind: 'P', id: x.id, title: x.title, subject: x.subject || 'Khác', grade: x.grade, score: x.score == null ? null : +x.score, total: x.total, auto: x.auto_total, right: x.right_count,
+      answered: x.answered, secs: x.duration_seconds, at: x.created_at, status: 'done', chapters: x.chapters || [] })),
+    ...S.rooms.map(x => {
+      const done = !!x.submitted_at, live = !done && x.deadline && Date.now() < Date.parse(x.deadline);
+      return { kind: 'R', id: x.id, title: x.title, subject: x.subject || 'Khác', grade: x.grade, score: done && x.score != null ? +x.score : null, total: x.total, auto: x.auto_total, right: x.right,
+        answered: x.answered, secs: x.time_spent, at: x.submitted_at || x.started_at, status: done ? 'done' : live ? 'doing' : 'expired', violations: x.violations || 0, late: !!x.late,
+        showReview: !!x.show_review, shift: x.shift_name, roomCode: x.room_code, shiftCode: x.shift_code, deadline: x.deadline };
+    })
+  ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+  renderAll();
+}
+const reloadData = async () => { await loadData(); toast('Đã cập nhật số liệu.'); };
+const doneItems = () => S.items.filter(i => i.status === 'done');
+
+function renderAll() { renderStats(); renderTrend(); renderSubjects(); renderRecent(); renderDoing(); renderPractice(); renderRooms(); fillSubjectFilter(); renderHistory(); }
+
+// ---------- Hàng một bài làm (dùng ở nhiều nơi) ----------
+function rowHtml(i) {
+  const isP = i.kind === 'P', badge = isP ? '<span class="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700">Luyện tập</span>' : '<span class="px-2 py-0.5 rounded bg-amber-50 text-amber-800">Phòng thi</span>';
+  const meta = [i.subject, i.grade && 'Lớp ' + i.grade, i.shift, fmtDT(i.at), i.status === 'done' && i.secs ? fmtDur(i.secs) : ''].filter(Boolean).join(' · ');
+  let right = '', act = '';
+  if (i.status === 'done') {
+    right = `<div class="text-xl font-bold ${scoreColor(i.score)}">${fmtScore(i.score)}</div><div class="text-[11px] text-slate-500">${i.auto ? `${i.right}/${i.auto} câu đúng` : 'Tự luận'}</div>`;
+    act = (isP || i.showReview) ? `<a class="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200" href="${esc(examUrl('review=' + i.kind + i.id))}">Xem lại</a>` : '<span class="text-xs text-slate-400" title="Giáo viên chưa mở xem đáp án">Chưa mở đáp án</span>';
+    if (isP) act += ` <button onclick="delPractice(${i.id})" class="px-3 py-1 rounded-lg text-red-600 hover:bg-red-50">Xóa</button>`;
+  } else if (i.status === 'doing') {
+    right = '<div class="text-sm font-semibold text-amber-700">Đang làm dở</div>';
+    act = `<a class="px-3 py-1 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700" href="${esc(examUrl('room=' + encodeURIComponent(i.roomCode) + '&shift=' + encodeURIComponent(i.shiftCode)))}">Tiếp tục làm</a>`;
+  } else right = '<div class="text-sm text-slate-500">Hết giờ, chưa nộp</div>';
+  const flags = (i.violations ? `<span class="px-2 py-0.5 rounded ${i.violations > 2 ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-800'}">Vi phạm: ${i.violations}</span>` : '') + (i.late ? '<span class="px-2 py-0.5 rounded bg-slate-200 text-slate-700">Nộp muộn</span>' : '');
+  return `<div class="py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+    <div class="min-w-0 flex-1 basis-60"><div class="flex flex-wrap items-center gap-1.5 text-xs">${badge}${flags}</div>
+      <div class="font-medium mt-1 truncate" title="${esc(i.title)}">${esc(i.title)}</div><div class="text-xs text-slate-500">${esc(meta)}</div></div>
+    <div class="text-right min-w-[5.5rem]">${right}</div>
+    <div class="flex items-center gap-1 text-sm">${act}</div></div>`;
+}
+const emptyBox = (t, link) => `<div class="py-8 text-center text-sm text-slate-500">${t}${link || ''}</div>`;
+
+// ---------- Tổng quan ----------
+function renderStats() {
+  const d = doneItems(), sc = d.filter(i => i.score != null), n = d.length;
+  const avg = sc.length ? sc.reduce((a, i) => a + i.score, 0) / sc.length : null;
+  const best = sc.length ? sc.reduce((a, i) => i.score > a.score ? i : a, sc[0]) : null;
+  const secs = d.reduce((a, i) => a + (+i.secs || 0), 0);
+  const rt = d.reduce((a, i) => a + (i.right || 0), 0), au = d.reduce((a, i) => a + (i.auto || 0), 0);
+  const nP = d.filter(i => i.kind === 'P').length, nR = n - nP;
+  const card = (ico, label, val, sub, tone) => `<div class="bg-white rounded-2xl shadow-sm border p-4"><div class="flex items-center gap-2 text-sm text-slate-500"><span>${ico}</span>${label}</div>
+    <div class="text-3xl font-bold mt-1 ${tone || ''}">${val}</div><div class="text-xs text-slate-500 mt-0.5 truncate" title="${esc(sub)}">${esc(sub)}</div></div>`;
+  $('statGrid').innerHTML =
+    card('✅', 'Bài đã làm', n, `${nP} luyện tập · ${nR} phòng thi`) +
+    card('📈', 'Điểm trung bình', fmtScore(avg == null ? null : Math.round(avg * 100) / 100), au ? `Tỉ lệ câu đúng ${Math.round(rt / au * 100)}%` : 'Chưa có bài chấm điểm', scoreColor(avg)) +
+    card('🏆', 'Điểm cao nhất', best ? fmtScore(best.score) : '—', best ? best.title : 'Chưa có bài chấm điểm', 'text-emerald-600') +
+    card('⏱️', 'Thời gian học', fmtDur(secs), n ? `Trung bình ${fmtDur(secs / n)}/bài` : 'Chưa có bài làm');
+}
+function renderDoing() {
+  const l = S.items.filter(i => i.status === 'doing'), el = $('doingBox');
+  el.classList.toggle('hidden', !l.length);
+  el.innerHTML = l.map(i => `<div class="rounded-2xl border border-amber-300 bg-amber-50 p-4 flex flex-wrap items-center gap-3">
+    <div class="text-2xl">⏳</div><div class="flex-1 min-w-0"><div class="font-semibold">Bạn đang làm dở: ${esc(i.title)}</div>
+    <div class="text-sm text-amber-800">${esc(i.shift || '')} · hạn nộp ${fmtDT(i.deadline)}</div></div>
+    <a class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-4 py-2 text-sm font-semibold" href="${esc(examUrl('room=' + encodeURIComponent(i.roomCode) + '&shift=' + encodeURIComponent(i.shiftCode)))}">Tiếp tục làm bài</a></div>`).join('');
+}
+function renderRecent() { const l = S.items.slice(0, 5); $('recentList').innerHTML = l.length ? l.map(rowHtml).join('') : emptyBox('Bạn chưa có bài làm nào. ', `<a class="examLink text-indigo-600 underline" href="${esc(LINKS.exam)}">Luyện thi ngay</a>`); }
+
+// Biểu đồ đường: điểm 20 bài gần nhất (1 chuỗi, 1 màu; điểm là một trục 0–10)
+function trendPoints() { return doneItems().filter(i => i.score != null).slice(0, 20).reverse(); }
+function toggleTrend() { S.trendTable = !S.trendTable; renderTrend(); }
+function renderTrend() {
+  const pts = trendPoints(), el = $('trendBox'); $('trendToggle').textContent = S.trendTable ? 'Xem dạng biểu đồ' : 'Xem dạng bảng';
+  if (!pts.length) { el.innerHTML = emptyBox('Chưa có bài nào được chấm điểm để vẽ biểu đồ.'); return; }
+  if (S.trendTable) {
+    el.innerHTML = `<div class="max-h-64 overflow-y-auto"><table class="w-full text-sm"><thead class="text-left text-xs text-slate-500"><tr><th class="py-1">Ngày</th><th>Bài</th><th class="text-right">Điểm</th></tr></thead><tbody>${pts.slice().reverse().map(p =>
+      `<tr class="border-t"><td class="py-1 whitespace-nowrap">${fmtD(p.at)}</td><td class="truncate max-w-[14rem]">${esc(p.title)}</td><td class="text-right font-semibold">${fmtScore(p.score)}</td></tr>`).join('')}</tbody></table></div>`; return;
+  }
+  const W = 640, H = 230, L = 34, R = 14, T = 12, B = 30, iw = W - L - R, ih = H - T - B;
+  const x = i => L + (pts.length === 1 ? iw / 2 : i * iw / (pts.length - 1)), y = v => T + ih - v / 10 * ih;
+  const grid = [0, 5, 10].map(v => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="#e2e8f0" stroke-width="1"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="#64748b">${v}</text>`).join('');
+  const labels = pts.map((p, i) => (i === 0 || i === pts.length - 1 || i % Math.ceil(pts.length / 6) === 0) ? `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="#64748b">${fmtD(p.at)}</text>` : '').join('');
+  const line = pts.length > 1 ? `<polyline fill="none" stroke="#4f46e5" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="${pts.map((p, i) => `${x(i)},${y(p.score)}`).join(' ')}"/>` : '';
+  const dots = pts.map((p, i) => { const tip = `${fmtDT(p.at)} · ${p.title} · ${fmtScore(p.score)} điểm`;
+    return `<circle cx="${x(i)}" cy="${y(p.score)}" r="4" fill="#4f46e5" stroke="#fff" stroke-width="2"/><circle cx="${x(i)}" cy="${y(p.score)}" r="14" fill="transparent" data-tip="${esc(tip)}"/>`; }).join('');
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" class="w-full h-auto" role="img" aria-label="Biểu đồ điểm số ${pts.length} bài gần nhất">${grid}${line}${dots}${labels}</svg>
+    <p class="text-xs text-slate-500">${pts.length} bài gần nhất, thang điểm 10.</p>`;
+}
+
+// Điểm trung bình theo môn: một màu, thanh ngang, nhãn trực tiếp
+function renderSubjects() {
+  const m = {}; doneItems().filter(i => i.score != null).forEach(i => { (m[i.subject] ||= []).push(i.score); });
+  const rows = Object.entries(m).map(([s, a]) => ({ s, n: a.length, avg: a.reduce((x, y) => x + y, 0) / a.length })).sort((a, b) => b.avg - a.avg);
+  $('subjectBars').innerHTML = rows.length ? rows.map(r => `<div data-tip="${esc(`${r.s}: trung bình ${fmtScore(Math.round(r.avg * 100) / 100)} điểm (${r.n} bài)`)}">
+      <div class="flex justify-between text-sm"><span class="truncate">${esc(r.s)}</span><span class="font-semibold">${fmtScore(Math.round(r.avg * 100) / 100)} <span class="font-normal text-slate-500 text-xs">(${r.n} bài)</span></span></div>
+      <div class="h-2.5 bg-slate-100 rounded-r mt-1"><div class="h-full bg-indigo-600 rounded-r" style="width:${Math.max(2, r.avg * 10)}%"></div></div></div>`).join('')
+    : emptyBox('Chưa có dữ liệu theo môn.');
+}
+
+// ---------- Luyện thi / Phòng thi ----------
+function renderPractice() { const l = S.items.filter(i => i.kind === 'P').slice(0, 8); $('practiceList').innerHTML = l.length ? l.map(rowHtml).join('') : emptyBox('Chưa có bài luyện tập nào được lưu.'); }
+function renderRooms() { const l = S.items.filter(i => i.kind === 'R'); $('roomList').innerHTML = l.length ? l.map(rowHtml).join('') : emptyBox('Bạn chưa tham gia phòng thi nào.'); }
+function parseJoinLink() {
+  const v = $('jLink').value.trim(); if (!v) return;
+  let room = '', shift = '';
+  try { const u = new URL(v); room = u.searchParams.get('room') || ''; shift = u.searchParams.get('shift') || ''; } catch (e) {}
+  if (!room) { const m = v.match(/room=([^&\s#]+)/i), n = v.match(/shift=([^&\s#]+)/i); room = m ? decodeURIComponent(m[1]) : ''; shift = n ? decodeURIComponent(n[1]) : ''; }
+  if (room) $('jRoom').value = room; if (shift) $('jShift').value = shift;
+}
+function goRoom() {
+  const room = $('jRoom').value.trim(), shift = $('jShift').value.trim(), ok = /^[A-Za-z0-9_-]{2,40}$/;
+  if (!ok.test(room) || !ok.test(shift)) { $('jMsg').className = 'text-sm rounded-lg px-3 py-2 bg-red-100 text-red-700'; $('jMsg').textContent = 'Hãy nhập mã phòng và mã ca hợp lệ (chữ không dấu, số, - hoặc _).'; return; }
+  box('jMsg'); location.href = examUrl('room=' + encodeURIComponent(room) + '&shift=' + encodeURIComponent(shift));
+}
+
+// ---------- Lịch sử ----------
+function fillSubjectFilter() {
+  const cur = $('hSubject').value, subs = [...new Set(S.items.map(i => i.subject))].sort((a, b) => a.localeCompare(b, 'vi'));
+  $('hSubject').innerHTML = '<option value="">Mọi môn</option>' + subs.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join(''); $('hSubject').value = subs.includes(cur) ? cur : '';
+}
+let hTimer = null;
+const histTyped = () => { clearTimeout(hTimer); hTimer = setTimeout(histChanged, 300); };
+function histChanged() { S.hist.page = 0; renderHistory(); }
+function histList() {
+  const k = $('hKind').value, s = $('hSubject').value, q = $('hQ').value.trim().toLowerCase(), so = $('hSort').value;
+  let l = S.items.filter(i => (!k || i.kind === k) && (!s || i.subject === s) && (!q || i.title.toLowerCase().includes(q)));
+  const sc = i => i.score == null ? -1 : i.score;
+  if (so === 'old') l = l.slice().reverse(); else if (so === 'high') l = l.slice().sort((a, b) => sc(b) - sc(a)); else if (so === 'low') l = l.slice().sort((a, b) => (a.score == null ? 99 : a.score) - (b.score == null ? 99 : b.score));
+  return l;
+}
+function renderHistory() {
+  const l = histList(), pages = Math.max(1, Math.ceil(l.length / PAGE)); S.hist.page = Math.min(S.hist.page, pages - 1);
+  $('histInfo').textContent = `${l.length} bài làm`;
+  $('histList').innerHTML = l.length ? `<div class="px-4">${l.slice(S.hist.page * PAGE, S.hist.page * PAGE + PAGE).map(rowHtml).join('')}</div>` : emptyBox('Không có bài làm nào khớp bộ lọc.');
+  $('histPager').innerHTML = pages > 1 ? `<button onclick="histPage(-1)" ${S.hist.page === 0 ? 'disabled' : ''} class="px-3 py-1 rounded bg-white shadow-sm border disabled:opacity-40">← Trước</button><span>Trang ${S.hist.page + 1}/${pages}</span><button onclick="histPage(1)" ${S.hist.page + 1 >= pages ? 'disabled' : ''} class="px-3 py-1 rounded bg-white shadow-sm border disabled:opacity-40">Sau →</button>` : '';
+}
+function histPage(d) { S.hist.page += d; renderHistory(); scrollTo({ top: 0 }); }
+async function delPractice(id) {
+  if (!confirm('Xóa bài luyện tập này khỏi lịch sử? Không thể hoàn tác.')) return;
+  const { data, error } = await db.from('practice_attempts').delete().eq('id', id).select('id');
+  if (error) return toast('Lỗi: ' + error.message);
+  if (!data?.length) return toast('Không xóa được bài này.');
+  toast('Đã xóa khỏi lịch sử.'); await loadData();
+}
+function exportCsv() {
+  const l = histList(); if (!l.length) return toast('Không có dữ liệu để xuất.');
+  const q = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const st = { done: 'Đã nộp', doing: 'Đang làm dở', expired: 'Hết giờ, chưa nộp' };
+  const rows = [['Loại', 'Tên bài', 'Môn', 'Lớp', 'Điểm', 'Số câu', 'Câu đúng', 'Thời gian (giây)', 'Vi phạm', 'Trạng thái', 'Thời điểm']];
+  l.forEach(i => rows.push([i.kind === 'P' ? 'Luyện tập' : 'Phòng thi', i.title, i.subject, i.grade ?? '', i.score == null ? '' : fmtScore(i.score), i.total ?? '', i.right ?? '', i.secs ?? '', i.violations ?? '', st[i.status], fmtDT(i.at)]));
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + rows.map(r => r.map(q).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' }));
+  a.download = 'lich_su_lam_bai.csv'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeProfile(); });
+
+// ---------- Khởi động ----------
+authMode('login');
+db.auth.getSession().then(({ data }) => { S.authReady = true; route(data.session?.user || null); });
+db.auth.onAuthStateChange((ev, session) => {
+  if (!S.authReady) return;
+  const u = session?.user || null;
+  if (ev === 'TOKEN_REFRESHED' || ev === 'USER_UPDATED') return;                   // không tải lại trang khi chỉ gia hạn phiên
+  if ((u?.id || null) === (S.user?.id || null) && ev !== 'SIGNED_OUT') return;
+  route(u);
+});
+</script>
+</body>
+</html>

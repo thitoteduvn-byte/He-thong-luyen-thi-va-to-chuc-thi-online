@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Luyện thi online</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- KaTeX: hiển thị công thức LaTeX trong câu hỏi -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+<style>
+  body.room-mode #qbox { -webkit-user-select: none; user-select: none; }
+  body.room-mode #qbox input, body.room-mode #qbox textarea { -webkit-user-select: text; user-select: text; }
+</style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen">
+<div class="max-w-5xl mx-auto p-4">
+
+  <!-- ============ 0. MÀN HÌNH VÀO PHÒNG THI (exam.html?room=MA_PHONG&shift=MA_CA) ============ -->
+  <section id="screenJoin" class="hidden max-w-md mx-auto mt-12 bg-white p-6 rounded-xl shadow space-y-4">
+    <div class="text-center space-y-1">
+      <div class="text-xs uppercase tracking-wide text-indigo-600 font-semibold">Phòng thi online</div>
+      <h1 id="jTitle" class="text-2xl font-bold">Đang tải...</h1>
+      <p id="jSub" class="text-sm text-slate-500"></p>
+    </div>
+    <div id="jInfo" class="hidden rounded-lg bg-slate-50 border border-slate-200 px-4 py-3 text-sm space-y-1"></div>
+    <div id="jMsg" class="hidden text-sm rounded-lg px-3 py-2"></div>
+    <div id="jForm" class="hidden space-y-3">
+      <label class="block text-sm font-medium">Mã học sinh <input id="jCode" autocomplete="off" class="w-full border rounded p-2 mt-1 font-normal"></label>
+      <label class="block text-sm font-medium">Họ và tên <input id="jName" autocomplete="off" class="w-full border rounded p-2 mt-1 font-normal"></label>
+      <label class="block text-sm font-medium">Lớp <span class="font-normal text-slate-400">(không bắt buộc)</span> <input id="jClass" autocomplete="off" class="w-full border rounded p-2 mt-1 font-normal"></label>
+      <label id="jAccessBox" class="hidden block text-sm font-medium">Mã vào ca thi <input id="jAccess" autocomplete="off" class="w-full border rounded p-2 mt-1 font-normal"></label>
+      <p class="text-xs text-slate-500">Đồng hồ bắt đầu chạy ngay khi bạn bấm “Vào thi”. Nếu mất mạng hoặc tải lại trang, nhập lại đúng mã học sinh để làm tiếp đúng đề cũ.</p>
+      <button id="jBtn" onclick="joinRoom()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg font-semibold disabled:opacity-50">Vào thi</button>
+    </div>
+  </section>
+
+  <!-- ============ 1. MÀN HÌNH CHỌN ĐỀ ============ -->
+  <section id="screenStart" class="max-w-md mx-auto mt-12 bg-white p-6 rounded-xl shadow space-y-4">
+    <div class="text-center space-y-1">
+      <h1 class="text-2xl font-bold">Luyện thi online</h1>
+      <p class="text-base text-slate-500">Tạo đề thi theo chương trình và tự kiểm tra kiến thức.</p>
+    </div>
+    <label class="block text-sm font-medium">Lớp
+      <select id="grade" onchange="loadSubjects()" class="w-full border rounded p-2 mt-1">
+        <option value="10">Lớp 10</option><option value="11">Lớp 11</option><option value="12">Lớp 12</option>
+      </select></label>
+    <label class="block text-sm font-medium">Môn học
+      <select id="subject" onchange="loadChapters()" class="w-full border rounded p-2 mt-1"></select></label>
+    <div>
+      <div class="flex items-center justify-between">
+        <span class="text-sm font-medium">Chương / Chủ đề</span>
+        <span class="text-xs space-x-3">
+          <button type="button" onclick="setChecks('.chapChk', true)" class="text-indigo-600 underline">Tất cả chương</button>
+          <button type="button" onclick="setChecks('.chapChk', false)" class="text-indigo-600 underline">Bỏ chọn</button>
+        </span>
+      </div>
+      <div id="chapterBox" class="mt-1 max-h-48 overflow-y-auto border rounded p-2 space-y-1 text-sm"></div>
+    </div>
+    <div>
+      <span class="text-sm font-medium">Mức độ câu hỏi</span>
+      <div class="mt-1 grid grid-cols-2 gap-2 text-sm">
+        <label class="flex items-center gap-2"><input type="checkbox" class="diffChk" value="nhan_biet" checked> Nhận biết</label>
+        <label class="flex items-center gap-2"><input type="checkbox" class="diffChk" value="thong_hieu" checked> Thông hiểu</label>
+        <label class="flex items-center gap-2"><input type="checkbox" class="diffChk" value="van_dung" checked> Vận dụng</label>
+        <label class="flex items-center gap-2"><input type="checkbox" class="diffChk" value="van_dung_cao" checked> Vận dụng cao</label>
+      </div>
+    </div>
+    <div>
+      <div class="flex items-center justify-between">
+        <span class="text-sm font-medium">Dạng câu hỏi</span>
+        <span class="text-xs space-x-3">
+          <button type="button" onclick="setChecks('.typeChk', true)" class="text-indigo-600 underline">Đề chuẩn (4 dạng)</button>
+          <button type="button" onclick="setChecks('.typeChk', false)" class="text-indigo-600 underline">Bỏ chọn</button>
+        </span>
+      </div>
+      <div class="mt-1 grid grid-cols-2 gap-2 text-sm">
+        <label class="flex items-center gap-2"><input type="checkbox" class="typeChk" value="multiple_choice" checked> Trắc nghiệm</label>
+        <label class="flex items-center gap-2"><input type="checkbox" class="typeChk" value="true_false" checked> Đúng / Sai</label>
+        <label class="flex items-center gap-2"><input type="checkbox" class="typeChk" value="short_answer" checked> Trả lời ngắn</label>
+        <label class="flex items-center gap-2"><input type="checkbox" class="typeChk" value="essay" checked> Tự luận</label>
+      </div>
+      <p class="text-xs text-slate-500 mt-1">Tick đủ 4 dạng để làm đề chuẩn, hoặc chỉ chọn 1–2 dạng để luyện riêng.</p>
+    </div>
+    <label class="block text-sm font-medium">Số lượng câu hỏi
+      <select id="count" onchange="scheduleCheck()" class="w-full border rounded p-2 mt-1">
+        <option value="10">10 câu</option>
+        <option value="20">20 câu</option>
+        <option value="40">40 câu</option>
+      </select></label>
+    <!-- Thẻ "Thông tin đề thi" gộp: thông số đề + trạng thái số câu hỏi (cập nhật realtime) -->
+    <div class="rounded-lg bg-slate-50 border border-slate-200 px-4 py-3 space-y-1" role="status" aria-live="polite">
+      <div class="flex items-center justify-between">
+        <div class="font-semibold text-sm text-slate-800">Thông tin đề thi</div>
+        <span id="badge" class="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-slate-200 text-slate-600">Đang kiểm tra...</span>
+      </div>
+      <div id="sumMain" class="text-sm text-slate-700"></div>
+      <div id="sumScope" class="text-sm text-slate-700"></div>
+      <div id="cardAlert" class="hidden text-sm"></div>
+      <p class="text-xs italic text-slate-500">Đề thi được tạo ngẫu nhiên theo lựa chọn của bạn.</p>
+    </div>
+
+    <button id="startBtn" onclick="startExam()" disabled
+      class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-indigo-600">Bắt đầu làm bài</button>
+  </section>
+
+  <!-- ============ 2. MÀN HÌNH LÀM BÀI ============ -->
+  <section id="screenExam" class="hidden">
+    <div class="sticky top-0 z-10 bg-slate-100 py-2 flex items-center justify-between">
+      <div id="examTitle" class="font-semibold"></div>
+      <div class="flex items-center gap-3">
+        <div id="timer" class="font-mono text-xl font-bold bg-white px-4 py-1 rounded-lg shadow">00:00</div>
+        <button onclick="submitExam(false)" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold">Nộp bài</button>
+      </div>
+    </div>
+    <div id="netMsg" class="hidden text-sm rounded-lg bg-amber-100 text-amber-800 px-3 py-2 mt-1"></div>
+    <div id="vioBar" class="hidden text-sm rounded-lg px-3 py-2 mt-1 border" role="status" aria-live="polite"></div>
+    <div class="grid md:grid-cols-[1fr_16rem] gap-4 mt-2">
+      <div class="bg-white p-5 rounded-xl shadow">
+        <div id="qbox"></div>
+        <div class="flex justify-between mt-6">
+          <button onclick="go(-1)" class="px-4 py-2 rounded-lg bg-slate-200 font-semibold">← Câu trước</button>
+          <button onclick="go(1)" class="px-4 py-2 rounded-lg bg-slate-200 font-semibold">Câu sau →</button>
+        </div>
+      </div>
+      <aside class="bg-white p-4 rounded-xl shadow h-fit md:order-last order-first">
+        <div class="text-sm font-semibold mb-2">Danh sách câu hỏi</div>
+        <div id="nav" class="grid grid-cols-5 gap-2"></div>
+        <div class="text-xs text-slate-500 mt-3">Màu tím: đã trả lời · Viền đậm: đang xem</div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ============ 3. MÀN HÌNH KẾT QUẢ ============ -->
+  <section id="screenResult" class="hidden">
+    <div class="bg-white p-6 rounded-xl shadow text-center">
+      <div class="text-sm text-slate-500">Điểm của bạn (thang 10)</div>
+      <div id="score" class="text-5xl font-bold text-indigo-600 my-2"></div>
+      <div id="stats" class="flex flex-wrap justify-center gap-x-6 gap-y-1 text-sm font-medium"></div>
+      <div id="scoreNote" class="text-xs text-slate-500 mt-2 space-y-1"></div>
+      <div class="mt-4 flex justify-center gap-3">
+        <button onclick="toggleWrong()" id="wrongBtn" class="px-4 py-2 rounded-lg bg-slate-200 font-semibold">Chỉ xem câu sai/chưa làm</button>
+        <button id="againBtn" onclick="backToStart()" class="px-4 py-2 rounded-lg bg-indigo-600 text-white font-semibold">Làm đề khác</button>
+      </div>
+    </div>
+    <div class="grid grid-cols-10 gap-2 my-4 max-w-md mx-auto" id="resultNav"></div>
+    <div id="review" class="space-y-4"></div>
+  </section>
+</div>
+
+<script>
+// ================== CẤU HÌNH KẾT NỐI (điền thông tin của bạn) ==================
+const SUPABASE_URL = 'https://xzznmfgihzjeqsmiuypi.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_dUldhQYF1ETrSCZ4jiy3Og_ygfkm9XW';
+// ===============================================================================
+
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const LETTERS = ['A', 'B', 'C', 'D'];
+// Phút làm bài trung bình cho mỗi dạng câu hỏi
+const TIME = { multiple_choice: 1.5, true_false: 3, short_answer: 2, essay: 6 };
+const TYPE_NAME = { multiple_choice: 'Trắc nghiệm', true_false: 'Đúng/Sai', short_answer: 'Trả lời ngắn', essay: 'Tự luận' };
+const TF_KEYS = ['a', 'b', 'c', 'd'];
+const TF_PTS = [0, 0.1, 0.25, 0.5, 1];             // 0/1/2/3/4 ý đúng -> điểm của câu Đúng/Sai
+const escA = s => esc(s).replace(/"/g, '&quot;');
+
+let questions = [], answers = {}, cur = 0, timerId = null, onlyWrong = false, examInfo = '';
+
+function screen(name) {
+  ['Join', 'Start', 'Exam', 'Result'].forEach(n => $('screen' + n).classList.toggle('hidden', n !== name));
+  window.scrollTo(0, 0);
+}
+
+// ---------- KaTeX ----------
+// Tự bọc $...$ cho các đoạn LaTeX (\sqrt, \pi, \frac, x^2...) chưa có dấu phân cách.
+// Chuỗi đã có $, \( hoặc \[ thì giữ nguyên.
+const T_ATOM  = String.raw`\\[a-zA-Z]+(?:\[[^\]]*\])?(?:\{(?:[^{}]|\{[^{}]*\})*\})*`;  // \sqrt{..}, \frac{..}{..}
+const T_SUP   = String.raw`[\^_](?:\{(?:[^{}]|\{[^{}]*\})*\}|[A-Za-z0-9])`;            // ^2, ^{n+1}, _i
+// ký tự dính liền: số, toán tử, biến 1 chữ cái; hoặc 1 dấu cách đứng trước toán tử/biến đơn/lệnh LaTeX
+const T_PLAIN = String.raw`[0-9.()=+\-*/]|[A-Za-z](?![\p{L}])| (?=[=+\-*/\\]|[A-Za-z0-9](?![\p{L}\p{N}]))`;
+const T_BODY  = `(?:${T_PLAIN}|${T_ATOM}|${T_SUP})*(?:${T_ATOM}|${T_SUP})(?:${T_PLAIN}|${T_ATOM}|${T_SUP})*`;
+// nhóm 1: ký tự đứng trước (ranh giới từ, tránh cắt giữa từ tiếng Việt), nhóm 2: đoạn công thức
+const T_RUN = new RegExp(String.raw`(^|[^\p{L}\p{N}]|(?=\\))((?! )${T_BODY})`, 'gu');
+
+function autoWrapLatex(s) {
+  s = String(s ?? '').replace(/\\\\(?=[a-zA-Z])/g, '\\');          // "\\frac" (gạch chéo kép) -> "\frac"
+  if (/\$|\\\(|\\\[/.test(s)) return s;                              // đã có dấu phân cách
+  return s.replace(T_RUN, (_m, pre, run) => {
+    const tail = (run.match(/[.\s]+$/) || [''])[0];                  // không kéo dấu chấm/cách cuối vào công thức
+    return pre + '$' + run.slice(0, run.length - tail.length) + '$' + tail;
+  });
+}
+const tex = s => esc(autoWrapLatex(s));                              // bọc $ rồi escape HTML
+
+function math() {
+  // KaTeX tải bằng defer: nếu chưa sẵn sàng thì đợi trang tải xong rồi vẽ lại
+  if (typeof renderMathInElement !== 'function') { window.addEventListener('load', math, { once: true }); return; }
+  renderMathInElement(document.body, {
+    delimiters: [
+      { left: '$$', right: '$$', display: true }, { left: '\\[', right: '\\]', display: true },
+      { left: '$', right: '$', display: false }, { left: '\\(', right: '\\)', display: false }
+    ], throwOnError: false
+  });
+}
+// ---------- Thẻ "Thông tin đề thi": thông số + trạng thái số câu khả dụng ----------
+const BADGE_STYLE = {
+  ok:    'bg-green-100 text-green-700',
+  warn:  'bg-orange-100 text-orange-700',
+  error: 'bg-red-100 text-red-700',
+  info:  'bg-slate-200 text-slate-600'
+};
+const ALERT_STYLE = { warn: 'text-orange-700', error: 'text-red-600' };
+let canStart = false, starting = false;
+
+function syncBtn() { $('startBtn').disabled = !canStart || starting; }
+
+// type: ok | warn | error | info; badge: chữ trong badge; msg: dòng cảnh báo ngắn (nếu có)
+function setStatus(type, badge, msg = '') {
+  canStart = type === 'ok';                     // chỉ cho bắt đầu khi trạng thái là "Đủ câu hỏi"
+  $('badge').textContent = badge;
+  $('badge').className = 'text-xs font-semibold px-2.5 py-0.5 rounded-full ' + BADGE_STYLE[type];
+  $('cardAlert').innerHTML = msg;
+  $('cardAlert').className = msg ? 'text-sm ' + (ALERT_STYLE[type] || 'text-slate-600') : 'hidden';
+  syncBtn();
+}
+const selChapters = () => [...document.querySelectorAll('.chapChk:checked')].map(c => chapterList[Number(c.dataset.i)]);
+const selLevels = () => [...document.querySelectorAll('.diffChk:checked')].map(c => c.value);
+const selTypes = () => [...document.querySelectorAll('.typeChk:checked')].map(c => c.value);
+
+// Dòng 1: X câu hỏi · Y phút (Y = số câu x MIN_PER_QUESTION) | Dòng 2: số chương · số mức độ
+function updateSummary() {
+  const n = Number($('count').value), ts = selTypes();
+  const avg = ts.length ? ts.reduce((a, t) => a + TIME[t], 0) / ts.length : 1.5;
+  $('sumMain').innerHTML = `<b>${n}</b> câu hỏi · khoảng <b>${Math.round(n * avg)}</b> phút`;
+  $('sumScope').innerHTML = `<b>${selChapters().length}</b> chương · <b>${selLevels().length}</b> mức độ · <b>${ts.length}</b> dạng` + (ts.length === 4 ? ' (đề chuẩn)' : '');
+}
+
+// Gọi mỗi khi học sinh đổi lớp / môn / chương / mức độ / số câu: cập nhật thẻ ngay,
+// báo thiếu lựa chọn ngay, còn đếm số câu trong ngân hàng thì chờ 250ms (debounce) rồi mới truy vấn.
+let checkSeq = 0, checkTimer;
+function scheduleCheck() {
+  updateSummary();
+  clearTimeout(checkTimer);
+  checkSeq++;                                   // bỏ qua mọi kết quả đếm cũ còn đang chạy
+  if (!$('subject').value) return setStatus('warn', 'Thiếu câu hỏi', 'Lớp này chưa có câu hỏi trong ngân hàng.');
+  if (!selChapters().length) return setStatus('warn', 'Thiếu lựa chọn', 'Hãy chọn ít nhất 1 chương.');
+  if (!selLevels().length) return setStatus('warn', 'Thiếu lựa chọn', 'Hãy chọn ít nhất 1 mức độ câu hỏi.');
+  if (!selTypes().length) return setStatus('warn', 'Thiếu lựa chọn', 'Hãy chọn ít nhất 1 dạng câu hỏi.');
+  setStatus('info', 'Đang kiểm tra...');
+  checkTimer = setTimeout(checkAvailability, 250);
+}
+
+async function checkAvailability() {
+  const seq = ++checkSeq, want = Number($('count').value), types = selTypes();
+  const { data, error } = await db.from('questions').select('question_type')
+    .eq('grade', Number($('grade').value)).eq('subject', $('subject').value)
+    .in('chapter', selChapters()).in('difficulty', selLevels()).in('question_type', types).limit(1000);
+  if (seq !== checkSeq) return;
+  if (error) return setStatus('error', 'Lỗi kết nối', esc(error.message));
+  const n = data.length, by = t => data.filter(r => r.question_type === t).length;
+  const detail = types.map(t => `${TYPE_NAME[t]}: <b>${by(t)}</b>`).join(' · ');
+  if (n >= want) {
+    const empty = types.filter(t => !by(t)).map(t => TYPE_NAME[t]);
+    return setStatus('ok', 'Đủ câu hỏi', empty.length ? `Chưa có câu hỏi dạng ${empty.join(', ')}; đề sẽ lấy từ các dạng còn lại.` : detail);
+  }
+  setStatus('warn', 'Không đủ câu hỏi', (n === 0 ? 'Chưa có câu hỏi nào phù hợp.' : `Ngân hàng chỉ có <b>${n}</b> câu phù hợp (${detail}).`) + ' Vui lòng thay đổi lựa chọn.');
+}
+
+// ---------- 1. Chọn đề ----------
+let subjSeq = 0, chapSeq = 0;   // chống kết quả cũ ghi đè khi học sinh đổi lựa chọn nhanh
+let chapterList = [];
+
+async function loadSubjects() {
+  const seq = ++subjSeq, sel = $('subject');
+  sel.innerHTML = '<option>Đang tải...</option>';
+  setStatus('info', 'Đang tải...');
+  const { data, error } = await db.from('questions').select('subject').eq('grade', Number($('grade').value)).limit(1000);
+  if (seq !== subjSeq) return;
+  if (error) {
+    sel.innerHTML = ''; chapterList = []; $('chapterBox').innerHTML = '';
+    return setStatus('error', 'Lỗi kết nối', esc(error.message));
+  }
+  const subjects = [...new Set(data.map(r => r.subject))].sort((a, b) => a.localeCompare(b, 'vi'));
+  sel.innerHTML = subjects.length
+    ? subjects.map(s => `<option>${esc(s)}</option>`).join('')
+    : '<option value="">Chưa có môn nào</option>';
+  await loadChapters();
+}
+
+// Tương đương SELECT DISTINCT chapter FROM questions WHERE grade = ? AND subject = ?
+// (supabase-js không có DISTINCT nên lấy cột chapter rồi loại trùng ở trình duyệt)
+async function loadChapters() {
+  const seq = ++chapSeq, box = $('chapterBox'), subject = $('subject').value;
+  chapterList = [];
+  if (!subject) { box.innerHTML = '<div class="text-slate-500">Chưa chọn môn.</div>'; return scheduleCheck(); }
+  box.innerHTML = '<div class="text-slate-500">Đang tải danh sách chương...</div>';
+  setStatus('info', 'Đang tải...');
+  const { data, error } = await db.from('questions').select('chapter')
+    .eq('grade', Number($('grade').value)).eq('subject', subject).limit(1000);
+  if (seq !== chapSeq) return;
+  if (error) { box.innerHTML = ''; return setStatus('error', 'Lỗi tải chương', esc(error.message)); }
+  chapterList = [...new Set(data.map(r => r.chapter).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'vi', { numeric: true }));   // "Chương 2" đứng trước "Chương 10"
+  box.innerHTML = chapterList.length
+    ? chapterList.map((c, i) => `<label class="flex items-start gap-2"><input type="checkbox" class="chapChk mt-1" data-i="${i}" checked><span>${esc(c)}</span></label>`).join('')
+    : '<div class="text-slate-500">Môn này chưa có chương nào.</div>';
+  scheduleCheck();
+}
+
+function setChecks(selector, on) { document.querySelectorAll(selector).forEach(c => c.checked = on); scheduleCheck(); }
+
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+
+// ---------- 2. Làm bài ----------
+async function startExam() {
+  const grade = Number($('grade').value), subject = $('subject').value, want = Number($('count').value);
+  if (!subject || !canStart) return;           // nút đã bị khóa khi chưa đủ câu hỏi, đây là chốt chặn thứ hai
+  const chapters = selChapters(), difficulties = selLevels(), types = selTypes();
+  starting = true; syncBtn(); $('startBtn').textContent = 'Đang tải đề...';
+
+  let query = db.from('questions')
+    .select('id, question_type, content, image_url, options, correct_answer, explanation')
+    .eq('grade', grade).eq('subject', subject);
+  query = query.in('chapter', chapters).in('difficulty', difficulties).in('question_type', types);
+  const { data, error } = await query.limit(1000);
+
+  starting = false; $('startBtn').textContent = 'Bắt đầu làm bài';
+  if (error) { setStatus('error', 'Lỗi tải đề', esc(error.message)); canStart = true; return syncBtn(); }  // cho thử lại
+  if (!data.length) return scheduleCheck();
+  syncBtn();
+
+  questions = pickQuestions(data, types, want);
+  answers = {}; cur = 0; onlyWrong = false;
+  examInfo = `Lớp ${grade} · ${subject}` + (chapters.length === chapterList.length ? '' : chapters.length === 1 ? ` · ${chapters[0]}` : ` · ${chapters.length} chương`);
+  $('examTitle').textContent = `${examInfo} · ${questions.length} câu`;
+
+  const secs = Math.round(questions.reduce((a, q) => a + TIME[q.question_type], 0) * 60);
+  const end = Date.now() + secs * 1000;
+  clearInterval(timerId);
+  tick(end);
+  timerId = setInterval(() => tick(end), 500);
+
+  screen('Exam');
+  showQuestion(0);
+  window.onbeforeunload = e => { e.preventDefault(); e.returnValue = ''; };
+}
+
+// Chia đều số câu giữa các dạng đã chọn (xoay vòng); dạng nào thiếu câu thì dạng khác bù. Đề xếp theo thứ tự dạng.
+function pickQuestions(data, types, want) {
+  const g = {}, take = {};
+  types.forEach(t => { g[t] = shuffle(data.filter(q => q.question_type === t)); take[t] = 0; });
+  let left = want, moved = true;
+  while (left > 0 && moved) {
+    moved = false;
+    for (const t of types) if (left > 0 && take[t] < g[t].length) { take[t]++; left--; moved = true; }
+  }
+  return types.flatMap(t => g[t].slice(0, take[t]));
+}
+
+function tick(end) {
+  const left = Math.max(0, Math.ceil((end - Date.now()) / 1000));
+  $('timer').textContent = String(Math.floor(left / 60)).padStart(2, '0') + ':' + String(left % 60).padStart(2, '0');
+  $('timer').className = 'font-mono text-xl font-bold px-4 py-1 rounded-lg shadow ' + (left <= 60 ? 'bg-red-100 text-red-600' : 'bg-white');
+  if (left === 0) submitExam(true);
+}
+
+function showQuestion(i) {
+  cur = i;
+  const q = questions[i], t = q.question_type, a = answers[i];
+  let body;
+  if (t === 'multiple_choice') {
+    body = LETTERS.map(L => `
+      <button onclick="choose('${L}')" class="w-full text-left border rounded-lg p-3 flex gap-3 ${a === L ? 'border-indigo-600 bg-indigo-50' : 'hover:bg-slate-50'}">
+        <span class="font-bold">${L}.</span><span class="whitespace-pre-wrap">${tex(q.options?.[L])}</span>
+      </button>`).join('');
+  } else if (t === 'true_false') {
+    body = '<div class="text-sm text-slate-500">Chọn Đúng hoặc Sai cho từng ý.</div>' + TF_KEYS.map(k => `
+      <div class="border rounded-lg p-3 flex flex-col md:flex-row md:items-center gap-2">
+        <div class="flex gap-2 flex-1"><b>${k})</b><span class="whitespace-pre-wrap">${tex(q.options?.[k])}</span></div>
+        <div class="flex gap-2 shrink-0">${['Đ', 'S'].map(v => `
+          <button onclick="chooseTF('${k}','${v}')" class="px-4 py-1 rounded-lg border font-semibold ${a?.[k] === v ? 'border-indigo-600 bg-indigo-600 text-white' : 'hover:bg-slate-50'}">${v === 'Đ' ? 'Đúng' : 'Sai'}</button>`).join('')}</div>
+      </div>`).join('');
+  } else if (t === 'short_answer') {
+    body = `<input id="ansText" value="${escA(a || '')}" oninput="typeAns(this.value)" placeholder="Nhập đáp án (số hoặc văn bản ngắn)" class="w-full border rounded-lg p-3">`;
+  } else {
+    body = `<textarea id="ansText" rows="10" oninput="typeAns(this.value)" placeholder="Trình bày bài làm của bạn..." class="w-full border rounded-lg p-3">${esc(a || '')}</textarea>`;
+  }
+  $('qbox').innerHTML = `
+    <div class="text-sm text-slate-500 mb-2">Câu ${i + 1} / ${questions.length} · ${TYPE_NAME[t]}</div>
+    <div class="whitespace-pre-wrap font-medium text-lg">${tex(q.content)}</div>
+    ${q.image_url ? `<img src="${esc(q.image_url)}" alt="" class="max-h-64 my-3 rounded border">` : ''}
+    <div class="mt-4 space-y-2">${body}</div>`;
+  math();
+  renderNav();
+}
+
+function choose(L) { answers[cur] = L; saveBackup(); showQuestion(cur); }
+function chooseTF(k, v) { answers[cur] = { ...(answers[cur] || {}), [k]: v }; saveBackup(); showQuestion(cur); }
+function typeAns(v) { answers[cur] = v; saveBackup(); renderNav(); }      // không vẽ lại câu hỏi để giữ con trỏ khi gõ
+
+// ---------- Chấm điểm theo dạng ----------
+const normSA = s => String(s ?? '').trim().toLowerCase().replace(/\s+/g, '').replace(/,/g, '.');
+function sameSA(a, b) {
+  if (a === b) return true;
+  const x = Number(a), y = Number(b);
+  return a !== '' && b !== '' && !isNaN(x) && !isNaN(y) && Math.abs(x - y) <= 1e-9 * Math.max(1, Math.abs(y));
+}
+// Trả về { s: right|wrong|partial|blank|essay, pts } (essay không có pts: không chấm tự động)
+function gradeQ(q, a) {
+  const t = q.question_type;
+  if (t === 'multiple_choice') return a === undefined ? { s: 'blank' } : a === q.correct_answer ? { s: 'right', pts: 1 } : { s: 'wrong', pts: 0 };
+  if (t === 'true_false') {
+    if (!a || !Object.keys(a).length) return { s: 'blank' };
+    const key = String(q.correct_answer || '').split(',').map(x => x.trim());
+    const k = TF_KEYS.filter((L, j) => a[L] === key[j]).length;
+    return { s: k === 4 ? 'right' : k === 0 ? 'wrong' : 'partial', pts: TF_PTS[k], k };
+  }
+  if (t === 'short_answer') {
+    if (!a || !a.trim()) return { s: 'blank' };
+    const ok = String(q.correct_answer ?? '').split('|').some(c => sameSA(normSA(a), normSA(c)));
+    return ok ? { s: 'right', pts: 1 } : { s: 'wrong', pts: 0 };
+  }
+  return a && a.trim() ? { s: 'essay' } : { s: 'blank' };
+}
+
+function go(d) { const n = cur + d; if (n >= 0 && n < questions.length) showQuestion(n); }
+
+function renderNav() {
+  $('nav').innerHTML = questions.map((q, i) => {
+    const done = gradeQ(q, answers[i]).s !== 'blank';
+    return `<button onclick="showQuestion(${i})" class="h-9 rounded text-sm font-semibold border
+      ${done ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white'} ${i === cur ? 'ring-2 ring-offset-1 ring-slate-800' : ''}">${i + 1}</button>`;
+  }).join('');
+}
+
+// ---------- 3. Kết quả ----------
+const S_BG = { right: 'bg-green-500', wrong: 'bg-red-500', partial: 'bg-amber-500', essay: 'bg-sky-500', blank: 'bg-slate-400' };
+const S_BORDER = { right: 'border-green-500', wrong: 'border-red-500', partial: 'border-amber-500', essay: 'border-sky-500', blank: 'border-slate-400' };
+
+function submitExam(auto) {
+  if (ROOM_MODE) return submitRoom(auto);          // chế độ phòng thi: nộp lên máy chủ
+  const res = questions.map((q, i) => gradeQ(q, answers[i]));
+  const blank = res.filter(r => r.s === 'blank').length;
+  if (!auto && blank > 0 && !confirm(`Bạn còn ${blank} câu chưa trả lời. Vẫn nộp bài?`)) return;
+  if (!auto && blank === 0 && !confirm('Nộp bài ngay bây giờ?')) return;
+
+  clearInterval(timerId);
+  window.onbeforeunload = null;
+
+  const cnt = s => res.filter(r => r.s === s).length;
+  const autoN = questions.filter(q => q.question_type !== 'essay').length;       // số câu được chấm tự động
+  const pts = res.reduce((a, r) => a + (r.pts || 0), 0);
+  $('score').textContent = autoN ? (pts / autoN * 10).toFixed(1).replace('.0', '') : '—';
+  $('stats').innerHTML = `
+    <span class="text-green-600">✔ Đúng: ${cnt('right')}</span>
+    ${cnt('partial') ? `<span class="text-amber-600">◐ Đúng một phần: ${cnt('partial')}</span>` : ''}
+    <span class="text-red-600">✘ Sai: ${cnt('wrong')}</span>
+    ${cnt('essay') ? `<span class="text-sky-600">✎ Tự luận đã làm: ${cnt('essay')}</span>` : ''}
+    <span class="text-slate-500">○ Chưa làm: ${blank}</span>`;
+  const has = t => questions.some(q => q.question_type === t);
+  $('scoreNote').innerHTML = [
+    has('essay') ? 'Câu tự luận không tính vào điểm: hãy tự đối chiếu bài làm với hướng dẫn chấm bên dưới.' : '',
+    has('true_false') ? 'Câu Đúng/Sai: đúng 1, 2, 3, 4 ý được 0,1 – 0,25 – 0,5 – 1 điểm.' : ''
+  ].filter(Boolean).map(t => `<p>${t}</p>`).join('');
+  $('resultNav').innerHTML = res.map((r, i) =>
+    `<a href="#rq${i}" class="h-8 rounded text-xs font-semibold flex items-center justify-center text-white ${S_BG[r.s]}">${i + 1}</a>`).join('');
+
+  window._res = res;
+  renderReview();
+  screen('Result');
+  if (auto) alert('Hết giờ! Bài làm đã được nộp tự động.');
+}
+
+function reviewBody(q, a, r) {
+  const t = q.question_type, vn = v => v === 'Đ' ? 'Đúng' : 'Sai';
+  if (t === 'multiple_choice') return LETTERS.map(L => {
+    const isRight = L === q.correct_answer, isMine = L === a;
+    const cls = isRight ? 'bg-green-100 border-green-500' : (isMine ? 'bg-red-100 border-red-500' : 'border-transparent');
+    return `<div class="border rounded p-2 flex gap-2 ${cls}"><b>${L}.</b><span class="whitespace-pre-wrap">${tex(q.options?.[L])}</span>
+      ${isRight ? '<span class="ml-auto text-green-700 text-xs font-bold">Đáp án đúng</span>' : (isMine ? '<span class="ml-auto text-red-700 text-xs font-bold">Bạn chọn</span>' : '')}</div>`;
+  }).join('');
+  if (t === 'true_false') {
+    const key = String(q.correct_answer || '').split(',').map(x => x.trim());
+    return TF_KEYS.map((k, j) => {
+      const mine = a?.[k], cls = mine === undefined ? 'border-slate-200' : mine === key[j] ? 'bg-green-100 border-green-500' : 'bg-red-100 border-red-500';
+      return `<div class="border rounded p-2 flex flex-col md:flex-row gap-1 md:gap-2 ${cls}"><div class="flex gap-2"><b>${k})</b><span class="whitespace-pre-wrap">${tex(q.options?.[k])}</span></div>
+        <span class="md:ml-auto text-xs font-bold md:whitespace-nowrap">Đáp án: ${vn(key[j])} · Bạn chọn: ${mine ? vn(mine) : 'chưa chọn'}</span></div>`;
+    }).join('') + (r.k !== undefined ? `<div class="text-sm font-semibold">Đúng ${r.k}/4 ý · ${r.pts} điểm</div>` : '');
+  }
+  if (t === 'short_answer') return `
+    <div class="border rounded p-2 ${r.s === 'right' ? 'bg-green-100 border-green-500' : 'bg-red-100 border-red-500'}"><b>Bạn trả lời:</b> ${a && a.trim() ? esc(a) : '<i>chưa trả lời</i>'}</div>
+    <div class="border rounded p-2 bg-green-100 border-green-500"><b>Đáp án đúng:</b> ${tex(String(q.correct_answer ?? '').split('|').join('  hoặc  '))}</div>`;
+  return `<div class="border rounded p-2 bg-sky-50 border-sky-300"><b>Bài làm của bạn:</b><div class="whitespace-pre-wrap">${a && a.trim() ? esc(a) : '<i>chưa làm</i>'}</div></div>`;
+}
+
+function renderReview() {
+  $('wrongBtn').textContent = onlyWrong ? 'Xem tất cả câu' : 'Chỉ xem câu sai/chưa làm';
+  const LABEL = { right: 'Đúng', wrong: 'Sai', partial: 'Đúng một phần', essay: 'Tự luận (tự đối chiếu)', blank: 'Chưa làm' };
+  $('review').innerHTML = questions.map((q, i) => {
+    const r = window._res[i], s = r.s;
+    if (onlyWrong && s === 'right') return '';
+    return `
+    <div id="rq${i}" class="bg-white p-5 rounded-xl shadow border-l-4 ${S_BORDER[s]}">
+      <div class="text-sm font-semibold mb-1">Câu ${i + 1} · ${TYPE_NAME[q.question_type]} · ${LABEL[s]}</div>
+      <div class="whitespace-pre-wrap font-medium">${tex(q.content)}</div>
+      ${q.image_url ? `<img src="${esc(q.image_url)}" alt="" class="max-h-56 my-3 rounded border">` : ''}
+      <div class="mt-3 space-y-1">${reviewBody(q, answers[i], r)}</div>
+      <div class="mt-3 text-sm bg-slate-50 rounded p-3">
+        <b>${q.question_type === 'essay' ? 'Hướng dẫn chấm / Dàn ý:' : 'Lời giải:'}</b>
+        <div class="whitespace-pre-wrap">${q.explanation ? tex(q.explanation) : 'Chưa có lời giải cho câu này.'}</div>
+      </div>
+    </div>`;
+  }).join('');
+  math();
+}
+
+function toggleWrong() { onlyWrong = !onlyWrong; renderReview(); }
+function backToStart() { screen('Start'); loadSubjects(); }
+
+
+// =====================================================================
+// CHẾ ĐỘ PHÒNG THI:  exam.html?room=MA_PHONG&shift=MA_CA
+// Máy chủ kiểm tra ca thi + mã vào ca, rút đề theo ma trận, chấm điểm. Trình duyệt không nhận đáp án trước khi nộp.
+// =====================================================================
+const QS = new URLSearchParams(location.search);
+const ROOM = (QS.get('room') || '').trim(), SHIFT = (QS.get('shift') || '').trim();
+const ROOM_MODE = !!(ROOM && SHIFT);
+let sess = null, clockOff = 0, joining = false, submitting = false, nextTry = 0, joinData = null, joinTimer = null, joinN = 0, joinLast = 0;
+
+const fmtDT = d => new Date(d).toLocaleString('vi-VN', { hour12: false, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const fmtLeft = sec => { sec = Math.max(0, sec); const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60; return (h ? h + ' giờ ' : '') + m + ' phút ' + String(s).padStart(2, '0') + ' giây'; };
+const bkKey = () => `exam_room:${ROOM}:${SHIFT}:${(sess?.student.code || '').toLowerCase()}`;
+const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+const lsDel = k => { try { localStorage.removeItem(k); } catch (e) {} };
+function saveBackup() { if (ROOM_MODE && sess) lsSet(bkKey(), JSON.stringify({ rid: sess.result_id, a: answers })); }   // phòng khi F5 / mất mạng
+
+function jMsg(text, kind) {
+  const el = $('jMsg'); el.textContent = text || '';
+  el.className = text ? 'text-sm rounded-lg px-3 py-2 ' + ({ err: 'bg-red-100 text-red-700', warn: 'bg-amber-100 text-amber-800', ok: 'bg-green-100 text-green-700' }[kind] || 'bg-slate-100') : 'hidden';
+}
+async function loadJoin() {
+  const { data, error } = await db.rpc('exam_join_info', { p_room: ROOM, p_shift: SHIFT });
+  if (error) { $('jTitle').textContent = 'Không vào được phòng thi'; $('jInfo').classList.add('hidden'); $('jForm').classList.add('hidden'); return jMsg(error.message, 'err'); }
+  joinData = data; clockOff = Date.parse(data.server_now) - Date.now(); joinN = 0;
+  document.title = data.room.title;
+  $('jTitle').textContent = data.room.title;
+  $('jSub').textContent = `Lớp ${data.room.grade} · ${data.room.subject} · ${data.shift.name}`;
+  $('jInfo').classList.remove('hidden');
+  $('jInfo').innerHTML = `<div>Số câu: <b>${data.room.total}</b> · Thời gian làm bài: <b>${data.room.duration_minutes}</b> phút</div>
+    <div>Ca thi mở từ <b>${fmtDT(data.shift.start_time)}</b> đến <b>${fmtDT(data.shift.end_time)}</b></div><div id="jCount" class="font-semibold text-indigo-700"></div>`;
+  if (!$('jCode').value) { $('jCode').value = lsGet('exam_room:code') || ''; $('jName').value = lsGet('exam_room:name') || ''; $('jClass').value = lsGet('exam_room:class') || ''; }
+  clearInterval(joinTimer); joinTimer = setInterval(joinTick, 1000); joinTick();
+}
+function joinTick() {
+  const d = joinData; if (!d || joining) return;
+  const now = Date.now() + clockOff, st = Date.parse(d.shift.start_time), en = Date.parse(d.shift.end_time);
+  let state = d.state;
+  if (state === 'upcoming' && now >= st && Date.now() - joinLast > 3000) { joinLast = Date.now(); loadJoin(); return; }   // tới giờ: hỏi lại máy chủ (nguồn sự thật), tối đa 3 giây/lần
+  if (state === 'active' && now > en) state = 'ended';
+  const cnt = $('jCount');
+  if (cnt) cnt.textContent = state === 'upcoming' ? `Còn ${fmtLeft(Math.ceil((st - now) / 1000))} nữa đến giờ thi.` : state === 'active' ? `Ca thi đang mở, còn ${fmtLeft(Math.ceil((en - now) / 1000))}.` : '';
+  const ready = state === 'active';
+  $('jForm').classList.toggle('hidden', !ready);
+  $('jAccessBox').classList.toggle('hidden', !d.shift.needs_code);
+  if (state === 'upcoming') jMsg('Ca thi chưa đến giờ bắt đầu. Trang sẽ tự mở khi đến giờ.', 'warn');
+  else if (state === 'closed') jMsg('Ca thi đang đóng. Hãy chờ giáo viên mở ca (trang tự cập nhật).', 'warn');
+  else if (state === 'ended') { jMsg('Ca thi đã kết thúc.', 'err'); clearInterval(joinTimer); }
+  else if (!joining && $('jMsg').dataset.keep !== '1') jMsg('');
+  if (state === 'closed' && ++joinN % 15 === 0) loadJoin();            // 15 giây hỏi lại 1 lần khi đang đóng
+}
+async function joinRoom() {
+  if (joining) return;
+  const code = $('jCode').value.trim(), name = $('jName').value.trim();
+  $('jMsg').dataset.keep = '';
+  if (!code || !name) { $('jMsg').dataset.keep = '1'; return jMsg('Vui lòng nhập mã học sinh và họ tên.', 'err'); }
+  joining = true; $('jBtn').disabled = true; $('jBtn').textContent = 'Đang vào phòng thi...';
+  const { data, error } = await db.rpc('exam_start', {
+    p_room: ROOM, p_shift: SHIFT, p_access: $('jAccess').value.trim() || null,
+    p_code: code, p_name: name, p_class: $('jClass').value.trim() || null });
+  joining = false; $('jBtn').disabled = false; $('jBtn').textContent = 'Vào thi';
+  if (error) { $('jMsg').dataset.keep = '1'; jMsg(error.message, 'err'); if (/chưa đến giờ|đã đóng|kết thúc/i.test(error.message)) { $('jMsg').dataset.keep = ''; loadJoin(); } return; }
+  lsSet('exam_room:code', code); lsSet('exam_room:name', name); lsSet('exam_room:class', $('jClass').value.trim());
+  beginRoomExam(data);
+}
+function beginRoomExam(s) {
+  clearInterval(joinTimer);
+  sess = s; clockOff = Date.parse(s.server_now) - Date.now();
+  questions = s.questions || [];
+  if (!questions.length) { screen('Join'); return jMsg('Đề thi chưa có câu hỏi. Hãy báo giáo viên.', 'err'); }
+  answers = {}; cur = 0; onlyWrong = false; submitting = false; nextTry = 0;
+  try { const b = JSON.parse(lsGet(bkKey()) || 'null'); if (b && b.rid === s.result_id && b.a) answers = b.a; } catch (e) {}
+  $('examTitle').textContent = `${s.room.title} · ${s.shift.name} · ${s.student.name} (${s.student.code})`;
+  const end = Date.parse(s.deadline) - clockOff;            // giờ hết hạn theo đồng hồ máy chủ, quy đổi về đồng hồ máy học sinh
+  clearInterval(timerId); tick(end); timerId = setInterval(() => tick(end), 500);
+  screen('Exam'); showQuestion(0); initVio(s.violations);
+  window.onbeforeunload = e => { e.preventDefault(); e.returnValue = ''; };
+}
+
+
+// ---------- CHỐNG GIAN LẬN: chuyển tab / rời cửa sổ / chụp màn hình ----------
+// Quy định: 2 lần đầu chỉ cảnh báo; từ lần thứ 3 trở đi mỗi lần trừ 0,5 điểm. Số lần lưu trên máy chủ (exam_violation) nên F5 không mất.
+// Lưu ý: trình duyệt không thể phát hiện mọi cách chụp màn hình (đặc biệt trên điện thoại); phần mềm ngoài thường làm cửa sổ mất focus nên vẫn bị ghi nhận.
+const VIO_FREE = 2, VIO_PEN = 0.5;
+let vioCount = 0, vioLast = 0, vioQueue = [], vioIgnoreUntil = 0, vioFlushing = false, vioTimer = null;
+const vioPenalty = n => VIO_PEN * Math.max(0, n - VIO_FREE);
+const fmtPts = x => String(+x.toFixed(2)).replace('.', ',');
+const vioActive = () => ROOM_MODE && sess && !submitting && !$('screenExam').classList.contains('hidden') && Date.now() > vioIgnoreUntil;
+
+function renderVio() {
+  const bar = $('vioBar'), n = vioCount, pen = vioPenalty(n);
+  const cls = n === 0 ? 'bg-slate-50 border-slate-200 text-slate-700' : n <= VIO_FREE ? 'bg-amber-50 border-amber-300 text-amber-800' : 'bg-red-50 border-red-300 text-red-700';
+  bar.className = 'text-sm rounded-lg px-3 py-2 mt-1 border ' + cls;
+  bar.innerHTML = `<b>Số lần vi phạm: ${n}</b>${pen ? ` · <b>đã bị trừ ${fmtPts(pen)} điểm</b>` : ''}
+    <span class="block sm:inline sm:ml-2 opacity-90">Không chuyển tab, không rời cửa sổ, không chụp màn hình. Từ lần vi phạm thứ ${VIO_FREE + 1} trở đi, mỗi lần bị trừ ${fmtPts(VIO_PEN)} điểm.</span>`;
+}
+function showVio(reason) {
+  const n = vioCount, pen = vioPenalty(n);
+  $('vioTitle').textContent = `Cảnh báo vi phạm lần ${n}`;
+  $('vioReason').textContent = reason;
+  $('vioRule').textContent = n <= VIO_FREE
+    ? `Bạn còn ${VIO_FREE - n} lần được nhắc nhở. Từ lần vi phạm thứ ${VIO_FREE + 1}, mỗi lần bị trừ ${fmtPts(VIO_PEN)} điểm.`
+    : `Lần vi phạm này bị trừ ${fmtPts(VIO_PEN)} điểm. Tổng điểm đã bị trừ: ${fmtPts(pen)}.`;
+  $('vioOverlay').classList.remove('hidden');
+}
+function closeVio() { $('vioOverlay').classList.add('hidden'); }
+
+function reportViolation(kind, reason) {
+  if (!vioActive()) return;
+  const t = Date.now(); if (t - vioLast < 1500) return;       // đổi tab bắn cả "ẩn tab" lẫn "mất focus": chỉ tính 1 lần
+  vioLast = t; vioCount++; renderVio(); showVio(reason);
+  vioQueue.push(kind); flushVio();
+}
+async function flushVio() {
+  if (vioFlushing || !sess) return; vioFlushing = true;
+  try {
+    while (vioQueue.length) {
+      const { data, error } = await db.rpc('exam_violation', { p_result: sess.result_id, p_token: sess.token, p_kind: vioQueue[0] });
+      if (error) { if (/không hợp lệ/i.test(error.message)) vioQueue.length = 0; break; }      // lỗi mạng: giữ hàng đợi, thử lại sau
+      vioQueue.shift();
+      if (!vioQueue.length) { vioCount = data.count; renderVio(); if (!$('vioOverlay').classList.contains('hidden')) showVio($('vioReason').textContent); }
+      else vioCount = Math.max(vioCount, data.count);
+    }
+  } finally { vioFlushing = false; }
+}
+function initVio(initial) {
+  vioCount = initial || 0; vioQueue = []; vioLast = 0; vioIgnoreUntil = Date.now() + 2000;   // 2 giây đầu: bỏ qua nhiễu khi vừa vào thi
+  document.body.classList.add('room-mode');
+  $('vioBar').classList.remove('hidden'); renderVio(); closeVio();
+  clearInterval(vioTimer); vioTimer = setInterval(flushVio, 5000);
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden) reportViolation('tab', 'Bạn vừa chuyển sang tab hoặc ứng dụng khác.'); });
+window.addEventListener('blur', () => reportViolation('blur', 'Bạn vừa rời khỏi cửa sổ làm bài.'));
+function shotKey(e) {
+  if (e.key === 'PrintScreen' || e.code === 'PrintScreen') return true;
+  if (e.metaKey && e.shiftKey && (e.code === 'KeyS' || ['Digit3', 'Digit4', 'Digit5'].includes(e.code))) return true;   // Win+Shift+S, Cmd+Shift+3/4/5
+  return false;
+}
+function onShot(e) {
+  if (!vioActive() || !shotKey(e)) return;
+  try { navigator.clipboard?.writeText(' '); } catch (err) {}             // xóa ảnh vừa chụp khỏi clipboard (nếu trình duyệt cho phép)
+  reportViolation('screenshot', 'Phát hiện thao tác chụp màn hình.');
+}
+document.addEventListener('keydown', onShot); document.addEventListener('keyup', onShot);
+['contextmenu', 'copy', 'cut', 'dragstart'].forEach(ev => document.addEventListener(ev, e => {
+  if (ROOM_MODE && sess && !$('screenExam').classList.contains('hidden') && !(e.target.matches && e.target.matches('input, textarea'))) e.preventDefault();
+}));
+
+// Gửi bài: chỉ gửi {id câu: đáp án}; điểm do máy chủ chấm. Mất mạng thì giữ bài và tự thử lại sau 3 giây.
+async function submitRoom(auto) {
+  if (submitting || Date.now() < nextTry) return;
+  if (!auto) {
+    const blank = questions.filter((q, i) => gradeQ(q, answers[i]).s === 'blank').length;
+    vioIgnoreUntil = Infinity;                                    // hộp thoại xác nhận không bị tính là rời cửa sổ
+    const yes = confirm(blank ? `Bạn còn ${blank} câu chưa trả lời. Vẫn nộp bài?` : 'Nộp bài ngay bây giờ?');
+    vioIgnoreUntil = Date.now() + 1500;
+    if (!yes) return;
+  }
+  const out = {};
+  questions.forEach((q, i) => { const a = answers[i]; if (a == null || a === '' || (typeof a === 'object' && !Object.keys(a).length)) return; out[q.id] = a; });
+  submitting = true; $('netMsg').classList.remove('hidden'); $('netMsg').textContent = 'Đang nộp bài...';
+  await flushVio();                                              // gửi nốt các vi phạm chưa ghi nhận được
+  const { data, error } = await db.rpc('exam_submit', { p_result: sess.result_id, p_token: sess.token, p_answers: out });
+  if (error) {
+    submitting = false;
+    if (/đã được nộp/i.test(error.message)) { lsDel(bkKey()); clearInterval(timerId); window.onbeforeunload = null; return showRoomDone('Bài này đã được nộp trước đó.'); }
+    if (/không hợp lệ/i.test(error.message)) { $('netMsg').textContent = error.message; return; }
+    nextTry = Date.now() + 3000;
+    $('netMsg').textContent = 'Chưa nộp được bài (' + error.message + '). Bài làm vẫn được giữ, đang thử lại...';
+    if (!auto) setTimeout(() => submitRoom(true), 3000);        // người dùng đã bấm nộp: tự thử lại
+    return;
+  }
+  clearInterval(timerId); clearInterval(vioTimer); window.onbeforeunload = null; lsDel(bkKey()); closeVio();
+  $('netMsg').classList.add('hidden');
+  showRoomResult(data, auto);
+}
+function showRoomDone(msg) {
+  $('score').textContent = '✓'; $('stats').innerHTML = ''; $('scoreNote').innerHTML = `<p>${esc(msg)}</p>`;
+  ['resultNav', 'review', 'wrongBtn', 'againBtn'].forEach(id => $(id).classList.add('hidden'));
+  screen('Result');
+}
+function showRoomResult(r, auto) {
+  $('score').textContent = r.score == null ? '—' : Number(r.score).toFixed(2).replace(/\.?0+$/, '');
+  const notes = [`Bài làm của ${esc(sess.student.name)} đã được ghi nhận.`];
+  if (r.violations) notes.push(`Bạn vi phạm ${r.violations} lần` + (r.penalty ? `, bị trừ ${fmtPts(+r.penalty)} điểm${r.base_score != null ? ` (điểm gốc ${fmtPts(+r.base_score)})` : ''}.` : ' (chưa bị trừ điểm).'));
+  if (r.late) notes.push('Bài được nộp sau giờ quy định nên bị đánh dấu “nộp muộn”.');
+  if (r.auto_n < r.total) notes.push('Câu tự luận không tính vào điểm tự động; giáo viên sẽ chấm riêng.');
+  if (questions.some(q => q.question_type === 'true_false')) notes.push('Câu Đúng/Sai: đúng 1, 2, 3, 4 ý được 0,1 – 0,25 – 0,5 – 1 điểm.');
+  $('againBtn').classList.add('hidden');
+  if (!(r.show_review && r.review)) {
+    $('stats').innerHTML = `<span class="text-green-600">✔ Đúng hoàn toàn: ${r.right}/${r.auto_n}</span><span class="text-slate-500">Đã làm: ${r.answered}/${r.total} câu</span>`;
+    notes.push('Giáo viên chưa mở xem đáp án và lời giải.');
+    $('scoreNote').innerHTML = notes.map(t => `<p>${t}</p>`).join('');
+    ['resultNav', 'review', 'wrongBtn'].forEach(id => $(id).classList.add('hidden'));
+    screen('Result'); if (auto) alert('Hết giờ! Bài làm đã được nộp tự động.'); return;
+  }
+  // Có xem đáp án: ghép đáp án + lời giải do máy chủ trả về vào đề rồi dùng lại giao diện xem lại bài
+  const m = Object.fromEntries(r.review.map(x => [x.id, x]));
+  questions.forEach(q => { const x = m[q.id]; if (x) { q.correct_answer = x.correct_answer; q.explanation = x.explanation; } });
+  const res = questions.map((q, i) => { const g = gradeQ(q, answers[i]), x = m[q.id]; return x && x.s ? { ...g, s: x.s, pts: x.p ?? g.pts } : g; });
+  const cnt = s => res.filter(z => z.s === s).length;
+  $('stats').innerHTML = `
+    <span class="text-green-600">✔ Đúng: ${cnt('right')}</span>
+    ${cnt('partial') ? `<span class="text-amber-600">◐ Đúng một phần: ${cnt('partial')}</span>` : ''}
+    <span class="text-red-600">✘ Sai: ${cnt('wrong')}</span>
+    ${cnt('essay') ? `<span class="text-sky-600">✎ Tự luận đã làm: ${cnt('essay')}</span>` : ''}
+    <span class="text-slate-500">○ Chưa làm: ${cnt('blank')}</span>`;
+  $('scoreNote').innerHTML = notes.map(t => `<p>${t}</p>`).join('');
+  $('resultNav').innerHTML = res.map((z, i) => `<a href="#rq${i}" class="h-8 rounded text-xs font-semibold flex items-center justify-center text-white ${S_BG[z.s]}">${i + 1}</a>`).join('');
+  ['resultNav', 'review', 'wrongBtn'].forEach(id => $(id).classList.remove('hidden'));
+  window._res = res; renderReview(); screen('Result');
+  if (auto) alert('Hết giờ! Bài làm đã được nộp tự động.');
+}
+
+// Tích/bỏ tích chương hoặc mức độ: cập nhật thẻ thông tin và kiểm tra số câu ngay (realtime)
+$('screenStart').addEventListener('change', e => {
+  if (e.target.matches('.chapChk, .diffChk, .typeChk')) scheduleCheck();
+});
+
+if (ROOM_MODE) { screen('Join'); loadJoin(); }     // vào bằng link phòng/ca
+else { updateSummary(); loadSubjects(); }          // chế độ luyện tập như cũ
+</script>
+<!-- Cảnh báo vi phạm (chế độ phòng thi) -->
+<div id="vioOverlay" class="hidden fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" role="alertdialog" aria-modal="true">
+  <div class="bg-white rounded-xl shadow-xl max-w-md w-full p-6 text-center space-y-3">
+    <div class="text-4xl">⚠️</div>
+    <h2 id="vioTitle" class="text-xl font-bold text-red-600"></h2>
+    <p id="vioReason" class="text-slate-700"></p>
+    <p id="vioRule" class="text-sm font-medium"></p>
+    <button onclick="closeVio()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg font-semibold">Tôi đã hiểu, tiếp tục làm bài</button>
+  </div>
+</div>
+</body>
+</html>

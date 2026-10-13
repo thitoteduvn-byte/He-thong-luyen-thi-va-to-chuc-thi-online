@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quản lý phòng thi & ca thi</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+<style>
+  .tab-on { border-color:#4f46e5; color:#4338ca; font-weight:600 }
+  .bar:hover { opacity:.85 }
+  #tip { position:fixed; pointer-events:none; z-index:60 }
+</style>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800">
+
+<header class="bg-white shadow-sm">
+  <div class="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
+    <h1 class="text-lg font-bold text-indigo-700">🏫 Phòng thi & Ca thi</h1>
+    <div class="ml-auto flex items-center gap-2 text-sm" id="userBox"></div>
+  </div>
+</header>
+
+<main class="max-w-6xl mx-auto px-4 py-5">
+  <!-- Đăng nhập -->
+  <section id="viewLogin" class="hidden max-w-sm mx-auto bg-white rounded-xl shadow p-6 mt-10">
+    <h2 class="font-bold text-lg mb-1">Đăng nhập giáo viên</h2>
+    <p class="text-sm text-slate-500 mb-4">Dùng tài khoản Supabase giống trang quản trị.</p>
+    <input id="lgEmail" type="email" placeholder="Email" class="w-full border rounded p-2 mb-2">
+    <input id="lgPass" type="password" placeholder="Mật khẩu" class="w-full border rounded p-2 mb-3" onkeydown="if(event.key==='Enter')login()">
+    <button onclick="login()" class="w-full bg-indigo-600 text-white rounded py-2 font-medium hover:bg-indigo-700">Đăng nhập</button>
+    <p id="lgErr" class="text-sm text-red-600 mt-2"></p>
+  </section>
+
+  <!-- Danh sách phòng -->
+  <section id="viewRooms" class="hidden">
+    <div class="flex items-center mb-4">
+      <h2 class="text-xl font-bold">Phòng thi của tôi</h2>
+      <button onclick="newRoom()" class="ml-auto bg-indigo-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-indigo-700">+ Tạo phòng thi</button>
+    </div>
+    <div id="roomList" class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"></div>
+  </section>
+
+  <!-- Chi tiết phòng -->
+  <section id="viewRoom" class="hidden">
+    <button onclick="showRooms()" class="text-sm text-indigo-600 hover:underline mb-2">← Tất cả phòng thi</button>
+    <div class="flex flex-wrap items-center gap-2 mb-3">
+      <h2 id="roomTitle" class="text-xl font-bold"></h2>
+      <span id="roomMeta" class="text-sm text-slate-500"></span>
+    </div>
+    <div class="flex gap-4 border-b mb-4 text-sm">
+      <button id="tabCfg" onclick="setTab('cfg')" class="pb-2 border-b-2 border-transparent">⚙️ Cấu hình đề</button>
+      <button id="tabShifts" onclick="setTab('shifts')" class="pb-2 border-b-2 border-transparent">🕒 Ca thi</button>
+      <button id="tabRes" onclick="setTab('res')" class="pb-2 border-b-2 border-transparent">📊 Kết quả</button>
+    </div>
+    <div id="paneCfg"></div>
+    <div id="paneShifts" class="hidden"></div>
+    <div id="paneRes" class="hidden"></div>
+  </section>
+</main>
+
+<div id="modal" class="hidden fixed inset-0 bg-black/50 z-50 items-start justify-center overflow-y-auto p-4">
+  <div class="bg-white rounded-xl shadow-xl w-full max-w-3xl my-8 p-5" id="modalBody"></div>
+</div>
+<div id="tip" class="hidden bg-slate-800 text-white text-xs rounded px-2 py-1 shadow"></div>
+<div id="toast" class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-sm rounded-lg px-4 py-2 shadow-lg z-[70]"></div>
+
+<script>
+const SUPABASE_URL = 'https://xzznmfgihzjeqsmiuypi.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_dUldhQYF1ETrSCZ4jiy3Og_ygfkm9XW';
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const TYPES = [
+  ['multiple_choice', 'Trắc nghiệm'], ['true_false', 'Đúng/Sai'],
+  ['short_answer', 'Trả lời ngắn'], ['essay', 'Tự luận']
+];
+const TYPE_NAME = Object.fromEntries(TYPES);
+const LEVELS = [['nhan_biet', 'Nhận biết'], ['thong_hieu', 'Thông hiểu'], ['van_dung', 'Vận dụng'], ['van_dung_cao', 'Vận dụng cao']];
+const STATE_UI = {
+  active:   ['Đang thi', 'bg-green-100 text-green-700'],
+  upcoming: ['Chưa tới giờ', 'bg-amber-100 text-amber-700'],
+  ended:    ['Đã kết thúc', 'bg-slate-200 text-slate-600'],
+  closed:   ['Đã đóng', 'bg-red-100 text-red-700']
+};
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmt = d => d ? new Date(d).toLocaleString('vi-VN', { hour12: false, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+const mmss = s => s == null ? '' : Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+const pad = n => String(n).padStart(2, '0');
+const toLocalInput = d => { const x = new Date(d); return `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}T${pad(x.getHours())}:${pad(x.getMinutes())}`; };
+const noAccent = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D');
+function toast(m) { const t = $('toast'); t.textContent = m; t.classList.remove('hidden'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hidden'), 2800); }
+function dbErr(e) {
+  const m = e?.message || String(e);
+  if (/does not exist|schema cache/i.test(m)) return m + ' — hãy chạy file exam_room_setup.sql trong Supabase → SQL Editor.';
+  if (/row-level security|permission denied/i.test(m)) return m + ' — chưa có quyền; kiểm tra bạn đã đăng nhập và đã chạy exam_room_setup.sql.';
+  return m;
+}
+function math(el) { try { renderMathInElement(el, { delimiters: [{ left: '$$', right: '$$', display: true }, { left: '$', right: '$', display: false }], throwOnError: false }); } catch (e) {} }
+
+let user = null, rooms = [], room = null, shifts = [], tab = 'cfg';
+let results = [], resShift = 'all', resSearch = '', resSort = 'name', autoTimer = null;
+let cfgExam = null;   // đề đã lưu đang chọn cho phòng: { id, title, ids[], counts{}, missing }
+
+/* ======================= ĐĂNG NHẬP ======================= */
+async function login() {
+  $('lgErr').textContent = '';
+  const { error } = await db.auth.signInWithPassword({ email: $('lgEmail').value.trim(), password: $('lgPass').value });
+  if (error) $('lgErr').textContent = 'Đăng nhập thất bại: ' + error.message;
+}
+async function logout() { await db.auth.signOut(); }
+function setUser(u) {
+  if ((u?.id || null) === (user?.id || null) && $('userBox').innerHTML) return;   // bỏ qua TOKEN_REFRESHED
+  user = u;
+  $('userBox').innerHTML = u ? `<span class="text-slate-500">${esc(u.email)}</span><button onclick="logout()" class="border rounded px-2 py-1 hover:bg-slate-50">Đăng xuất</button>` : '';
+  if (!u) { hide('viewRooms'); hide('viewRoom'); show('viewLogin'); return; }
+  hide('viewLogin'); loadRooms();
+}
+const show = id => $(id).classList.remove('hidden');
+const hide = id => $(id).classList.add('hidden');
+
+/* ======================= DANH SÁCH PHÒNG ======================= */
+async function loadRooms() {
+  const { data, error } = await db.from('exam_rooms').select('*').order('created_at', { ascending: false });
+  if (error) { toast(dbErr(error)); $('roomList').innerHTML = `<p class="text-red-600 text-sm col-span-full">${esc(dbErr(error))}</p>`; show('viewRooms'); return; }
+  rooms = data || [];
+  showRooms();
+}
+function totalQ(r) { return Array.isArray(r.matrix?.fixed_ids) && r.matrix.fixed_ids.length ? r.matrix.fixed_ids.length : Object.values(r.matrix?.counts || {}).reduce((a, b) => a + (+b || 0), 0); }
+function showRooms() {
+  stopAuto(); room = null;
+  hide('viewRoom'); show('viewRooms');
+  $('roomList').innerHTML = rooms.length ? rooms.map(r => `
+    <div class="bg-white rounded-xl shadow p-4 hover:shadow-md cursor-pointer" onclick="openRoom(${r.id})">
+      <div class="flex items-start gap-2">
+        <h3 class="font-semibold flex-1">${esc(r.title)}</h3>
+        <code class="text-xs bg-indigo-50 text-indigo-700 rounded px-1.5 py-0.5">${esc(r.room_code)}</code>
+      </div>
+      <p class="text-sm text-slate-500 mt-1">Lớp ${r.grade} · ${esc(r.subject)} · ${r.duration_minutes} phút · ${totalQ(r)} câu</p>
+      <p class="text-xs text-slate-400 mt-2">${r.matrix.exam_title ? '📄 ' + esc(r.matrix.exam_title) + ' · ' : ''}${TYPES.map(([k, n]) => (r.matrix.counts?.[k] || 0) ? `${n} ${r.matrix.counts[k]}` : '').filter(Boolean).join(' · ')}</p>
+    </div>`).join('') : '<p class="text-slate-500 col-span-full">Chưa có phòng thi nào. Bấm “Tạo phòng thi” để bắt đầu.</p>';
+}
+async function newRoom() { room = null; shifts = []; enterRoomView(); setTab('cfg'); }
+async function openRoom(id) {
+  room = rooms.find(r => r.id === id);
+  enterRoomView();
+  await loadShifts();
+  setTab('shifts');
+}
+function enterRoomView() {
+  hide('viewRooms'); show('viewRoom');
+  $('roomTitle').textContent = room ? room.title : 'Tạo phòng thi mới';
+  $('roomMeta').textContent = room ? `Mã phòng: ${room.room_code} · Lớp ${room.grade} · ${room.subject}` : '';
+  $('tabShifts').disabled = $('tabRes').disabled = !room;
+  $('tabShifts').classList.toggle('opacity-40', !room); $('tabRes').classList.toggle('opacity-40', !room);
+}
+function setTab(t) {
+  tab = t; stopAuto();
+  if (!room && t !== 'cfg') t = tab = 'cfg';
+  for (const [k, id] of [['cfg', 'Cfg'], ['shifts', 'Shifts'], ['res', 'Res']]) {
+    $('tab' + id).classList.toggle('tab-on', k === t);
+    $('pane' + id).classList.toggle('hidden', k !== t);
+  }
+  if (t === 'cfg') renderCfg();
+  if (t === 'shifts') renderShifts();
+  if (t === 'res') loadResults();
+}
+
+/* ======================= CẤU HÌNH PHÒNG ======================= */
+function renderCfg() {
+  const r = room, m = r?.matrix || {};
+  const grades = Array.from({ length: 12 }, (_, i) => i + 1);
+  cfgExam = Array.isArray(m.fixed_ids) && m.fixed_ids.length ? { id: m.exam_id, title: m.exam_title || 'Đề đã lưu', ids: m.fixed_ids, counts: m.counts || {}, missing: 0 } : null;
+  $('paneCfg').innerHTML = `
+  <div class="bg-white rounded-xl shadow p-5 grid gap-4 md:grid-cols-2">
+    <div class="md:col-span-2">
+      <div class="text-sm font-medium mb-1">Đề thi</div>
+      <div class="flex flex-wrap items-center gap-3 border rounded-lg p-3">
+        <button type="button" onclick="pickExam()" class="bg-indigo-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-indigo-700">📂 Tải đề thi đã lưu</button>
+        <div id="examSum" class="text-sm flex-1 min-w-[12rem]"></div>
+      </div>
+    </div>
+    <label class="text-sm font-medium md:col-span-2">Tên phòng thi
+      <input id="fTitle" class="w-full border rounded p-2 mt-1 font-normal" value="${esc(r?.title || '')}" placeholder="Kiểm tra giữa kì I - Toán 10"></label>
+    <label class="text-sm font-medium">Lớp
+      <select id="fGrade" class="w-full border rounded p-2 mt-1 font-normal">${grades.map(g => `<option value="${g}" ${(r?.grade || 10) == g ? 'selected' : ''}>Lớp ${g}</option>`).join('')}</select></label>
+    <label class="text-sm font-medium">Môn
+      <input id="fSubject" list="subjects" class="w-full border rounded p-2 mt-1 font-normal" value="${esc(r?.subject || 'Toán')}">
+      <datalist id="subjects"><option>Toán<option>Tiếng Việt<option>Tiếng Anh<option>Vật lý<option>Hóa học<option>Sinh học<option>Lịch sử<option>Địa lý</datalist></label>
+    <label class="text-sm font-medium">Mã phòng (dùng trong link)
+      <div class="flex gap-2 mt-1"><input id="fCode" class="flex-1 border rounded p-2 font-normal uppercase" value="${esc(r?.room_code || '')}" placeholder="TOAN10-GK1">
+      <button type="button" onclick="suggestCode()" class="border rounded px-3 text-sm hover:bg-slate-50">Gợi ý</button></div>
+      <span class="text-xs font-normal text-slate-400">3–32 ký tự: chữ không dấu, số, - hoặc _</span></label>
+    <label class="text-sm font-medium">Thời gian làm bài (phút)
+      <input id="fDur" type="number" min="1" max="600" class="w-full border rounded p-2 mt-1 font-normal" value="${r?.duration_minutes || 45}"></label>
+    <label class="md:col-span-2 flex items-start gap-2 text-sm">
+      <input id="fShuffle" type="checkbox" class="mt-1" ${m.shuffle ? 'checked' : ''}>
+      <span><b>Trộn thứ tự câu hỏi</b> cho từng học sinh<br><span class="text-slate-500">Tắt: mọi học sinh làm theo đúng thứ tự của đề đã lưu.</span></span></label>
+    <label class="md:col-span-2 flex items-start gap-2 text-sm">
+      <input id="fReview" type="checkbox" class="mt-1" ${r?.show_review ? 'checked' : ''}>
+      <span><b>Cho học sinh xem đáp án và lời giải sau khi nộp bài.</b><br><span class="text-slate-500">Nếu tắt, học sinh chỉ thấy điểm. Đáp án luôn nằm trên máy chủ, không gửi xuống trước khi nộp.</span></span></label>
+    <div class="md:col-span-2 flex flex-wrap items-center gap-2 pt-2 border-t">
+      <button onclick="saveRoom()" class="bg-indigo-600 text-white rounded-lg px-5 py-2 text-sm font-medium hover:bg-indigo-700">${r ? 'Lưu thay đổi' : 'Tạo phòng thi'}</button>
+      ${r ? `<button onclick="askDeleteRoom()" class="ml-auto border border-red-300 text-red-600 rounded-lg px-4 py-2 text-sm hover:bg-red-50">Xóa phòng thi</button>` : ''}
+    </div>
+  </div>`;
+  showExamSum();
+}
+function showExamSum() {
+  const el = $('examSum'); if (!el) return;
+  if (!cfgExam) {
+    const old = room && Object.values(room.matrix?.counts || {}).some(v => +v);
+    el.innerHTML = old ? `<span class="text-slate-600">Phòng này đang rút ngẫu nhiên theo ma trận (${TYPES.map(([k, n]) => room.matrix.counts[k] ? `${n} ${room.matrix.counts[k]}` : '').filter(Boolean).join(' · ')}). Chọn một đề đã lưu để thay thế.</span>`
+      : '<span class="text-slate-400">Chưa chọn đề. Bấm “Tải đề thi đã lưu” để chọn đề của bạn.</span>'; return;
+  }
+  const c = cfgExam;
+  el.innerHTML = `<div class="font-semibold">${esc(c.title)}</div>
+    <div class="text-slate-600">${c.ids.length} câu · ${TYPES.map(([k, n]) => c.counts[k] ? `${n} ${c.counts[k]}` : '').filter(Boolean).join(' · ')}</div>
+    ${c.missing ? `<div class="text-red-600 text-xs mt-1">⚠ ${c.missing} câu trong đề không còn trong ngân hàng nên đã bị bỏ qua.</div>` : ''}`;
+}
+async function pickExam() {
+  openModal('<p class="text-slate-500">Đang tải danh sách đề đã lưu…</p>');
+  const { data, error } = await db.from('exams').select('id, title, grade, subject, minutes, question_count, created_at').order('created_at', { ascending: false }).limit(200);
+  if (error) return $('modalBody').innerHTML = `<p class="text-red-600">${esc(dbErr(error))}</p><button onclick="closeModal()" class="border rounded px-4 py-2 text-sm mt-3">Đóng</button>`;
+  window._exams = data || [];
+  $('modalBody').innerHTML = `<div class="flex items-center mb-3"><h3 class="font-bold text-lg">Chọn đề thi đã lưu</h3><button onclick="closeModal()" class="ml-auto border rounded px-4 py-2 text-sm">Đóng</button></div>
+    <input id="exQ" placeholder="Tìm theo tên đề, môn, lớp" oninput="renderExamList()" class="w-full border rounded p-2 mb-3 text-sm"><div id="exList" class="grid gap-2 max-h-[60vh] overflow-y-auto"></div>`;
+  renderExamList();
+}
+function renderExamList() {
+  const q = ($('exQ').value || '').toLowerCase();
+  const list = window._exams.filter(e => `${e.title} ${e.subject} lớp ${e.grade}`.toLowerCase().includes(q));
+  $('exList').innerHTML = list.map(e => `<button onclick="useExam(${e.id})" class="text-left border rounded-lg p-3 hover:bg-indigo-50">
+      <div class="font-semibold">${esc(e.title)}</div>
+      <div class="text-xs text-slate-500">Lớp ${esc(e.grade)} · ${esc(e.subject)} · ${esc(e.question_count ?? '?')} câu${e.minutes ? ' · ' + esc(e.minutes) + ' phút' : ''} · ${fmt(e.created_at)}</div></button>`).join('')
+    || '<p class="text-slate-400 text-sm p-3">Không có đề nào. Hãy lưu đề ở trang tạo đề trước.</p>';
+}
+async function useExam(id) {
+  $('exList').innerHTML = '<p class="text-slate-500 p-3">Đang tải đề…</p>';
+  const { data, error } = await db.from('exams').select('id, title, grade, subject, minutes, data').eq('id', id).single();
+  if (error) return toast(dbErr(error));
+  const want = [...new Set((data.data?.questions || []).map(q => Number(q.id)).filter(Number.isFinite))];
+  if (!want.length) { closeModal(); return toast('Đề này không có mã câu hỏi (ID) nên không dùng được cho phòng thi.'); }
+  const have = new Map();
+  for (let i = 0; i < want.length; i += 150) {
+    const { data: rows, error: e2 } = await db.from('questions').select('id, question_type').in('id', want.slice(i, i + 150));
+    if (e2) return toast(dbErr(e2));
+    rows.forEach(r => have.set(r.id, r.question_type));
+  }
+  const ids = want.filter(x => have.has(x)), counts = {};
+  ids.forEach(x => counts[have.get(x)] = (counts[have.get(x)] || 0) + 1);
+  if (!ids.length) { closeModal(); return toast('Không tìm thấy câu hỏi của đề này trong ngân hàng.'); }
+  cfgExam = { id: data.id, title: data.title, ids, counts, missing: want.length - ids.length };
+  if (!$('fTitle').value.trim()) $('fTitle').value = data.title;
+  if (data.grade) $('fGrade').value = data.grade;
+  if (data.subject) $('fSubject').value = data.subject;
+  if (data.minutes) $('fDur').value = data.minutes;
+  closeModal(); showExamSum(); toast(`Đã tải đề “${data.title}” (${ids.length} câu).`);
+}
+function suggestCode() {
+  const s = noAccent($('fSubject').value).replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 6) || 'PHONG';
+  $('fCode').value = `${s}${$('fGrade').value}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+}
+async function saveRoom() {
+  const title = $('fTitle').value.trim(), subject = $('fSubject').value.trim(), code = $('fCode').value.trim().toUpperCase();
+  const dur = Math.round(+$('fDur').value);
+  const err = [];
+  if (!title) err.push('thiếu tên phòng'); if (!subject) err.push('thiếu môn');
+  if (!/^[A-Za-z0-9_-]{3,32}$/.test(code)) err.push('mã phòng phải 3–32 ký tự (chữ không dấu, số, - hoặc _)');
+  if (!(dur >= 1 && dur <= 600)) err.push('thời gian làm bài 1–600 phút');
+  if (!cfgExam && !room) err.push('chưa chọn đề thi (bấm “Tải đề thi đã lưu”)');
+  if (err.length) return toast('Chưa hợp lệ: ' + err.join('; '));
+  const matrix = cfgExam
+    ? { exam_id: cfgExam.id, exam_title: cfgExam.title, fixed_ids: cfgExam.ids, shuffle: $('fShuffle').checked, counts: cfgExam.counts, chapters: [], difficulties: [] }
+    : room.matrix;
+  const payload = { title, subject, room_code: code, grade: +$('fGrade').value, duration_minutes: dur, show_review: $('fReview').checked, matrix };
+  const q = room ? db.from('exam_rooms').update(payload).eq('id', room.id).select().single() : db.from('exam_rooms').insert(payload).select().single();
+  const { data, error } = await q;
+  if (error) return toast(error.code === '23505' ? 'Mã phòng đã tồn tại, hãy chọn mã khác.' : dbErr(error));
+  const isNew = !room;
+  room = data; const i = rooms.findIndex(r => r.id === data.id); if (i >= 0) rooms[i] = data; else rooms.unshift(data);
+  toast(isNew ? 'Đã tạo phòng thi. Hãy thêm ca thi.' : 'Đã lưu.');
+  enterRoomView();
+  if (isNew) { shifts = []; setTab('shifts'); } else renderCfg();
+}
+function askDeleteRoom() {
+  openModal(`<h3 class="font-bold text-lg text-red-600">Xóa phòng thi?</h3>
+    <p class="text-sm mt-2">Toàn bộ <b>ca thi và kết quả</b> của phòng này sẽ bị xóa vĩnh viễn. Gõ mã phòng <code class="bg-slate-100 px-1">${esc(room.room_code)}</code> để xác nhận.</p>
+    <input id="delCode" class="w-full border rounded p-2 mt-3" placeholder="${esc(room.room_code)}">
+    <div class="flex justify-end gap-2 mt-4"><button onclick="closeModal()" class="border rounded px-4 py-2 text-sm">Hủy</button>
+    <button onclick="doDeleteRoom()" class="bg-red-600 text-white rounded px-4 py-2 text-sm">Xóa vĩnh viễn</button></div>`);
+}
+async function doDeleteRoom() {
+  if ($('delCode').value.trim().toUpperCase() !== room.room_code.toUpperCase()) return toast('Mã phòng chưa đúng.');
+  const { error } = await db.from('exam_rooms').delete().eq('id', room.id);
+  if (error) return toast(dbErr(error));
+  rooms = rooms.filter(r => r.id !== room.id); closeModal(); toast('Đã xóa phòng thi.'); showRooms();
+}
+
+/* ======================= CA THI ======================= */
+async function loadShifts() {
+  const [s, c] = await Promise.all([
+    db.from('exam_shifts').select('*').eq('room_id', room.id).order('start_time'),
+    db.from('exam_results').select('shift_id,submitted_at').eq('room_id', room.id)
+  ]);
+  if (s.error) toast(dbErr(s.error));
+  shifts = s.data || [];
+  const cnt = {}; (c.data || []).forEach(r => { const o = cnt[r.shift_id] ||= { all: 0, done: 0 }; o.all++; if (r.submitted_at) o.done++; });
+  shifts.forEach(x => x._c = cnt[x.id] || { all: 0, done: 0 });
+}
+function shiftState(s) {
+  const n = Date.now();
+  return !s.is_active ? 'closed' : n < +new Date(s.start_time) ? 'upcoming' : n > +new Date(s.end_time) ? 'ended' : 'active';
+}
+const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+function examBase() { return (lsGet('exam_base') || '').trim() || new URL('exam.html', location.href).href; }
+function setExamBase(v) {
+  v = v.trim().replace(/[?#].*$/, '');
+  if (v && !/^https?:\/\//i.test(v)) { toast('Địa chỉ phải bắt đầu bằng https://'); return renderShifts(); }
+  lsSet('exam_base', v); renderShifts(); toast(v ? 'Đã lưu địa chỉ trang làm bài' : 'Đã xóa địa chỉ, dùng địa chỉ mặc định');
+}
+function shiftLink(s) {
+  const u = new URL(examBase()); u.search = '';
+  u.searchParams.set('room', room.room_code); u.searchParams.set('shift', s.shift_code); return u.href;
+}
+function renderShifts() {
+  const rows = shifts.map(s => {
+    const st = STATE_UI[shiftState(s)];
+    return `<div class="bg-white rounded-xl shadow p-4">
+      <div class="flex flex-wrap items-center gap-2">
+        <h4 class="font-semibold">${esc(s.shift_name)}</h4>
+        <code class="text-xs bg-indigo-50 text-indigo-700 rounded px-1.5 py-0.5">${esc(s.shift_code)}</code>
+        <span class="text-xs rounded-full px-2 py-0.5 ${st[1]}">${st[0]}</span>
+        <label class="ml-auto flex items-center gap-2 text-sm cursor-pointer select-none" title="Đóng/mở nhanh ca thi">
+          <span class="text-slate-500">${s.is_active ? 'Đang mở' : 'Đang đóng'}</span>
+          <input type="checkbox" class="sr-only peer" ${s.is_active ? 'checked' : ''} onchange="toggleShift(${s.id}, this.checked)">
+          <span class="w-10 h-6 rounded-full bg-slate-300 peer-checked:bg-green-500 relative transition after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:w-5 after:h-5 after:bg-white after:rounded-full after:transition peer-checked:after:translate-x-4"></span>
+        </label>
+      </div>
+      <p class="text-sm text-slate-600 mt-1">${fmt(s.start_time)} → ${fmt(s.end_time)} · Mã vào ca: <b>${s.access_code ? esc(s.access_code) : 'không cần'}</b> · ${s._c.done}/${s._c.all} bài đã nộp</p>
+      <div class="flex flex-wrap gap-2 mt-3 text-sm">
+        <button onclick="copyLink(${s.id})" class="border rounded px-3 py-1 hover:bg-slate-50">📋 Sao chép link học sinh</button>
+        <button onclick="goResults(${s.id})" class="border rounded px-3 py-1 hover:bg-slate-50">📊 Xem kết quả</button>
+        <button onclick="editShift(${s.id})" class="border rounded px-3 py-1 hover:bg-slate-50">Sửa</button>
+        <button onclick="delShift(${s.id})" class="border border-red-300 text-red-600 rounded px-3 py-1 hover:bg-red-50">Xóa</button>
+      </div></div>`;
+  }).join('');
+  const base = examBase(), local = /^(file|blob):/i.test(base), hasCustom = !!(lsGet('exam_base') || '').trim();
+  $('paneShifts').innerHTML = `
+    <div class="bg-white rounded-xl shadow p-4 mb-3 text-sm">
+      <label class="font-medium">Địa chỉ trang làm bài của học sinh (file <code>exam.html</code> đã đưa lên mạng)
+        <div class="flex gap-2 mt-1"><input id="baseUrl" class="flex-1 border rounded p-2 font-normal" placeholder="https://ten-trang-cua-ban.vercel.app/exam.html" value="${esc(hasCustom ? base : '')}" onkeydown="if(event.key==='Enter')setExamBase(this.value)">
+        <button onclick="setExamBase($('baseUrl').value)" class="border rounded px-3 hover:bg-slate-50 font-normal">Lưu</button></div></label>
+      <p class="mt-2 ${local || !hasCustom ? 'text-amber-700' : 'text-slate-500'}">${local || !hasCustom
+        ? '⚠ Link đang dùng: <code>' + esc(base) + '</code>. ' + (/^(file|blob):/i.test(base) ? 'Đây là file trên máy bạn nên học sinh không mở được. ' : '') + 'Hãy đưa <code>exam.html</code> lên một nơi lưu trữ web (Netlify, Vercel, GitHub Pages, hosting trường...) rồi dán địa chỉ vào ô trên.'
+        : 'Link học sinh sẽ có dạng <code>' + esc(base) + '?room=…&shift=…</code>'}</p>
+    </div>
+    <div class="flex items-center mb-3"><p class="text-sm text-slate-500">Mỗi ca có khung giờ riêng, học sinh chỉ vào được trong khung giờ và khi ca đang mở.</p>
+      <button onclick="editShift(0)" class="ml-auto bg-indigo-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-indigo-700">+ Thêm ca thi</button></div>
+    <div class="grid gap-3">${rows || '<p class="text-slate-500 bg-white rounded-xl shadow p-5">Chưa có ca thi nào.</p>'}</div>`;
+}
+async function toggleShift(id, on) {
+  const { error } = await db.from('exam_shifts').update({ is_active: on }).eq('id', id);
+  if (error) toast(dbErr(error));
+  else { const s = shifts.find(x => x.id === id); s.is_active = on; toast(on ? 'Đã mở ca thi' : 'Đã đóng ca thi'); }
+  renderShifts();
+}
+function copyLink(id) {
+  const s = shifts.find(x => x.id === id), l = shiftLink(s);
+  (navigator.clipboard?.writeText(l) || Promise.reject()).then(() => toast('Đã sao chép link'), () => prompt('Sao chép link:', l));
+}
+function genAccess() { $('sAccess').value = String(Math.floor(1000 + Math.random() * 9000)); }
+function editShift(id) {
+  const s = shifts.find(x => x.id === id);
+  let st, en, code, name;
+  if (s) { st = new Date(s.start_time); en = new Date(s.end_time); code = s.shift_code; name = s.shift_name; }
+  else {
+    const last = shifts.length ? new Date(Math.max(...shifts.map(x => +new Date(x.end_time)))) : null;
+    st = last ? new Date(+last + 15 * 60000) : new Date(Math.ceil(Date.now() / 3600000) * 3600000);
+    en = new Date(+st + room.duration_minutes * 60000);
+    let n = shifts.length + 1; while (shifts.some(x => x.shift_code.toUpperCase() === 'CA' + n)) n++;
+    code = 'CA' + n; name = 'Ca ' + n;
+  }
+  openModal(`<h3 class="font-bold text-lg mb-3">${s ? 'Sửa ca thi' : 'Thêm ca thi'}</h3>
+  <div class="grid gap-3 sm:grid-cols-2 text-sm">
+    <label class="font-medium">Tên ca <input id="sName" class="w-full border rounded p-2 mt-1 font-normal" value="${esc(name)}"></label>
+    <label class="font-medium">Mã ca (trong link) <input id="sCode" class="w-full border rounded p-2 mt-1 font-normal uppercase" value="${esc(code)}"></label>
+    <label class="font-medium">Bắt đầu <input id="sStart" type="datetime-local" class="w-full border rounded p-2 mt-1 font-normal" value="${toLocalInput(st)}"></label>
+    <label class="font-medium">Kết thúc <input id="sEnd" type="datetime-local" class="w-full border rounded p-2 mt-1 font-normal" value="${toLocalInput(en)}"></label>
+    <label class="font-medium sm:col-span-2">Mã vào ca <span class="font-normal text-slate-400">(để trống = không cần mã)</span>
+      <div class="flex gap-2 mt-1"><input id="sAccess" class="flex-1 border rounded p-2 font-normal" value="${esc(s?.access_code || '')}">
+      <button type="button" onclick="genAccess()" class="border rounded px-3 hover:bg-slate-50">Tạo mã</button></div></label>
+    <label class="sm:col-span-2 flex items-center gap-2"><input id="sActive" type="checkbox" ${(s ? s.is_active : true) ? 'checked' : ''}> Mở ca thi ngay (có thể tắt/bật nhanh sau)</label>
+  </div>
+  <p class="text-xs text-slate-500 mt-2">Thời gian làm bài của phòng là ${room.duration_minutes} phút; bài sẽ tự nộp khi hết giờ hoặc khi ca kết thúc, tùy mốc nào đến trước.</p>
+  <div class="flex justify-end gap-2 mt-4"><button onclick="closeModal()" class="border rounded px-4 py-2 text-sm">Hủy</button>
+  <button onclick="saveShift(${id})" class="bg-indigo-600 text-white rounded px-5 py-2 text-sm">Lưu</button></div>`);
+}
+async function saveShift(id) {
+  const name = $('sName').value.trim(), code = $('sCode').value.trim().toUpperCase();
+  const st = new Date($('sStart').value), en = new Date($('sEnd').value);
+  const err = [];
+  if (!name) err.push('thiếu tên ca');
+  if (!/^[A-Za-z0-9_-]{1,32}$/.test(code)) err.push('mã ca chỉ gồm chữ không dấu, số, - hoặc _');
+  if (isNaN(st) || isNaN(en)) err.push('thiếu giờ bắt đầu/kết thúc'); else if (en <= st) err.push('giờ kết thúc phải sau giờ bắt đầu');
+  if (err.length) return toast('Chưa hợp lệ: ' + err.join('; '));
+  const p = { room_id: room.id, shift_name: name, shift_code: code, start_time: st.toISOString(), end_time: en.toISOString(), access_code: $('sAccess').value.trim() || null, is_active: $('sActive').checked };
+  const { error } = id ? await db.from('exam_shifts').update(p).eq('id', id) : await db.from('exam_shifts').insert(p);
+  if (error) return toast(error.code === '23505' ? 'Mã ca đã dùng trong phòng này.' : dbErr(error));
+  closeModal(); toast('Đã lưu ca thi'); await loadShifts(); renderShifts();
+}
+async function delShift(id) {
+  const s = shifts.find(x => x.id === id);
+  if (!confirm(`Xóa “${s.shift_name}”${s._c.all ? ` và ${s._c.all} bài làm của ca này` : ''}? Không thể hoàn tác.`)) return;
+  const { error } = await db.from('exam_shifts').delete().eq('id', id);
+  if (error) return toast(dbErr(error));
+  await loadShifts(); renderShifts();
+}
+function goResults(id) { resShift = String(id); setTab('res'); }
+
+/* ======================= KẾT QUẢ ======================= */
+function stopAuto() { clearInterval(autoTimer); autoTimer = null; }
+async function loadResults(keepScroll) {
+  if (!room) return;
+  if (!shifts.length) await loadShifts();
+  let q = db.from('exam_results').select('id,shift_id,student_code,student_name,student_class,question_ids,answers,score,auto_total,right_count,answered,is_late,started_at,submitted_at,time_spent_seconds,violations,violation_detail').eq('room_id', room.id).order('started_at');
+  if (resShift !== 'all') q = q.eq('shift_id', +resShift);
+  const { data, error } = await q;
+  if (error) toast(dbErr(error));
+  results = data || [];
+  renderResults();
+}
+const resStatus = r => !r.submitted_at ? 'Đang làm' : r.is_late ? 'Nộp muộn' : 'Đã nộp';
+function filteredResults() {
+  const s = resSearch.toLowerCase();
+  const list = results.filter(r => !s || (r.student_name + ' ' + r.student_code + ' ' + (r.student_class || '')).toLowerCase().includes(s));
+  const cmp = {
+    name: (a, b) => a.student_name.localeCompare(b.student_name, 'vi'),
+    code: (a, b) => a.student_code.localeCompare(b.student_code, 'vi', { numeric: true }),
+    score: (a, b) => (b.score ?? -1) - (a.score ?? -1),
+    time: (a, b) => (a.time_spent_seconds ?? 1e9) - (b.time_spent_seconds ?? 1e9),
+    submit: (a, b) => (+new Date(a.submitted_at || 0)) - (+new Date(b.submitted_at || 0))
+  }[resSort];
+  return list.sort(cmp);
+}
+function shiftName(id) { return shifts.find(s => s.id === id)?.shift_name || ''; }
+function renderResults() {
+  const list = filteredResults();
+  const done = results.filter(r => r.submitted_at && r.score != null);
+  const sc = done.map(r => +r.score);
+  const avg = sc.length ? sc.reduce((a, b) => a + b, 0) / sc.length : null;
+  const stat = (l, v) => `<div class="bg-white rounded-xl shadow p-3"><div class="text-xs text-slate-500">${l}</div><div class="text-2xl font-bold">${v}</div></div>`;
+  $('paneRes').innerHTML = `
+  <div class="flex flex-wrap items-center gap-2 mb-3 text-sm">
+    <select class="border rounded p-2 bg-white" onchange="resShift=this.value;loadResults()">
+      <option value="all">Tất cả các ca</option>${shifts.map(s => `<option value="${s.id}" ${resShift == s.id ? 'selected' : ''}>${esc(s.shift_name)} (${fmt(s.start_time)})</option>`).join('')}</select>
+    <input class="border rounded p-2 bg-white" placeholder="Tìm tên / mã / lớp" value="${esc(resSearch)}" oninput="resSearch=this.value;renderResTable()">
+    <select class="border rounded p-2 bg-white" onchange="resSort=this.value;renderResTable()">
+      ${[['name', 'Sắp theo tên'], ['code', 'Sắp theo mã HS'], ['score', 'Điểm cao → thấp'], ['time', 'Thời gian ngắn → dài'], ['submit', 'Giờ nộp']].map(([k, n]) => `<option value="${k}" ${resSort === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
+    <label class="flex items-center gap-1 text-slate-600"><input type="checkbox" id="autoRef" onchange="toggleAuto(this.checked)" ${autoTimer ? 'checked' : ''}> Tự làm mới 15s</label>
+    <button onclick="loadResults()" class="border rounded px-3 py-2 bg-white hover:bg-slate-50">↻ Làm mới</button>
+    <div class="ml-auto flex gap-2">
+      <button onclick="regrade()" class="border rounded px-3 py-2 bg-white hover:bg-slate-50" title="Chấm lại toàn bộ bài đã nộp bằng đáp án hiện tại trong ngân hàng">Chấm lại</button>
+      <button onclick="exportCSV()" class="border rounded px-3 py-2 bg-white hover:bg-slate-50">⬇ CSV</button>
+      <button onclick="exportXLSX()" class="bg-green-600 text-white rounded px-3 py-2 hover:bg-green-700">⬇ Excel</button>
+    </div>
+  </div>
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+    ${stat('Học sinh vào thi', results.length)}${stat('Đã nộp bài', results.filter(r => r.submitted_at).length)}
+    ${stat('Điểm trung bình', avg == null ? '–' : avg.toFixed(2))}${stat('Cao nhất', sc.length ? Math.max(...sc).toFixed(2) : '–')}${stat('Thấp nhất', sc.length ? Math.min(...sc).toFixed(2) : '–')}
+  </div>
+  <div class="bg-white rounded-xl shadow p-4 mb-4">
+    <div class="flex items-center mb-2"><h4 class="font-semibold text-sm">Phổ điểm (số học sinh theo từng khoảng điểm)</h4>
+      <button onclick="toggleHistTable()" id="histBtn" class="ml-auto text-xs text-indigo-600 hover:underline">Xem dạng bảng</button></div>
+    <div id="hist"></div><div id="histTable" class="hidden"></div>
+  </div>
+  <div class="bg-white rounded-xl shadow overflow-x-auto"><div id="resTable"></div></div>`;
+  renderHist(sc); renderResTable();
+}
+const vioPen = r => 0.5 * Math.max(0, (r.violations || 0) - 2);
+const vioText = r => { const d = r.violation_detail || {}, n = { tab: 'chuyển tab', blur: 'rời cửa sổ', screenshot: 'chụp màn hình', other: 'khác' }; return Object.keys(d).map(k => `${n[k] || k}: ${d[k]}`).join(', ') || 'Không vi phạm'; };
+function renderResTable() {
+  const list = filteredResults();
+  $('resTable').innerHTML = `<table class="w-full text-sm"><thead class="bg-slate-50 text-slate-500 text-left"><tr>
+    <th class="p-2">#</th><th class="p-2">Mã HS</th><th class="p-2">Họ tên</th><th class="p-2">Lớp</th><th class="p-2">Ca</th>
+    <th class="p-2 text-right">Điểm</th><th class="p-2 text-right">Đúng</th><th class="p-2 text-right">Thời gian</th><th class="p-2 text-right" title="Số lần chuyển tab / rời cửa sổ / chụp màn hình. Từ lần 3 trừ 0,5 điểm/lần">Vi phạm</th><th class="p-2">Giờ nộp</th><th class="p-2">Trạng thái</th><th class="p-2"></th></tr></thead><tbody>
+    ${list.map((r, i) => `<tr class="border-t hover:bg-slate-50">
+      <td class="p-2 text-slate-400">${i + 1}</td><td class="p-2">${esc(r.student_code)}</td><td class="p-2 font-medium">${esc(r.student_name)}</td><td class="p-2">${esc(r.student_class)}</td>
+      <td class="p-2">${esc(shiftName(r.shift_id))}</td>
+      <td class="p-2 text-right font-semibold">${r.score == null ? (r.submitted_at ? 'Tự luận' : '') : (+r.score).toFixed(2)}</td>
+      <td class="p-2 text-right">${r.submitted_at && r.auto_total ? `${r.right_count}/${r.auto_total}` : ''}</td>
+      <td class="p-2 text-right">${mmss(r.time_spent_seconds)}</td>
+      <td class="p-2 text-right" title="${esc(vioText(r))}">${r.violations ? `<span class="rounded px-1.5 py-0.5 ${r.violations > 2 ? 'bg-red-100 text-red-700 font-semibold' : 'bg-amber-100 text-amber-700'}">${r.violations}${r.violations > 2 ? ' (−' + vioPen(r).toFixed(1) + ')' : ''}</span>` : '<span class="text-slate-300">0</span>'}</td><td class="p-2">${fmt(r.submitted_at)}</td>
+      <td class="p-2"><span class="text-xs rounded-full px-2 py-0.5 ${!r.submitted_at ? 'bg-amber-100 text-amber-700' : r.is_late ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}">${resStatus(r)}</span></td>
+      <td class="p-2 whitespace-nowrap">${r.submitted_at ? `<button onclick="viewSub(${r.id})" class="text-indigo-600 hover:underline">Xem bài</button> · ` : ''}<button onclick="delResult(${r.id})" class="text-red-600 hover:underline">Xóa</button></td></tr>`).join('') || '<tr><td colspan="12" class="p-6 text-center text-slate-400">Chưa có học sinh nào.</td></tr>'}
+    </tbody></table>`;
+}
+function toggleAuto(on) { stopAuto(); if (on) autoTimer = setInterval(() => tab === 'res' && loadResults(), 15000); }
+
+/* --- Biểu đồ phổ điểm: 1 màu, cột mảnh bo góc 4px ở đầu, khe 2px, lưới mờ --- */
+function bins(sc) { const b = Array(10).fill(0); sc.forEach(v => b[Math.min(9, Math.max(0, Math.floor(v)))]++); return b; }
+function renderHist(sc) {
+  const b = bins(sc), mx = Math.max(1, ...b), top = Math.max(2, Math.ceil(mx / 2) * 2);
+  const W = 640, H = 200, L = 34, R = 8, T = 10, B = 26, pw = W - L - R, ph = H - T - B, bw = pw / 10;
+  const y = v => T + ph - v / top * ph;
+  let g = '';
+  for (let i = 0; i <= 2; i++) { const v = top * i / 2; g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="#e2e8f0" stroke-width="1"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="#64748b">${Number.isInteger(v) ? v : v.toFixed(1)}</text>`; }
+  b.forEach((v, i) => {
+    const x = L + i * bw + 3, w = bw - 6, h = v / top * ph, r = Math.min(4, h);
+    const tip = `${i}–${i === 9 ? 10 : i + 1} điểm: ${v} học sinh`;
+    if (v > 0) g += `<path class="bar" fill="#4f46e5" d="M${x},${T + ph} V${y(v) + r} Q${x},${y(v)} ${x + r},${y(v)} H${x + w - r} Q${x + w},${y(v)} ${x + w},${y(v) + r} V${T + ph} Z"/>`;
+    g += `<rect x="${L + i * bw}" y="${T}" width="${bw}" height="${ph}" fill="transparent" data-tip="${tip}" onmousemove="showTip(event)" onmouseleave="hideTip()"/>`;
+    g += `<text x="${L + i * bw + bw / 2}" y="${H - 8}" text-anchor="middle" font-size="11" fill="#64748b">${i}–${i === 9 ? 10 : i + 1}</text>`;
+  });
+  g += `<line x1="${L}" x2="${W - R}" y1="${T + ph}" y2="${T + ph}" stroke="#94a3b8"/>`;
+  $('hist').innerHTML = `<svg viewBox="0 0 ${W} ${H}" class="w-full" role="img" aria-label="Phổ điểm">${g}</svg>`;
+  $('histTable').innerHTML = `<table class="text-sm w-full max-w-sm"><thead class="text-left text-slate-500"><tr><th class="py-1">Khoảng điểm</th><th class="text-right">Số học sinh</th></tr></thead><tbody>${b.map((v, i) => `<tr class="border-t"><td class="py-1">${i}–${i === 9 ? 10 : i + 1}</td><td class="text-right">${v}</td></tr>`).join('')}</tbody></table>`;
+}
+function toggleHistTable() { const t = $('histTable').classList.toggle('hidden'); $('hist').classList.toggle('hidden', !t); $('histBtn').textContent = t ? 'Xem dạng bảng' : 'Xem dạng biểu đồ'; }
+function showTip(e) { const t = $('tip'); t.textContent = e.target.dataset.tip; t.classList.remove('hidden'); t.style.left = (e.clientX + 12) + 'px'; t.style.top = (e.clientY - 28) + 'px'; }
+function hideTip() { $('tip').classList.add('hidden'); }
+
+/* --- Xóa / chấm lại --- */
+async function delResult(id) {
+  const r = results.find(x => x.id === id);
+  if (!confirm(`Xóa bài của ${r.student_name} (${r.student_code})? Học sinh này sẽ được làm lại từ đầu trong ca thi.`)) return;
+  const { error } = await db.from('exam_results').delete().eq('id', id);
+  if (error) return toast(dbErr(error));
+  toast('Đã xóa'); loadResults();
+}
+async function regrade() {
+  const ids = resShift === 'all' ? shifts.map(s => s.id) : [+resShift];
+  if (!ids.length) return;
+  if (!confirm('Chấm lại các bài đã nộp theo đáp án hiện tại trong ngân hàng câu hỏi?')) return;
+  let n = 0;
+  for (const id of ids) { const { data, error } = await db.rpc('exam_regrade', { p_shift: id }); if (error) return toast(dbErr(error)); n += data || 0; }
+  toast(`Đã chấm lại ${n} bài`); loadResults();
+}
+
+/* --- Xem bài làm của học sinh --- */
+const ansText = (t, a) => a == null || a === '' ? '' : t === 'true_false' && typeof a === 'object' ? ['a', 'b', 'c', 'd'].map(k => `${k}) ${a[k] || '–'}`).join('  ') : String(a);
+function isRight(q, a) {
+  if (a == null || a === '' || q.correct_answer == null) return null;
+  if (q.question_type === 'multiple_choice') return String(a).toUpperCase() === String(q.correct_answer).toUpperCase();
+  if (q.question_type === 'true_false') { const c = String(q.correct_answer).split(','); return ['a', 'b', 'c', 'd'].every((k, i) => (a[k] || '') === c[i].trim()); }
+  if (q.question_type === 'short_answer') { const n = s => String(s).trim().toLowerCase().replace(/\s+/g, '').replace(',', '.'); return String(q.correct_answer).split('|').some(x => n(x) === n(a) || (!isNaN(n(x)) && !isNaN(n(a)) && +n(x) === +n(a))); }
+  return null;
+}
+async function viewSub(id) {
+  const r = results.find(x => x.id === id);
+  openModal('<p class="text-slate-500">Đang tải bài làm…</p>');
+  const { data, error } = await db.from('questions').select('id,question_type,content,image_url,options,correct_answer').in('id', r.question_ids);
+  if (error) return $('modalBody').innerHTML = `<p class="text-red-600">${esc(dbErr(error))}</p><button onclick="closeModal()" class="border rounded px-4 py-2 text-sm mt-3">Đóng</button>`;
+  const map = Object.fromEntries((data || []).map(q => [q.id, q]));
+  const items = r.question_ids.map((qid, i) => {
+    const q = map[qid]; if (!q) return `<div class="border rounded p-3 text-sm text-slate-400">Câu ${i + 1}: câu hỏi #${qid} đã bị xóa khỏi ngân hàng.</div>`;
+    const a = r.answers?.[qid], ok = isRight(q, a);
+    return `<div class="border rounded-lg p-3 ${ok === true ? 'border-green-300 bg-green-50' : ok === false ? 'border-red-300 bg-red-50' : ''}">
+      <div class="text-xs text-slate-500 mb-1">Câu ${i + 1} · ${TYPE_NAME[q.question_type]}</div>
+      <div class="text-sm">${esc(q.content)}</div>${q.image_url ? `<img src="${esc(q.image_url)}" class="max-h-40 mt-2 rounded">` : ''}
+      <div class="text-sm mt-2">Học sinh chọn: <b>${esc(ansText(q.question_type, a)) || '<i class="text-slate-400">bỏ trống</i>'}</b>${q.correct_answer != null && q.question_type !== 'essay' ? ` · Đáp án: <b>${esc(q.correct_answer)}</b>` : ''}</div></div>`;
+  }).join('');
+  $('modalBody').innerHTML = `<div class="flex items-center mb-3"><div><h3 class="font-bold text-lg">${esc(r.student_name)} <span class="text-slate-400 font-normal">(${esc(r.student_code)})</span></h3>
+    <p class="text-sm text-slate-500">Điểm: <b>${r.score == null ? 'chưa chấm' : (+r.score).toFixed(2)}</b> · ${mmss(r.time_spent_seconds)} · ${fmt(r.submitted_at)}</p>
+    <p class="text-sm ${r.violations > 2 ? 'text-red-600' : 'text-slate-500'}">Vi phạm: <b>${r.violations || 0}</b>${r.violations ? ` (${esc(vioText(r))})` : ''}${vioPen(r) ? ` · đã trừ ${vioPen(r).toFixed(1)} điểm` : ''}</p></div>
+    <button onclick="closeModal()" class="ml-auto border rounded px-4 py-2 text-sm">Đóng</button></div><div class="grid gap-2">${items}</div>`;
+  math($('modalBody'));
+}
+
+/* --- Xuất file --- */
+function exportRows() {
+  return filteredResults().map((r, i) => ({
+    'STT': i + 1, 'Mã HS': r.student_code, 'Họ tên': r.student_name, 'Lớp': r.student_class || '', 'Ca thi': shiftName(r.shift_id),
+    'Điểm': r.score == null ? '' : +r.score, 'Số câu đúng': r.right_count, 'Số câu chấm tự động': r.auto_total, 'Số câu đã làm': r.answered,
+    'Thời gian làm (phút:giây)': mmss(r.time_spent_seconds), 'Số lần vi phạm': r.violations || 0, 'Điểm bị trừ do vi phạm': vioPen(r), 'Chi tiết vi phạm': (r.violations ? vioText(r) : ''), 'Giờ nộp': fmt(r.submitted_at), 'Trạng thái': resStatus(r)
+  }));
+}
+function fileBase() { return `ketqua_${room.room_code}${resShift === 'all' ? '' : '_' + (shifts.find(s => s.id == resShift)?.shift_code || resShift)}`; }
+function exportCSV() {
+  const rows = exportRows(); if (!rows.length) return toast('Chưa có dữ liệu để xuất.');
+  const cols = Object.keys(rows[0]), q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const csv = '﻿' + [cols.map(q).join(','), ...rows.map(r => cols.map(c => q(r[c])).join(','))].join('\r\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = fileBase() + '.csv'; a.click();
+}
+function exportXLSX() {
+  const rows = exportRows(); if (!rows.length) return toast('Chưa có dữ liệu để xuất.');
+  const ws = XLSX.utils.json_to_sheet(rows); ws['!cols'] = [6, 12, 24, 10, 14, 8, 10, 12, 10, 14, 10, 14, 30, 18, 12].map(w => ({ wch: w }));
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Kết quả');
+  XLSX.writeFile(wb, fileBase() + '.xlsx');
+}
+
+/* ======================= MODAL & KHỞI ĐỘNG ======================= */
+function openModal(html) { $('modalBody').innerHTML = html; const m = $('modal'); m.classList.remove('hidden'); m.classList.add('flex'); }
+function closeModal() { const m = $('modal'); m.classList.add('hidden'); m.classList.remove('flex'); }
+$('modal').addEventListener('mousedown', e => { if (e.target.id === 'modal') closeModal(); });
+
+db.auth.onAuthStateChange((_e, session) => setUser(session?.user || null));
+db.auth.getSession().then(({ data }) => { if (!user) setUser(data.session?.user || null); });
+</script>
+</body>
+</html>

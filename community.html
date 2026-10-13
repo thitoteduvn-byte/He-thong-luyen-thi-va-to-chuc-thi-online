@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kho học liệu cộng đồng</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen">
+
+<!--
+-- =====================================================================
+-- KHO HỌC LIỆU CỘNG ĐỒNG - chạy 1 lần trong Supabase → SQL Editor
+-- Chạy lại nhiều lần vẫn an toàn (không mất dữ liệu).
+-- =====================================================================
+
+-- 1) Cột bổ sung cho bảng questions (câu hỏi sao chép về kho cá nhân)
+alter table questions add column if not exists owner_id uuid;          -- null = ngân hàng chung (dữ liệu cũ)
+alter table questions add column if not exists source_bank_id bigint;  -- sao chép từ bộ nào trong kho cộng đồng
+
+-- 2) Bộ học liệu được chia sẻ (một đề thi hoặc một chương câu hỏi). payload = ảnh chụp nội dung lúc chia sẻ
+create table if not exists shared_banks (
+  id             bigint generated always as identity primary key,
+  owner_id       uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  author_name    text not null,
+  title          text not null,
+  description    text,
+  kind           text not null check (kind in ('exam', 'chapter')),
+  grade          int  not null check (grade between 1 and 12),
+  subject        text not null,
+  chapter        text,
+  visibility     text not null default 'public' check (visibility in ('public', 'private')),
+  question_count int  not null default 0,
+  payload        jsonb not null,
+  downloads      int  not null default 0,
+  rating_avg     numeric(3,2) not null default 0,
+  rating_count   int  not null default 0,
+  created_at     timestamptz not null default now(),
+  updated_at     timestamptz not null default now()
+);
+create index if not exists shared_banks_list_idx  on shared_banks (visibility, subject, grade);
+create index if not exists shared_banks_owner_idx on shared_banks (owner_id);
+
+create or replace function shared_banks_touch() returns trigger language plpgsql as $$
+begin new.updated_at = now(); return new; end $$;
+drop trigger if exists shared_banks_touch on shared_banks;
+create trigger shared_banks_touch before update on shared_banks
+  for each row execute function shared_banks_touch();
+
+alter table shared_banks enable row level security;
+drop policy if exists "sb read"   on shared_banks;
+drop policy if exists "sb insert" on shared_banks;
+drop policy if exists "sb update" on shared_banks;
+drop policy if exists "sb delete" on shared_banks;
+-- Ai cũng xem được bộ Công khai; bộ Riêng tư chỉ chủ sở hữu thấy
+create policy "sb read"   on shared_banks for select using (visibility = 'public' or owner_id = auth.uid());
+create policy "sb insert" on shared_banks for insert to authenticated with check (owner_id = auth.uid());
+create policy "sb update" on shared_banks for update to authenticated using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+create policy "sb delete" on shared_banks for delete to authenticated using (owner_id = auth.uid());
+
+-- Chống gian lận bộ đếm: người dùng chỉ được ghi các cột thông tin, không tự sửa downloads / rating
+revoke insert, update on shared_banks from anon, authenticated;
+grant insert (author_name, title, description, kind, grade, subject, chapter, visibility, question_count, payload)
+  on shared_banks to authenticated;
+grant update (title, description, visibility) on shared_banks to authenticated;
+
+-- 3) Đánh giá sao (mỗi giáo viên 1 đánh giá cho mỗi bộ, không tự chấm bộ của mình, chỉ bộ Công khai)
+create table if not exists shared_ratings (
+  bank_id    bigint not null references shared_banks(id) on delete cascade,
+  user_id    uuid   not null default auth.uid() references auth.users(id) on delete cascade,
+  stars      int    not null check (stars between 1 and 5),
+  created_at timestamptz not null default now(),
+  primary key (bank_id, user_id)
+);
+alter table shared_ratings enable row level security;
+drop policy if exists "sr read own"  on shared_ratings;
+drop policy if exists "sr insert"    on shared_ratings;
+drop policy if exists "sr update"    on shared_ratings;
+drop policy if exists "sr delete"    on shared_ratings;
+create policy "sr read own" on shared_ratings for select to authenticated using (user_id = auth.uid());
+create policy "sr insert"   on shared_ratings for insert to authenticated with check (
+  user_id = auth.uid() and exists (select 1 from shared_banks b where b.id = bank_id and b.visibility = 'public' and b.owner_id <> auth.uid()));
+create policy "sr update"   on shared_ratings for update to authenticated using (user_id = auth.uid()) with check (
+  user_id = auth.uid() and exists (select 1 from shared_banks b where b.id = bank_id and b.visibility = 'public' and b.owner_id <> auth.uid()));
+create policy "sr delete"   on shared_ratings for delete to authenticated using (user_id = auth.uid());
+
+-- Tự tính lại điểm trung bình / số lượt đánh giá mỗi khi có thay đổi
+create or replace function shared_ratings_sync() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare b bigint := coalesce(new.bank_id, old.bank_id);
+begin
+  update shared_banks set
+    rating_avg   = coalesce((select round(avg(stars)::numeric, 2) from shared_ratings where bank_id = b), 0),
+    rating_count = (select count(*) from shared_ratings where bank_id = b)
+  where id = b;
+  return null;
+end $$;
+drop trigger if exists shared_ratings_sync on shared_ratings;
+create trigger shared_ratings_sync after insert or update or delete on shared_ratings
+  for each row execute function shared_ratings_sync();
+
+-- 4) Lượt tải về: mỗi giáo viên chỉ được tính 1 lần cho mỗi bộ; chủ sở hữu tải bộ của mình không được tính
+create table if not exists shared_clones (
+  bank_id    bigint not null references shared_banks(id) on delete cascade,
+  user_id    uuid   not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (bank_id, user_id)
+);
+alter table shared_clones enable row level security;
+drop policy if exists "sc read own" on shared_clones;
+create policy "sc read own" on shared_clones for select to authenticated using (user_id = auth.uid());
+revoke insert, update, delete on shared_clones from anon, authenticated;
+
+create or replace function register_download(p_bank bigint) returns int
+language plpgsql security definer set search_path = public as $$
+declare v_owner uuid; v_vis text; n int;
+begin
+  if auth.uid() is null then raise exception 'Cần đăng nhập'; end if;
+  select owner_id, visibility into v_owner, v_vis from shared_banks where id = p_bank;
+  if v_owner is null then raise exception 'Không tìm thấy bộ học liệu'; end if;
+  if v_vis <> 'public' and v_owner <> auth.uid() then raise exception 'Bộ học liệu này ở chế độ riêng tư'; end if;
+  if v_owner <> auth.uid() then
+    insert into shared_clones (bank_id, user_id) values (p_bank, auth.uid()) on conflict do nothing;
+    if found then update shared_banks set downloads = downloads + 1 where id = p_bank; end if;
+  end if;
+  select downloads into n from shared_banks where id = p_bank;
+  return n;
+end $$;
+revoke all on function register_download(bigint) from public, anon;
+grant execute on function register_download(bigint) to authenticated;
+
+-- 5) Quyền trên bảng questions để mỗi giáo viên quản lý câu hỏi đã lưu về của chính mình
+drop policy if exists "owner insert questions" on questions;
+drop policy if exists "owner update questions" on questions;
+drop policy if exists "owner delete questions" on questions;
+create policy "owner insert questions" on questions for insert to authenticated with check (owner_id = auth.uid());
+create policy "owner update questions" on questions for update to authenticated using (owner_id = auth.uid()) with check (owner_id = auth.uid());
+create policy "owner delete questions" on questions for delete to authenticated using (owner_id = auth.uid());
+
+-- TÙY CHỌN: nếu không muốn câu hỏi cá nhân hiện cho người khác / học sinh, đổi policy đọc của bảng questions.
+-- Xóa policy SELECT cũ (xem tên trong Authentication → Policies) rồi bỏ comment dòng dưới:
+-- create policy "read shared or own questions" on questions for select using (owner_id is null or owner_id = auth.uid());
+-->
+
+<div class="max-w-6xl mx-auto p-4">
+
+  <!-- ===== Đầu trang ===== -->
+  <header class="flex flex-wrap items-center gap-3 mb-4">
+    <div>
+      <h1 class="text-2xl font-bold">Kho học liệu cộng đồng</h1>
+      <p class="text-sm text-slate-500">Đề thi và ngân hàng câu hỏi do đồng nghiệp chia sẻ. Lưu về kho của bạn để chỉnh sửa và trộn đề.</p>
+    </div>
+    <div class="ml-auto flex flex-wrap items-center gap-3">
+      <span id="who" class="text-sm text-slate-600"></span>
+      <button id="authBtn" onclick="authClick()" class="text-sm underline text-slate-600"></button>
+      <button onclick="openShare()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold">Chia sẻ lên kho chung</button>
+    </div>
+  </header>
+
+  <div id="demoBar" class="hidden mb-4 rounded-lg px-3 py-2 bg-violet-50 text-violet-800 text-sm">
+    Đang chạy <b>chế độ demo</b> với dữ liệu mẫu, không đọc hay ghi Supabase. <a href="?" class="underline font-semibold">Chuyển sang dữ liệu thật</a>
+  </div>
+
+  <div class="flex flex-wrap gap-2 mb-4">
+    <button id="tabExplore" onclick="showTab('explore')" class="px-4 py-2 rounded-lg font-semibold">Khám phá</button>
+    <button id="tabMine" onclick="showTab('mine')" class="px-4 py-2 rounded-lg font-semibold">Kho chia sẻ của tôi</button>
+  </div>
+
+  <!-- ===== Khám phá ===== -->
+  <section id="paneExplore" class="space-y-4">
+    <div class="bg-white rounded-xl shadow p-4 space-y-3">
+      <div class="grid grid-cols-2 md:grid-cols-6 gap-2 text-sm">
+        <input id="fKw" oninput="filterTyped()" placeholder="Tìm theo tên hoặc mô tả" aria-label="Từ khóa" class="col-span-2 border rounded p-2">
+        <select id="fSubject" onchange="applyFilters()" aria-label="Môn học" class="border rounded p-2"><option value="">Mọi môn</option></select>
+        <input id="fAuthor" oninput="filterTyped()" placeholder="Tên tác giả" aria-label="Tên tác giả" class="border rounded p-2">
+        <select id="fDl" onchange="applyFilters()" aria-label="Lượt tải về" class="border rounded p-2">
+          <option value="">Mọi lượt tải</option><option value="10">Từ 10 lượt tải</option><option value="50">Từ 50 lượt tải</option><option value="100">Từ 100 lượt tải</option></select>
+        <select id="fRate" onchange="applyFilters()" aria-label="Đánh giá" class="border rounded p-2">
+          <option value="">Mọi đánh giá</option><option value="3">Từ 3 sao</option><option value="4">Từ 4 sao</option><option value="4.5">Từ 4,5 sao</option></select>
+      </div>
+      <div class="flex flex-wrap items-center gap-2 text-sm">
+        <span class="text-slate-500">Khối lớp:</span>
+        <div id="gradeChips" class="flex flex-wrap gap-2"></div>
+        <label class="ml-auto flex items-center gap-2 text-slate-500">Sắp xếp
+          <select id="fSort" onchange="applyFilters()" class="border rounded p-1.5 text-slate-800">
+            <option value="new">Mới nhất</option><option value="dl">Tải nhiều nhất</option><option value="rating">Đánh giá cao nhất</option></select></label>
+        <button onclick="resetFilters()" class="underline text-slate-500">Xóa bộ lọc</button>
+      </div>
+    </div>
+    <div id="exInfo" class="text-sm text-slate-500"></div>
+    <div id="exGrid" class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+    <div id="exPager" class="flex items-center justify-center gap-3 text-sm"></div>
+  </section>
+
+  <!-- ===== Kho chia sẻ của tôi ===== -->
+  <section id="paneMine" class="hidden space-y-3">
+    <div id="mineInfo" class="text-sm text-slate-500"></div>
+    <div id="mineList" class="space-y-2"></div>
+  </section>
+</div>
+
+<!-- ===== Cửa sổ chi tiết / xem trước / lưu về kho ===== -->
+<div id="detailModal" class="hidden fixed inset-0 z-40 bg-black/50 overflow-y-auto p-4" onclick="if (event.target === this) closeDetail()">
+  <div role="dialog" aria-modal="true" aria-labelledby="dTitle" class="max-w-3xl mx-auto my-4 bg-white rounded-xl shadow">
+    <div class="p-5 space-y-3">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div id="dKind" class="text-xs mb-1"></div>
+          <h2 id="dTitle" class="text-xl font-bold"></h2>
+          <div id="dMeta" class="text-sm text-slate-500 mt-1"></div>
+        </div>
+        <button onclick="closeDetail()" aria-label="Đóng" class="text-slate-500 text-xl leading-none px-2">✕</button>
+      </div>
+      <div id="dStats" class="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm"></div>
+      <p id="dDesc" class="text-sm whitespace-pre-wrap"></p>
+      <div id="dRate" class="rounded-lg bg-slate-50 border p-3 text-sm"></div>
+      <div id="dClone" class="hidden rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm space-y-2"></div>
+      <div id="dMsg" class="text-sm"></div>
+      <div class="flex items-center justify-between pt-1">
+        <h3 class="font-semibold">Xem trước nội dung <span id="dCount" class="font-normal text-slate-500"></span></h3>
+      </div>
+      <div id="dList" class="space-y-3"></div>
+      <div id="dMore" class="text-center"></div>
+    </div>
+    <div class="sticky bottom-0 flex flex-wrap items-center justify-end gap-3 border-t bg-white rounded-b-xl px-5 py-3">
+      <button onclick="closeDetail()" class="px-4 py-2 rounded-lg bg-slate-100 font-semibold">Đóng</button>
+      <button id="dCloneBtn" onclick="toggleClone()" class="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold">Lưu về kho của tôi</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Cửa sổ chia sẻ ===== -->
+<div id="shareModal" class="hidden fixed inset-0 z-40 bg-black/50 overflow-y-auto p-4" onclick="if (event.target === this) closeShare()">
+  <div role="dialog" aria-modal="true" aria-labelledby="shTitle" class="max-w-xl mx-auto my-4 bg-white rounded-xl shadow p-5 space-y-4">
+    <div class="flex items-center justify-between">
+      <h2 id="shTitle" class="text-lg font-bold">Chia sẻ lên kho chung</h2>
+      <button onclick="closeShare()" aria-label="Đóng" class="text-slate-500 text-xl leading-none px-2">✕</button>
+    </div>
+
+    <fieldset class="space-y-2">
+      <legend class="text-sm font-medium">Bạn muốn chia sẻ gì?</legend>
+      <div class="flex flex-wrap gap-4 text-sm">
+        <label class="flex items-center gap-2"><input type="radio" name="shKind" value="exam" checked onchange="shKindChanged()"> Một đề thi đã lưu</label>
+        <label class="flex items-center gap-2"><input type="radio" name="shKind" value="chapter" onchange="shKindChanged()"> Một chương câu hỏi</label>
+      </div>
+    </fieldset>
+
+    <div id="shExamBox">
+      <label class="block text-sm font-medium">Chọn đề thi
+        <select id="shExam" onchange="shExamChanged()" class="w-full border rounded p-2 mt-1"></select></label>
+    </div>
+    <div id="shChapterBox" class="hidden grid grid-cols-3 gap-2 text-sm">
+      <label class="font-medium">Lớp <select id="shGrade" onchange="shMetaChanged('grade')" class="w-full border rounded p-2 mt-1"></select></label>
+      <label class="font-medium">Môn <select id="shSubject" onchange="shMetaChanged('subject')" class="w-full border rounded p-2 mt-1"></select></label>
+      <label class="font-medium">Chương <select id="shChapter" onchange="shMetaChanged('chapter')" class="w-full border rounded p-2 mt-1"></select></label>
+    </div>
+    <div id="shSrcInfo" class="text-xs text-slate-500"></div>
+
+    <label class="block text-sm font-medium">Tiêu đề
+      <input id="shName" maxlength="120" oninput="shNameTouched = true" class="w-full border rounded p-2 mt-1"></label>
+    <label class="block text-sm font-medium">Mô tả ngắn (không bắt buộc)
+      <textarea id="shDesc" rows="3" maxlength="600" placeholder="Phạm vi kiến thức, thời lượng, điểm nổi bật của bộ này..." class="w-full border rounded p-2 mt-1"></textarea></label>
+    <label class="block text-sm font-medium">Tên hiển thị của tác giả
+      <input id="shAuthor" maxlength="60" class="w-full border rounded p-2 mt-1">
+      <span class="block text-xs font-normal text-slate-500 mt-1">Chỉ hiển thị tên này, email của bạn không được công khai.</span></label>
+
+    <fieldset class="space-y-2">
+      <legend class="text-sm font-medium">Chế độ chia sẻ</legend>
+      <label class="flex items-start gap-2 rounded-lg border p-3 text-sm cursor-pointer has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-50">
+        <input type="radio" name="shVis" value="public" checked class="mt-1">
+        <span><b>Công khai</b><br><span class="text-slate-500">Mọi giáo viên đều xem được và lưu về kho của họ.</span></span></label>
+      <label class="flex items-start gap-2 rounded-lg border p-3 text-sm cursor-pointer has-[:checked]:border-indigo-500 has-[:checked]:bg-indigo-50">
+        <input type="radio" name="shVis" value="private" class="mt-1">
+        <span><b>Riêng tư</b><br><span class="text-slate-500">Chỉ mình bạn thấy, trong mục "Kho chia sẻ của tôi". Bạn có thể chuyển sang công khai sau.</span></span></label>
+    </fieldset>
+
+    <label class="flex items-start gap-2 text-sm"><input id="shOk" type="checkbox" class="mt-1">
+      <span>Tôi là tác giả hoặc có quyền chia sẻ nội dung này, và nội dung không chứa thông tin cá nhân của học sinh.</span></label>
+
+    <div id="shMsg" class="text-sm"></div>
+    <div class="flex justify-end gap-3">
+      <button onclick="closeShare()" class="px-4 py-2 rounded-lg bg-slate-100 font-semibold">Hủy</button>
+      <button id="shBtn" onclick="submitShare()" class="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold disabled:opacity-50">Chia sẻ lên kho chung</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Cửa sổ đăng nhập ===== -->
+<div id="loginModal" class="hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onclick="if (event.target === this) closeLogin()">
+  <div role="dialog" aria-modal="true" aria-labelledby="lgTitle" class="w-full max-w-sm bg-white rounded-xl shadow p-5 space-y-3">
+    <h2 id="lgTitle" class="text-lg font-bold">Đăng nhập</h2>
+    <p class="text-sm text-slate-500">Cần đăng nhập để chia sẻ, đánh giá và lưu học liệu về kho của bạn.</p>
+    <input id="lgEmail" type="email" autocomplete="username" placeholder="Email" class="w-full border rounded p-2">
+    <input id="lgPass" type="password" autocomplete="current-password" placeholder="Mật khẩu" onkeydown="if (event.key === 'Enter') doLogin()" class="w-full border rounded p-2">
+    <div id="lgMsg" class="text-sm text-red-600"></div>
+    <div class="flex justify-end gap-3">
+      <button onclick="closeLogin()" class="px-4 py-2 rounded-lg bg-slate-100 font-semibold">Hủy</button>
+      <button onclick="doLogin()" class="px-5 py-2 rounded-lg bg-indigo-600 text-white font-semibold">Đăng nhập</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" role="status" class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] bg-slate-800 text-white text-sm px-4 py-2 rounded-lg shadow-lg max-w-[90vw]"></div>
+
+<script>
+// ================== CẤU HÌNH (điền thông tin của bạn) ==================
+const SUPABASE_URL = 'https://xzznmfgihzjeqsmiuypi.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_dUldhQYF1ETrSCZ4jiy3Og_ygfkm9XW';
+const LINKS = { manage: 'admin.html', exams: 'matrix_exam01.html' };   // trang quản lý ngân hàng / trang trộn đề của bạn
+const PAGE = 12;                                                        // số thẻ mỗi trang
+const MAX_QUESTIONS = 500;                                              // giới hạn số câu mỗi lần chia sẻ
+// ======================================================================
+
+const DEMO = new URLSearchParams(location.search).has('demo');
+const db = DEMO ? null : supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const LEVELS = ['nhan_biet', 'thong_hieu', 'van_dung', 'van_dung_cao'];
+const TYPES = ['multiple_choice', 'true_false', 'short_answer', 'essay'];
+const TYPE_ALIAS = { trac_nghiem: 'multiple_choice', mcq: 'multiple_choice', dung_sai: 'true_false', tf: 'true_false', tra_loi_ngan: 'short_answer', tu_luan: 'essay' };
+const TYPE_NAME = { multiple_choice: 'Trắc nghiệm', true_false: 'Đúng/Sai', short_answer: 'Trả lời ngắn', essay: 'Tự luận' };
+const DIFF_NAME = { nhan_biet: 'Nhận biết', thong_hieu: 'Thông hiểu', van_dung: 'Vận dụng', van_dung_cao: 'Vận dụng cao' };
+const KIND_NAME = { exam: 'Đề thi', chapter: 'Chương câu hỏi' };
+const LIST_COLS = 'id, owner_id, author_name, title, description, kind, grade, subject, chapter, visibility, question_count, downloads, rating_avg, rating_count, created_at';
+
+const S = { user: null, tab: 'explore', page: 0, total: 0, banks: [], grade: '', detail: null, cloneOpen: false, shown: 10, busy: false };
+
+// ---------- Tiện ích ----------
+let toastTimer = null;
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.add('hidden'), 4000); }
+function say(id, ok, html) { $(id).innerHTML = html ? `<div class="p-3 rounded ${ok ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${html}</div>` : ''; }
+function math(el) {
+  try { if (el && window.renderMathInElement) renderMathInElement(el, { delimiters: [{ left: '$$', right: '$$', display: true }, { left: '$', right: '$', display: false }, { left: '\\(', right: '\\)', display: false }, { left: '\\[', right: '\\]', display: true }], throwOnError: false }); } catch {}
+}
+const normDiff = v => String(v ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').toLowerCase().trim().replace(/[\s-]+/g, '_');
+const fmtDate = d => new Date(d).toLocaleDateString('vi-VN');
+const fmtNum = n => Number(n || 0).toLocaleString('vi-VN');
+const snip = (s, n = 140) => { s = String(s ?? '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n) + '…' : s; };
+const imgOk = u => { u = String(u ?? '').trim(); return /^https?:\/\//i.test(u) ? u : null; };
+function stars(avg, count) {
+  const full = Math.max(0, Math.min(5, Math.round(Number(avg))));
+  return count ? `<span class="text-amber-500 whitespace-nowrap" aria-label="${Number(avg).toFixed(1)} trên 5 sao">${'★'.repeat(full)}<span class="text-slate-300">${'★'.repeat(5 - full)}</span></span> <b>${Number(avg).toFixed(1).replace('.', ',')}</b> <span class="text-slate-500">(${count})</span>`
+    : '<span class="text-slate-400">Chưa có đánh giá</span>';
+}
+const userName = () => (localStorage.getItem('cb_author') || S.user?.user_metadata?.full_name || (S.user?.email || '').split('@')[0] || '').trim();
+const requireLogin = () => { if (S.user) return true; openLogin(); return false; };
+const likeOf = v => '%' + v.replace(/[\\%_]/g, m => '\\' + m) + '%';
+
+// ---------- Chuẩn hóa câu hỏi về đúng dòng của bảng questions ----------
+function parseTF(v) {
+  let t = Array.isArray(v) ? v.map(String) : String(v ?? '').trim().split(/[\s,;|\/]+/).filter(Boolean);
+  if (t.length === 1 && t[0].length === 4) t = t[0].split('');
+  if (t.length !== 4) return null;
+  const out = [];
+  for (const x of t) {
+    const k = x.toLowerCase();
+    if (['đ', 'd', 'đúng', 'dung', 't', 'true', '1'].includes(k)) out.push('Đ');
+    else if (['s', 'sai', 'f', 'false', '0'].includes(k)) out.push('S');
+    else return null;
+  }
+  return out.join(',');
+}
+function optsOf(q) {
+  let o = q.options; if (typeof o === 'string') { try { o = JSON.parse(o); } catch { o = null; } }
+  o = o && typeof o === 'object' ? o : {};
+  return L => String(o[L] ?? o[L.toLowerCase()] ?? o[L.toUpperCase()] ?? q[L.toLowerCase()] ?? '').trim();
+}
+// Trả về { row } hoặc { err }. fb = thông tin dự phòng (lớp, môn, chương) của bộ học liệu
+function toRow(q, fb = {}) {
+  q = q && typeof q === 'object' ? q : {};
+  let t = String(q.question_type || 'multiple_choice').toLowerCase().replace(/[\s-]+/g, '_'); t = TYPE_ALIAS[t] || t;
+  if (!TYPES.includes(t)) return { err: `dạng câu "${t}" chưa được hỗ trợ` };
+  const get = optsOf(q), row = {
+    question_type: t, grade: Number(q.grade ?? fb.grade), subject: String(q.subject || fb.subject || '').trim(), chapter: String(q.chapter || fb.chapter || '').trim(),
+    difficulty: normDiff(q.difficulty), content: String(q.content ?? '').trim(), image_url: imgOk(q.image_url), options: {}, correct_answer: null,
+    explanation: q.explanation ? String(q.explanation) : null
+  };
+  if (!Number.isInteger(row.grade) || row.grade < 1 || row.grade > 12) return { err: 'lớp không hợp lệ' };
+  if (!row.subject || !row.chapter) return { err: 'thiếu môn hoặc chương' };
+  if (!LEVELS.includes(row.difficulty)) return { err: 'độ khó không hợp lệ' };
+  if (!row.content) return { err: 'thiếu nội dung' };
+  if (t === 'multiple_choice') {
+    row.options = { A: get('A'), B: get('B'), C: get('C'), D: get('D') };
+    row.correct_answer = String(q.correct_answer ?? '').trim().toUpperCase();
+    if (Object.values(row.options).some(x => !x)) return { err: 'thiếu đáp án A-D' };
+    if (!['A', 'B', 'C', 'D'].includes(row.correct_answer)) return { err: 'đáp án đúng không hợp lệ' };
+  } else if (t === 'true_false') {
+    row.options = { a: get('a'), b: get('b'), c: get('c'), d: get('d') };
+    row.correct_answer = parseTF(q.correct_answer);
+    if (Object.values(row.options).some(x => !x)) return { err: 'thiếu phát biểu a-d' };
+    if (!row.correct_answer) return { err: 'đáp án Đúng/Sai không hợp lệ' };
+  } else if (t === 'short_answer') {
+    row.correct_answer = String(q.correct_answer ?? '').trim();
+    if (!row.correct_answer) return { err: 'thiếu đáp án' };
+  }
+  return { row };
+}
+function convert(list, fb) {
+  const rows = [], errs = [];
+  (Array.isArray(list) ? list : []).forEach((q, i) => { const r = toRow(q, fb); r.row ? rows.push(r.row) : errs.push(`Câu ${i + 1}: ${r.err}`); });
+  return { rows, errs };
+}
+
+// ---------- Lớp dữ liệu: Supabase thật hoặc dữ liệu mẫu (?demo=1) ----------
+const real = {
+  async user() { const { data } = await db.auth.getSession(); return data.session?.user || null; },
+  async meta() {
+    const rows = [];
+    for (let a = 0; ; a += 1000) {
+      const { data, error } = await db.from('shared_banks').select('subject, grade').eq('visibility', 'public').range(a, a + 999);
+      if (error) throw error; rows.push(...data); if (data.length < 1000) break;
+    }
+    return rows;
+  },
+  async list(f, page) {
+    let q = db.from('shared_banks').select(LIST_COLS, { count: 'exact' }).eq('visibility', 'public');
+    if (f.subject) q = q.eq('subject', f.subject);
+    if (f.grade) q = q.eq('grade', Number(f.grade));
+    if (f.author) q = q.ilike('author_name', likeOf(f.author));
+    if (f.kw) { const k = f.kw.replace(/[,()*%\\"]/g, ' ').trim(); if (k) q = q.or(`title.ilike.*${k}*,description.ilike.*${k}*`); }
+    if (f.minDl) q = q.gte('downloads', Number(f.minDl));
+    if (f.minRate) q = q.gt('rating_count', 0).gte('rating_avg', Number(f.minRate));
+    if (f.sort === 'dl') q = q.order('downloads', { ascending: false }).order('created_at', { ascending: false });
+    else if (f.sort === 'rating') q = q.order('rating_avg', { ascending: false }).order('rating_count', { ascending: false });
+    else q = q.order('created_at', { ascending: false });
+    const { data, error, count } = await q.range(page * PAGE, page * PAGE + PAGE - 1);
+    if (error) throw error;
+    return { rows: data, total: count ?? data.length };
+  },
+  async mine() {
+    const { data, error } = await db.from('shared_banks').select(LIST_COLS).eq('owner_id', S.user.id).order('created_at', { ascending: false });
+    if (error) throw error; return data;
+  },
+  async get(id) {
+    const { data: bank, error } = await db.from('shared_banks').select('*').eq('id', id).single();
+    if (error) throw error;
+    if (S.user) {
+      const [r, c] = await Promise.all([
+        db.from('shared_ratings').select('stars').eq('bank_id', id).maybeSingle(),
+        db.from('shared_clones').select('created_at').eq('bank_id', id).maybeSingle()]);
+      bank.myStars = r.data?.stars || 0; bank.clonedAt = c.data?.created_at || null;
+    }
+    return bank;
+  },
+  async rate(id, stars) {
+    const { error } = await db.from('shared_ratings').upsert({ bank_id: id, stars }, { onConflict: 'bank_id,user_id' });
+    if (error) throw error;
+    const { data } = await db.from('shared_banks').select(LIST_COLS).eq('id', id).single(); return data;
+  },
+  async update(id, patch) {
+    const { data, error } = await db.from('shared_banks').update(patch).eq('id', id).select('id');
+    if (error) throw error; if (!data?.length) throw new Error('Không cập nhật được (không có quyền hoặc bộ đã bị xóa).');
+  },
+  async remove(id) {
+    const { data, error } = await db.from('shared_banks').delete().eq('id', id).select('id');
+    if (error) throw error; if (!data?.length) throw new Error('Không xóa được (không có quyền hoặc bộ đã bị xóa).');
+  },
+  async create(row) {
+    const { data, error } = await db.from('shared_banks').insert(row).select('id').single();
+    if (error) throw error; return data.id;
+  },
+  // nguồn để chia sẻ
+  async exams() {
+    const { data, error } = await db.from('exams').select('id, title, grade, subject, question_count, created_at').order('created_at', { ascending: false }).limit(100);
+    if (error) throw error; return data;
+  },
+  async examData(id) {
+    const { data, error } = await db.from('exams').select('title, grade, subject, minutes, data').eq('id', id).single();
+    if (error) throw error;
+    return { title: data.title, grade: data.grade, subject: data.subject, minutes: data.minutes, questions: data.data?.questions || [] };
+  },
+  async chapterMeta() {
+    const rows = [];
+    for (let a = 0; ; a += 1000) {
+      const { data, error } = await db.from('questions').select('grade, subject, chapter').or(`owner_id.is.null,owner_id.eq.${S.user.id}`).order('id').range(a, a + 999);
+      if (error) throw error; rows.push(...data); if (data.length < 1000) break;
+    }
+    return rows;
+  },
+  async chapterQuestions(g, s, c) {
+    const rows = [];
+    for (let a = 0; ; a += 500) {
+      const { data, error } = await db.from('questions')
+        .select('question_type, grade, subject, chapter, difficulty, content, image_url, options, correct_answer, explanation')
+        .eq('grade', Number(g)).eq('subject', s).eq('chapter', c).or(`owner_id.is.null,owner_id.eq.${S.user.id}`).order('id').range(a, a + 499);
+      if (error) throw error; rows.push(...data); if (data.length < 500) break;
+    }
+    return rows;
+  },
+  // sao chép về kho của tôi
+  async copyImage(url, cache) {
+    if (cache.map.has(url)) return cache.map.get(url);
+    let out = url;
+    try {
+      const r = await fetch(url); if (!r.ok) throw new Error('http ' + r.status);
+      const blob = await r.blob();
+      const base = decodeURIComponent(url.split('?')[0].split('/').pop() || 'anh.png').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').replace(/[^A-Za-z0-9._-]+/g, '_');
+      const path = `q_${Date.now()}_${cache.n++}_${base}`;
+      const bucket = db.storage.from('question-images');
+      const { error } = await bucket.upload(path, blob, { contentType: blob.type || undefined, cacheControl: '31536000', upsert: false });
+      if (error) throw error;
+      out = bucket.getPublicUrl(path).data.publicUrl; cache.ok++;
+    } catch { cache.fail++; }
+    cache.map.set(url, out); return out;
+  },
+  async insertQuestions(rows) {
+    const ids = [];
+    for (let i = 0; i < rows.length; i += 100) {
+      const { data, error } = await db.from('questions').insert(rows.slice(i, i + 100)).select('id');
+      if (error) throw new Error(`đã lưu ${ids.length}/${rows.length} câu, sau đó lỗi: ${error.message}`);
+      ids.push(...data.map(r => r.id));
+    }
+    return ids;
+  },
+  async createExam(row) {
+    const { data, error } = await db.from('exams').insert(row).select('id').single();
+    if (error) throw error; return data.id;
+  },
+  async registerDownload(id) { const { data, error } = await db.rpc('register_download', { p_bank: id }); if (error) throw error; return data; }
+};
+
+// ----- Dữ liệu mẫu cho ?demo=1 -----
+function demoBuild() {
+  const mc = (i, ch, d) => ({ question_type: 'multiple_choice', grade: 11, subject: 'Vật lý', chapter: ch, difficulty: d, content: `Hai điện tích $q_1 = ${i}\\,\\mu C$ và $q_2 = 2\\,\\mu C$ cách nhau $r = 10\\,cm$. Lực tương tác có độ lớn?`, options: { A: `$${i * 1.8}\\,N$`, B: `$${i * 3.6}\\,N$`, C: `$${i * 0.9}\\,N$`, D: `$${i * 7.2}\\,N$` }, correct_answer: 'A', explanation: '$F = k\\dfrac{|q_1 q_2|}{r^2}$' });
+  const tf = (ch) => ({ question_type: 'true_false', grade: 11, subject: 'Vật lý', chapter: ch, difficulty: 'thong_hieu', content: 'Xét các phát biểu về điện trường:', options: { a: 'Điện thế giảm dọc theo chiều đường sức.', b: 'Đường sức điện là đường cong khép kín.', c: 'Lực điện cùng chiều $\\vec{E}$ với điện tích dương.', d: 'Điện trường đều có các đường sức song song.' }, correct_answer: 'Đ,S,Đ,Đ', explanation: 'Đường sức điện không khép kín.' });
+  const sa = (ch) => ({ question_type: 'short_answer', grade: 10, subject: 'Toán', chapter: ch, difficulty: 'van_dung', content: 'Tính $\\sqrt{144} + 3^2$.', correct_answer: '21', explanation: '$12 + 9 = 21$' });
+  const es = (ch) => ({ question_type: 'essay', grade: 12, subject: 'Hóa học', chapter: ch, difficulty: 'van_dung_cao', content: 'Trình bày cách phân biệt ba dung dịch mất nhãn: $HCl$, $NaOH$, $NaCl$.', explanation: 'Ý 1 (1đ): dùng quỳ tím. Ý 2 (1đ): nhận ra $NaCl$ không đổi màu.' });
+  const mk = (id, owner, author, title, desc, kind, grade, subject, chapter, vis, qs, dl, avg, cnt, daysAgo) => ({
+    id, owner_id: owner, author_name: author, title, description: desc, kind, grade, subject, chapter, visibility: vis, question_count: qs.length, downloads: dl, rating_avg: avg, rating_count: cnt,
+    created_at: new Date(Date.now() - daysAgo * 864e5).toISOString(), payload: { questions: qs, minutes: kind === 'exam' ? 45 : null }
+  });
+  return [
+    mk(1, 'u1', 'Nguyễn Thị Lan', 'Đề kiểm tra 45 phút Chương 1 - Điện trường', 'Đủ 3 mức độ, có lời giải chi tiết.', 'exam', 11, 'Vật lý', 'Chương 1. Điện trường', 'public', [mc(2, 'Chương 1. Điện trường', 'nhan_biet'), tf('Chương 1. Điện trường'), mc(5, 'Chương 1. Điện trường', 'van_dung')], 128, 4.6, 21, 5),
+    mk(2, 'u2', 'Trần Văn Hùng', 'Ngân hàng Căn bậc hai - Lớp 10', 'Các bài tính nhanh, vận dụng.', 'chapter', 10, 'Toán', 'Chương 2. Căn bậc hai', 'public', [sa('Chương 2. Căn bậc hai'), sa('Chương 2. Căn bậc hai')], 57, 4.2, 9, 12),
+    mk(3, 'u3', 'Lê Minh Châu', 'Câu tự luận ôn thi học kì - Nhận biết chất', 'Hướng dẫn chấm theo thang điểm.', 'chapter', 12, 'Hóa học', 'Chương 5. Nhận biết', 'public', [es('Chương 5. Nhận biết')], 14, 3.8, 4, 20),
+    mk(4, 'u1', 'Nguyễn Thị Lan', 'Đề cuối kì I - Vật lý 11', 'Bản đã dùng cho 6 lớp, chênh lệch điểm hợp lý.', 'exam', 11, 'Vật lý', 'Chương 1-3', 'public', [mc(3, 'Chương 1. Điện trường', 'nhan_biet'), mc(4, 'Chương 2. Dòng điện', 'thong_hieu'), tf('Chương 3. Từ trường')], 243, 4.9, 37, 2),
+    mk(5, 'u4', 'Phạm Quốc Bảo', 'Trắc nghiệm Lượng giác cơ bản', '', 'chapter', 11, 'Toán', 'Chương 1. Lượng giác', 'public', [sa('Chương 1. Lượng giác')], 3, 0, 0, 1),
+    mk(6, 'me', 'Giáo viên Demo', 'Đề thử của tôi - Vật lý 11', 'Bản nháp, chưa muốn công khai.', 'exam', 11, 'Vật lý', 'Chương 1. Điện trường', 'private', [mc(1, 'Chương 1. Điện trường', 'nhan_biet')], 0, 0, 0, 0),
+    mk(7, 'me', 'Giáo viên Demo', 'Câu Đúng/Sai Điện trường', 'Bộ câu Đúng/Sai tự soạn.', 'chapter', 11, 'Vật lý', 'Chương 1. Điện trường', 'public', [tf('Chương 1. Điện trường')], 6, 5, 1, 9)
+  ];
+}
+const demo = (() => {
+  let banks = null, nextId = 100;
+  const ensure = () => banks ||= demoBuild();
+  const wait = (v) => new Promise(r => setTimeout(() => r(v), 150));
+  const view = b => { const { payload, ...rest } = b; return { ...rest }; };
+  return {
+    user: async () => ({ id: 'me', email: 'demo@example.com', user_metadata: { full_name: 'Giáo viên Demo' } }),
+    meta: async () => wait(ensure().filter(b => b.visibility === 'public').map(b => ({ subject: b.subject, grade: b.grade }))),
+    list: async (f, page) => {
+      let r = ensure().filter(b => b.visibility === 'public');
+      if (f.subject) r = r.filter(b => b.subject === f.subject);
+      if (f.grade) r = r.filter(b => String(b.grade) === String(f.grade));
+      if (f.author) r = r.filter(b => b.author_name.toLowerCase().includes(f.author.toLowerCase()));
+      if (f.kw) r = r.filter(b => (b.title + ' ' + (b.description || '')).toLowerCase().includes(f.kw.toLowerCase()));
+      if (f.minDl) r = r.filter(b => b.downloads >= Number(f.minDl));
+      if (f.minRate) r = r.filter(b => b.rating_count > 0 && b.rating_avg >= Number(f.minRate));
+      r = [...r].sort(f.sort === 'dl' ? (a, b) => b.downloads - a.downloads : f.sort === 'rating' ? (a, b) => b.rating_avg - a.rating_avg || b.rating_count - a.rating_count : (a, b) => new Date(b.created_at) - new Date(a.created_at));
+      return wait({ rows: r.slice(page * PAGE, page * PAGE + PAGE).map(view), total: r.length });
+    },
+    mine: async () => wait(ensure().filter(b => b.owner_id === 'me').map(view)),
+    get: async id => { const b = ensure().find(x => x.id === id); if (!b) throw new Error('Không tìm thấy'); return wait({ ...b, myStars: b.myStars || 0, clonedAt: b.clonedAt || null }); },
+    rate: async (id, stars) => { const b = ensure().find(x => x.id === id); const prev = b.myStars || 0; b.rating_avg = (b.rating_avg * b.rating_count - prev + stars) / (b.rating_count + (prev ? 0 : 1)); if (!prev) b.rating_count++; b.myStars = stars; return wait(view(b)); },
+    update: async (id, patch) => { Object.assign(ensure().find(x => x.id === id), patch); return wait(); },
+    remove: async id => { banks = ensure().filter(x => x.id !== id); return wait(); },
+    create: async row => { const b = { ...row, id: ++nextId, owner_id: 'me', downloads: 0, rating_avg: 0, rating_count: 0, created_at: new Date().toISOString() }; ensure().push(b); return wait(b.id); },
+    exams: async () => wait([{ id: 1, title: 'Đề giữa kì II - Vật lý 11', grade: 11, subject: 'Vật lý', question_count: 2 }, { id: 2, title: 'Kiểm tra 15 phút - Toán 10', grade: 10, subject: 'Toán', question_count: 1 }]),
+    examData: async id => wait(Number(id) === 1
+      ? { title: 'Đề giữa kì II - Vật lý 11', grade: 11, subject: 'Vật lý', minutes: 45, questions: [demoBuild()[0].payload.questions[0], demoBuild()[0].payload.questions[1]] }
+      : { title: 'Kiểm tra 15 phút - Toán 10', grade: 10, subject: 'Toán', minutes: 15, questions: [demoBuild()[1].payload.questions[0]] }),
+    chapterMeta: async () => wait([{ grade: 11, subject: 'Vật lý', chapter: 'Chương 1. Điện trường' }, { grade: 10, subject: 'Toán', chapter: 'Chương 2. Căn bậc hai' }]),
+    chapterQuestions: async (g, s) => wait(demoBuild().flatMap(b => b.payload.questions).filter(q => String(q.grade) === String(g) && q.subject === s)),
+    copyImage: async url => url,
+    insertQuestions: async rows => wait(rows.map((_, i) => 1000 + i)),
+    createExam: async () => wait(1),
+    registerDownload: async id => { const b = ensure().find(x => x.id === id); if (b.owner_id !== 'me' && !b.clonedAt) { b.downloads++; b.clonedAt = new Date().toISOString(); } return wait(b.downloads); }
+  };
+})();
+const api = DEMO ? demo : real;
+
+// ---------- Đăng nhập ----------
+function openLogin() { $('lgMsg').textContent = ''; $('loginModal').classList.remove('hidden'); $('lgEmail').focus(); }
+function closeLogin() { $('loginModal').classList.add('hidden'); $('lgPass').value = ''; }
+async function doLogin() {
+  const { error } = await db.auth.signInWithPassword({ email: $('lgEmail').value.trim(), password: $('lgPass').value });
+  if (error) { $('lgMsg').textContent = 'Đăng nhập thất bại: ' + error.message; return; }
+  closeLogin();
+}
+async function authClick() { if (S.user) { if (!DEMO) await db.auth.signOut(); } else openLogin(); }
+function renderAuth() {
+  $('who').textContent = S.user ? userName() : '';
+  $('authBtn').textContent = S.user ? (DEMO ? '' : 'Đăng xuất') : 'Đăng nhập';
+}
+function setUser(u) {
+  const changed = (S.user?.id || null) !== (u?.id || null);
+  S.user = u; renderAuth();
+  if (changed) { if (S.tab === 'mine') loadMine(); }
+}
+
+// ---------- Tab ----------
+function showTab(t) {
+  if (t === 'mine' && !requireLogin()) return;
+  S.tab = t;
+  $('paneExplore').classList.toggle('hidden', t !== 'explore');
+  $('paneMine').classList.toggle('hidden', t !== 'mine');
+  $('tabExplore').className = 'px-4 py-2 rounded-lg font-semibold ' + (t === 'explore' ? 'bg-indigo-600 text-white' : 'bg-white');
+  $('tabMine').className = 'px-4 py-2 rounded-lg font-semibold ' + (t === 'mine' ? 'bg-indigo-600 text-white' : 'bg-white');
+  if (t === 'mine') loadMine(); else loadList(S.page);
+}
+
+// ---------- Khám phá: bộ lọc + danh sách ----------
+const filters = () => ({ kw: $('fKw').value.trim(), subject: $('fSubject').value, author: $('fAuthor').value.trim(), minDl: $('fDl').value, minRate: $('fRate').value, grade: S.grade, sort: $('fSort').value });
+let typeTimer = null, listSeq = 0;
+function filterTyped() { clearTimeout(typeTimer); typeTimer = setTimeout(applyFilters, 350); }
+function applyFilters() { clearTimeout(typeTimer); loadList(0); }
+function resetFilters() { ['fKw', 'fSubject', 'fAuthor', 'fDl', 'fRate'].forEach(id => $(id).value = ''); $('fSort').value = 'new'; S.grade = ''; renderChips(); loadList(0); }
+function setGrade(g) { S.grade = S.grade === g ? '' : g; renderChips(); loadList(0); }
+
+let gradeSet = [];
+function renderChips() {
+  const chip = (g, label) => `<button onclick="setGrade('${g}')" aria-pressed="${S.grade === g}" class="px-3 py-1 rounded-full border ${S.grade === g ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white hover:bg-slate-50'}">${label}</button>`;
+  $('gradeChips').innerHTML = chip('', 'Tất cả') + gradeSet.map(g => chip(String(g), 'Lớp ' + g)).join('');
+}
+async function loadMeta() {
+  try {
+    const rows = await api.meta();
+    const subs = [...new Set(rows.map(r => r.subject))].sort((a, b) => a.localeCompare(b, 'vi'));
+    const keep = $('fSubject').value;
+    $('fSubject').innerHTML = '<option value="">Mọi môn</option>' + subs.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+    $('fSubject').value = subs.includes(keep) ? keep : '';
+    gradeSet = [...new Set(rows.map(r => r.grade))].sort((a, b) => a - b);
+  } catch { gradeSet = [10, 11, 12]; }
+  renderChips();
+}
+
+function cardHtml(b, mine) {
+  const priv = b.visibility === 'private';
+  return `
+  <article class="flex flex-col rounded-xl bg-white shadow p-4 gap-2">
+    <div class="flex flex-wrap items-center gap-2 text-xs">
+      <span class="px-2 py-0.5 rounded ${b.kind === 'exam' ? 'bg-indigo-50 text-indigo-700' : 'bg-emerald-50 text-emerald-700'}">${KIND_NAME[b.kind] || b.kind}</span>
+      <span class="text-slate-500">${esc(b.subject)} · Lớp ${esc(b.grade)}</span>
+      ${priv ? '<span class="px-2 py-0.5 rounded bg-slate-200 text-slate-700">Riêng tư</span>' : ''}
+    </div>
+    <h3 class="font-semibold leading-snug">${esc(b.title)}</h3>
+    ${b.chapter ? `<div class="text-xs text-slate-500">${esc(b.chapter)}</div>` : ''}
+    <p class="text-sm text-slate-600 min-h-[2.5rem]">${esc(snip(b.description)) || '<span class="text-slate-400">Chưa có mô tả.</span>'}</p>
+    <div class="text-xs text-slate-500">Tác giả: <b class="text-slate-700">${esc(b.author_name)}</b> · ${fmtDate(b.created_at)}</div>
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+      <span>${stars(b.rating_avg, b.rating_count)}</span>
+      <span class="text-slate-600" title="Lượt tải về">⬇ ${fmtNum(b.downloads)}</span>
+      <span class="text-slate-600">${fmtNum(b.question_count)} câu</span>
+    </div>
+    <div class="mt-auto flex gap-2 pt-2">
+      <button onclick="openDetail(${b.id})" class="flex-1 px-3 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-sm font-semibold">Xem trước</button>
+      ${mine ? '' : `<button onclick="openDetail(${b.id}, true)" class="flex-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold">Lưu về kho</button>`}
+    </div>
+  </article>`;
+}
+
+async function loadList(page = 0) {
+  S.page = page; const seq = ++listSeq;
+  $('exInfo').textContent = 'Đang tải...';
+  try {
+    const { rows, total } = await api.list(filters(), page);
+    if (seq !== listSeq) return;
+    S.banks = rows; S.total = total;
+  } catch (e) {
+    if (seq !== listSeq) return;
+    $('exGrid').innerHTML = ''; $('exPager').innerHTML = ''; $('exInfo').innerHTML = '';
+    const missing = /shared_banks|relation|schema cache|does not exist/i.test(e.message || '');
+    $('exGrid').innerHTML = `<div class="sm:col-span-2 lg:col-span-3 p-4 rounded-lg bg-red-100 text-red-800 text-sm">${missing
+      ? 'Chưa có bảng dữ liệu của kho cộng đồng. Hãy chạy đoạn SQL ở đầu file này trong Supabase → SQL Editor, hoặc xem thử bằng <a class="underline font-semibold" href="?demo=1">chế độ demo</a>.'
+      : 'Lỗi tải danh sách: ' + esc(e.message)}</div>`;
+    return;
+  }
+  const pages = Math.max(1, Math.ceil(S.total / PAGE));
+  $('exInfo').textContent = `${fmtNum(S.total)} bộ học liệu · trang ${page + 1}/${pages}`;
+  $('exGrid').innerHTML = S.banks.length ? S.banks.map(b => cardHtml(b, false)).join('')
+    : '<div class="sm:col-span-2 lg:col-span-3 text-center text-slate-500 py-10">Chưa có bộ học liệu nào khớp bộ lọc. Hãy nới điều kiện lọc hoặc <button onclick="openShare()" class="underline text-indigo-600">chia sẻ bộ đầu tiên</button>.</div>';
+  $('exPager').innerHTML = pages > 1 ? `
+    <button onclick="loadList(${page - 1})" ${page === 0 ? 'disabled' : ''} class="px-3 py-1 rounded bg-white shadow disabled:opacity-40">← Trước</button>
+    <span>Trang ${page + 1}/${pages}</span>
+    <button onclick="loadList(${page + 1})" ${page + 1 >= pages ? 'disabled' : ''} class="px-3 py-1 rounded bg-white shadow disabled:opacity-40">Sau →</button>` : '';
+}
+
+// ---------- Kho chia sẻ của tôi ----------
+async function loadMine() {
+  if (!S.user) { $('mineList').innerHTML = ''; $('mineInfo').textContent = 'Hãy đăng nhập để xem các bộ bạn đã chia sẻ.'; return; }
+  $('mineInfo').textContent = 'Đang tải...';
+  try {
+    const rows = await api.mine();
+    $('mineInfo').textContent = rows.length ? `Bạn đã chia sẻ ${rows.length} bộ học liệu.` : 'Bạn chưa chia sẻ bộ nào. Bấm "Chia sẻ lên kho chung" để bắt đầu.';
+    $('mineList').innerHTML = rows.map(b => {
+      const pub = b.visibility === 'public';
+      return `
+      <div class="rounded-xl bg-white shadow p-4 flex flex-wrap items-center gap-3">
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-center gap-2 text-xs">
+            <span class="px-2 py-0.5 rounded ${b.kind === 'exam' ? 'bg-indigo-50 text-indigo-700' : 'bg-emerald-50 text-emerald-700'}">${KIND_NAME[b.kind] || b.kind}</span>
+            <span class="px-2 py-0.5 rounded ${pub ? 'bg-green-100 text-green-800' : 'bg-slate-200 text-slate-700'}">${pub ? 'Công khai' : 'Riêng tư'}</span>
+            <span class="text-slate-500">${esc(b.subject)} · Lớp ${esc(b.grade)} · ${fmtNum(b.question_count)} câu · ${fmtDate(b.created_at)}</span>
+          </div>
+          <div class="font-semibold mt-1">${esc(b.title)}</div>
+          <div class="text-sm mt-1">${stars(b.rating_avg, b.rating_count)} <span class="ml-3 text-slate-600">⬇ ${fmtNum(b.downloads)} lượt tải</span></div>
+        </div>
+        <div class="flex flex-wrap gap-2 text-sm">
+          <button onclick="openDetail(${b.id})" class="px-3 py-1.5 rounded bg-slate-100 hover:bg-slate-200">Xem</button>
+          <button onclick="toggleVis(${b.id}, '${pub ? 'private' : 'public'}')" class="px-3 py-1.5 rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100">${pub ? 'Chuyển sang riêng tư' : 'Công khai'}</button>
+          <button onclick="renameBank(${b.id}, this.dataset.t)" data-t="${esc(b.title)}" class="px-3 py-1.5 rounded bg-slate-100 hover:bg-slate-200">Đổi tên</button>
+          <button onclick="removeBank(${b.id}, this.dataset.t)" data-t="${esc(b.title)}" class="px-3 py-1.5 rounded bg-red-50 text-red-700 hover:bg-red-100">Xóa</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) { $('mineInfo').textContent = ''; $('mineList').innerHTML = `<div class="p-3 rounded bg-red-100 text-red-800 text-sm">Lỗi: ${esc(e.message)}</div>`; }
+}
+async function toggleVis(id, vis) {
+  if (vis === 'public' && !confirm('Công khai bộ này? Mọi giáo viên sẽ xem được và lưu về kho của họ.')) return;
+  try { await api.update(id, { visibility: vis }); toast(vis === 'public' ? 'Đã chuyển sang công khai.' : 'Đã chuyển sang riêng tư.'); loadMine(); loadMeta(); }
+  catch (e) { toast('Lỗi: ' + e.message); }
+}
+async function renameBank(id, cur) {
+  const t = (prompt('Tên mới cho bộ học liệu:', cur) || '').trim();
+  if (!t || t === cur) return;
+  try { await api.update(id, { title: t.slice(0, 120) }); toast('Đã đổi tên.'); loadMine(); } catch (e) { toast('Lỗi: ' + e.message); }
+}
+async function removeBank(id, title) {
+  if (!confirm(`Xóa bộ "${title}" khỏi kho chung?\nNhững giáo viên đã lưu về vẫn giữ bản sao của họ. Không thể hoàn tác.`)) return;
+  try { await api.remove(id); toast('Đã xóa khỏi kho chung.'); loadMine(); loadMeta(); } catch (e) { toast('Lỗi: ' + e.message); }
+}
+
+// ---------- Chi tiết / xem trước ----------
+function qHtml(q, i) {
+  const t = q.question_type || 'multiple_choice', get = optsOf(q), ca = String(q.correct_answer ?? ''), u = imgOk(q.image_url);
+  let body = '';
+  if (t === 'multiple_choice') body = ['A', 'B', 'C', 'D'].map(L => { const ok = ca.trim().toUpperCase() === L;
+    return `<div class="flex gap-2 rounded border px-2 py-1 ${ok ? 'bg-green-50 border-green-400' : 'border-slate-200'}"><b>${L}.</b><span class="whitespace-pre-wrap">${esc(get(L))}</span>${ok ? '<span class="ml-auto text-xs font-semibold text-green-700 whitespace-nowrap">Đáp án đúng</span>' : ''}</div>`; }).join('');
+  else if (t === 'true_false') { const key = (parseTF(ca) || '').split(',');
+    body = ['a', 'b', 'c', 'd'].map((L, j) => `<div class="flex gap-2 rounded border border-slate-200 px-2 py-1"><b>${L})</b><span class="whitespace-pre-wrap">${esc(get(L))}</span><span class="ml-auto text-xs font-semibold whitespace-nowrap ${key[j] === 'Đ' ? 'text-green-700' : 'text-red-600'}">${key[j] === 'Đ' ? 'Đúng' : key[j] === 'S' ? 'Sai' : '?'}</span></div>`).join(''); }
+  else if (t === 'short_answer') body = `<div class="rounded border border-green-400 bg-green-50 px-2 py-1">Đáp án: <b>${esc(ca)}</b></div>`;
+  return `
+  <div class="rounded-lg border bg-white p-3 text-sm">
+    <div class="flex flex-wrap items-center gap-2 text-xs mb-1"><b class="text-slate-800">Câu ${i + 1}</b>
+      <span class="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700">${TYPE_NAME[t] || t}</span>
+      <span class="text-slate-500">${esc(DIFF_NAME[normDiff(q.difficulty)] || '')}</span></div>
+    <div class="whitespace-pre-wrap font-medium">${esc(q.content)}</div>
+    ${u ? `<img src="${esc(u)}" alt="" class="max-h-48 my-2 rounded border bg-white" loading="lazy" onerror="this.outerHTML='<div class=&quot;text-xs text-red-600 my-2&quot;>Không tải được ảnh minh họa</div>'">` : ''}
+    <div class="mt-2 space-y-1">${body}</div>
+    ${q.explanation ? `<div class="mt-2 text-xs bg-slate-50 rounded p-2"><b>${t === 'essay' ? 'Hướng dẫn chấm / Dàn ý' : 'Lời giải'}:</b> <span class="whitespace-pre-wrap">${esc(q.explanation)}</span></div>` : ''}
+  </div>`;
+}
+
+async function openDetail(id, withClone = false) {
+  S.cloneOpen = false; S.shown = 10; S.busy = false;
+  $('dMsg').innerHTML = ''; $('dClone').classList.add('hidden'); $('dList').innerHTML = '<div class="text-sm text-slate-500">Đang tải...</div>'; $('dMore').innerHTML = '';
+  $('dTitle').textContent = 'Đang tải...'; $('dKind').innerHTML = ''; $('dMeta').textContent = ''; $('dStats').innerHTML = ''; $('dDesc').textContent = ''; $('dRate').innerHTML = ''; $('dCount').textContent = '';
+  $('detailModal').classList.remove('hidden');
+  try { S.detail = await api.get(id); } catch (e) { $('dTitle').textContent = 'Không mở được bộ học liệu'; $('dList').innerHTML = `<div class="p-3 rounded bg-red-100 text-red-800 text-sm">${esc(e.message)}</div>`; return; }
+  renderDetail();
+  if (withClone) { if (requireLogin()) toggleClone(true); }
+}
+function closeDetail() { $('detailModal').classList.add('hidden'); S.detail = null; }
+
+function renderDetail() {
+  const b = S.detail; if (!b) return;
+  const mineBank = !!S.user && b.owner_id === S.user.id;
+  $('dTitle').textContent = b.title;
+  $('dKind').innerHTML = `<span class="px-2 py-0.5 rounded ${b.kind === 'exam' ? 'bg-indigo-50 text-indigo-700' : 'bg-emerald-50 text-emerald-700'}">${KIND_NAME[b.kind] || b.kind}</span>${b.visibility === 'private' ? ' <span class="px-2 py-0.5 rounded bg-slate-200 text-slate-700">Riêng tư</span>' : ''}`;
+  $('dMeta').innerHTML = `${esc(b.subject)} · Lớp ${esc(b.grade)}${b.chapter ? ' · ' + esc(b.chapter) : ''}<br>Tác giả <b class="text-slate-700">${esc(b.author_name)}</b> · ${fmtDate(b.created_at)}`;
+  $('dStats').innerHTML = `<span>${stars(b.rating_avg, b.rating_count)}</span><span>⬇ ${fmtNum(b.downloads)} lượt tải</span><span>${fmtNum(b.question_count)} câu</span>${b.payload?.minutes ? `<span>${b.payload.minutes} phút</span>` : ''}`;
+  $('dDesc').textContent = b.description || '';
+  renderRate(b, mineBank);
+  const qs = Array.isArray(b.payload?.questions) ? b.payload.questions : [];
+  $('dCount').textContent = `(${Math.min(S.shown, qs.length)}/${qs.length} câu)`;
+  $('dList').innerHTML = qs.slice(0, S.shown).map(qHtml).join('') || '<div class="text-sm text-slate-500">Bộ này chưa có câu hỏi.</div>';
+  $('dMore').innerHTML = qs.length > S.shown ? `<button onclick="S.shown += 10; renderDetail()" class="px-4 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-sm font-semibold">Hiện thêm ${Math.min(10, qs.length - S.shown)} câu</button>` : '';
+  $('dCloneBtn').textContent = S.cloneOpen ? 'Thu gọn tùy chọn' : (mineBank ? 'Tạo bản sao trong kho của tôi' : 'Lưu về kho của tôi');
+  math($('detailModal'));
+  if (S.cloneOpen) renderClonePanel();
+}
+function renderRate(b, mineBank) {
+  let h;
+  if (b.visibility !== 'public') h = '<span class="text-slate-500">Bộ riêng tư chưa thể đánh giá.</span>';
+  else if (mineBank) h = '<span class="text-slate-500">Bạn không thể tự đánh giá bộ của mình.</span>';
+  else {
+    const my = b.myStars || 0;
+    h = `<div class="flex flex-wrap items-center gap-2"><span class="font-medium">${my ? 'Đánh giá của bạn' : 'Bạn thấy bộ này thế nào?'}</span>
+      <span class="inline-flex" role="group" aria-label="Chấm sao">${[1, 2, 3, 4, 5].map(n => `<button onclick="rateBank(${n})" aria-label="${n} sao" aria-pressed="${my === n}" class="text-2xl leading-none px-0.5 ${n <= my ? 'text-amber-500' : 'text-slate-300 hover:text-amber-400'}">★</button>`).join('')}</span>
+      ${my ? `<span class="text-slate-500">${my}/5, bấm sao khác để đổi</span>` : '<span class="text-slate-500">Bấm vào sao để chấm</span>'}</div>`;
+  }
+  $('dRate').innerHTML = h;
+}
+async function rateBank(n) {
+  if (!requireLogin()) return;
+  const b = S.detail; if (!b) return;
+  try {
+    const fresh = await api.rate(b.id, n);
+    Object.assign(b, fresh, { myStars: n });
+    renderDetail(); toast('Cảm ơn bạn đã đánh giá.');
+    const i = S.banks.findIndex(x => x.id === b.id); if (i >= 0) { Object.assign(S.banks[i], fresh); loadList(S.page); }
+  } catch (e) { say('dMsg', false, 'Không gửi được đánh giá: ' + esc(e.message)); }
+}
+
+// ---------- Lưu về kho của tôi (clone) ----------
+function toggleClone(force) {
+  if (!requireLogin()) return;
+  S.cloneOpen = typeof force === 'boolean' ? force : !S.cloneOpen;
+  $('dClone').classList.toggle('hidden', !S.cloneOpen);
+  renderDetail();
+  if (S.cloneOpen) $('dClone').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+function renderClonePanel() {
+  const b = S.detail, qs = b.payload?.questions || [], hasImg = qs.some(q => imgOk(q.image_url));
+  $('dClone').innerHTML = `
+    <div class="font-semibold">Lưu về kho của tôi</div>
+    <p class="text-slate-600">Các câu hỏi sẽ được thêm vào ngân hàng câu hỏi của bạn. Bạn có thể sửa, xóa và trộn đề tự do, không ảnh hưởng đến bản của tác giả.</p>
+    ${b.clonedAt ? `<p class="text-amber-700">Bạn đã lưu bộ này ngày ${fmtDate(b.clonedAt)}. Lưu thêm sẽ tạo thêm một bản sao nữa.</p>` : ''}
+    ${hasImg ? '<label class="flex items-start gap-2"><input id="cpImg" type="checkbox" checked class="mt-1"> <span>Sao chép cả ảnh minh họa vào kho của tôi (nên chọn, để ảnh không mất nếu tác giả xóa)</span></label>' : ''}
+    ${b.kind === 'exam' ? '<label class="flex items-start gap-2"><input id="cpExam" type="checkbox" checked class="mt-1"> <span>Tạo thêm một đề trong mục "Đề đã lưu" để mở và trộn mã đề ngay</span></label>' : ''}
+    <div class="flex items-center gap-3"><button id="cpBtn" onclick="runClone()" class="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold disabled:opacity-50">Bắt đầu lưu ${qs.length} câu</button></div>`;
+}
+async function runClone() {
+  const b = S.detail; if (!b || S.busy || !requireLogin()) return;
+  const { rows, errs } = convert(b.payload?.questions, { grade: b.grade, subject: b.subject, chapter: b.chapter });
+  if (!rows.length) return say('dMsg', false, 'Bộ này không có câu hỏi hợp lệ để lưu.');
+  S.busy = true; $('cpBtn').disabled = true;
+  const copyImg = !!$('cpImg')?.checked, makeExam = !!$('cpExam')?.checked, cache = { map: new Map(), n: 0, ok: 0, fail: 0 };
+  try {
+    if (copyImg) {
+      for (const [i, r] of rows.entries()) { if (r.image_url) { say('dMsg', true, `Đang sao chép ảnh (câu ${i + 1}/${rows.length})...`); r.image_url = await api.copyImage(r.image_url, cache); } }
+    }
+    say('dMsg', true, 'Đang lưu câu hỏi vào kho của bạn...');
+    const out = rows.map(r => ({ ...r, owner_id: S.user.id, source_bank_id: b.id }));
+    const ids = await api.insertQuestions(out);
+    let examNote = '';
+    if (makeExam) {
+      say('dMsg', true, 'Đang tạo đề trong "Đề đã lưu"...');
+      const qs = rows.map((r, i) => ({ ...r, id: ids[i] }));
+      await api.createExam({ title: `${b.title} (bản sao)`, grade: b.grade, subject: b.subject, school: null, minutes: b.payload?.minutes || null, question_count: qs.length, version_count: 1,
+        data: { questions: qs, versions: null, code: '', codeAuto: true, showKey: true } });
+      examNote = ' Đã tạo thêm một đề trong "Đề đã lưu".';
+    }
+    let dl = null; try { dl = await api.registerDownload(b.id); } catch {}
+    if (dl != null) { b.downloads = dl; if (!b.clonedAt) b.clonedAt = new Date().toISOString(); }
+    const notes = [];
+    if (errs.length) notes.push(`Bỏ qua ${errs.length} câu không hợp lệ.`);
+    if (cache.fail) notes.push(`${cache.fail} ảnh không sao chép được nên vẫn dùng liên kết gốc.`);
+    say('dMsg', true, `<b>Đã lưu ${rows.length} câu về kho của bạn.</b>${examNote} ${notes.join(' ')}<br>
+      <a class="underline font-semibold" href="${esc(LINKS.manage)}">Mở Quản lý ngân hàng</a>${makeExam ? ` · <a class="underline font-semibold" href="${esc(LINKS.exams)}">Mở trang trộn đề</a>` : ''}`);
+    S.cloneOpen = false; $('dClone').classList.add('hidden'); renderDetail(); loadList(S.page);
+  } catch (e) {
+    say('dMsg', false, 'Không lưu được: ' + esc(e.message));
+    if ($('cpBtn')) $('cpBtn').disabled = false;
+  } finally { S.busy = false; }
+}
+
+// ---------- Chia sẻ lên kho chung ----------
+let shMeta = [], shExams = [], shNameTouched = false;
+async function openShare() {
+  if (!requireLogin()) return;
+  $('shMsg').innerHTML = ''; $('shOk').checked = false; $('shName').value = ''; shNameTouched = false; $('shDesc').value = ''; $('shSrcInfo').textContent = '';
+  document.querySelector('input[name=shVis][value=public]').checked = true;
+  document.querySelector('input[name=shKind][value=exam]').checked = true;
+  $('shAuthor').value = userName();
+  $('shareModal').classList.remove('hidden');
+  shKindChanged();
+}
+function closeShare() { $('shareModal').classList.add('hidden'); }
+const shKind = () => document.querySelector('input[name=shKind]:checked').value;
+
+async function shKindChanged() {
+  if (!$('shName').value.trim()) shNameTouched = false;
+  const k = shKind(); $('shExamBox').classList.toggle('hidden', k !== 'exam'); $('shChapterBox').classList.toggle('hidden', k !== 'chapter');
+  $('shSrcInfo').textContent = 'Đang tải danh sách...'; $('shBtn').disabled = false;
+  try {
+    if (k === 'exam') {
+      shExams = await api.exams();
+      $('shExam').innerHTML = shExams.length ? shExams.map(e => `<option value="${esc(e.id)}">${esc(e.title)} (${esc(e.subject)} ${esc(e.grade)}, ${esc(e.question_count)} câu)</option>`).join('') : '<option value="">Bạn chưa có đề nào đã lưu</option>';
+      $('shSrcInfo').textContent = shExams.length ? '' : 'Hãy soạn và lưu một đề ở trang trộn đề trước, hoặc chọn "Một chương câu hỏi".';
+      shExamChanged();
+    } else {
+      shMeta = await api.chapterMeta();
+      const gs = [...new Set(shMeta.map(r => r.grade))].sort((a, b) => a - b);
+      $('shGrade').innerHTML = gs.map(g => `<option value="${esc(g)}">Lớp ${esc(g)}</option>`).join('');
+      shMetaChanged('grade');
+      $('shSrcInfo').textContent = gs.length ? '' : 'Ngân hàng của bạn chưa có câu hỏi nào.';
+    }
+  } catch (e) { $('shSrcInfo').innerHTML = `<span class="text-red-600">Lỗi tải danh sách: ${esc(e.message)}</span>`; }
+}
+function shExamChanged() { const e = shExams.find(x => String(x.id) === $('shExam').value); if (e && !shNameTouched) $('shName').value = e.title; }
+function shMetaChanged(level) {
+  const g = $('shGrade').value, byG = shMeta.filter(r => String(r.grade) === g);
+  if (level === 'grade') { const ss = [...new Set(byG.map(r => r.subject))].sort((a, b) => a.localeCompare(b, 'vi')); $('shSubject').innerHTML = ss.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join(''); }
+  const byS = byG.filter(r => r.subject === $('shSubject').value);
+  if (level !== 'chapter') { const cs = [...new Set(byS.map(r => r.chapter).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi', { numeric: true })); $('shChapter').innerHTML = cs.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join(''); }
+  if ($('shChapter').value && !shNameTouched) $('shName').value = `${$('shSubject').value} ${g} - ${$('shChapter').value}`;
+}
+
+async function submitShare() {
+  if (!requireLogin()) return;
+  const name = $('shName').value.trim(), author = $('shAuthor').value.trim(), vis = document.querySelector('input[name=shVis]:checked').value, k = shKind();
+  if (!name) return say('shMsg', false, 'Hãy nhập tiêu đề cho bộ học liệu.');
+  if (!author) return say('shMsg', false, 'Hãy nhập tên hiển thị của tác giả.');
+  if (!$('shOk').checked) return say('shMsg', false, 'Hãy xác nhận bạn có quyền chia sẻ nội dung này.');
+  $('shBtn').disabled = true; say('shMsg', true, 'Đang chuẩn bị nội dung...');
+  try {
+    let src, fb, minutes = null;
+    if (k === 'exam') {
+      const id = $('shExam').value; if (!id) throw new Error('Chưa chọn đề thi.');
+      const e = await api.examData(id); src = e.questions; minutes = e.minutes; fb = { grade: e.grade, subject: e.subject, chapter: '' };
+    } else {
+      const g = $('shGrade').value, s = $('shSubject').value, c = $('shChapter').value; if (!g || !s || !c) throw new Error('Chưa chọn đủ lớp, môn, chương.');
+      src = await api.chapterQuestions(g, s, c); fb = { grade: Number(g), subject: s, chapter: c };
+    }
+    const { rows, errs } = convert(src, fb);
+    if (!rows.length) throw new Error('Không có câu hỏi hợp lệ để chia sẻ.' + (errs.length ? ' ' + errs.slice(0, 3).join('; ') : ''));
+    if (rows.length > MAX_QUESTIONS) throw new Error(`Mỗi lần chỉ chia sẻ tối đa ${MAX_QUESTIONS} câu (bộ này có ${rows.length}). Hãy chọn chương nhỏ hơn.`);
+    const chapters = [...new Set(rows.map(r => r.chapter))];
+    localStorage.setItem('cb_author', author);
+    say('shMsg', true, 'Đang chia sẻ...');
+    await api.create({
+      author_name: author, title: name.slice(0, 120), description: $('shDesc').value.trim() || null, kind: k,
+      grade: rows[0].grade, subject: rows[0].subject, chapter: k === 'chapter' ? chapters[0] : (chapters.length === 1 ? chapters[0] : null),
+      visibility: vis, question_count: rows.length, payload: { questions: rows, minutes }
+    });
+    closeShare();
+    toast(`Đã chia sẻ ${rows.length} câu (${vis === 'public' ? 'công khai' : 'riêng tư'}).` + (errs.length ? ` Bỏ qua ${errs.length} câu không hợp lệ.` : ''));
+    loadMeta();
+    if (S.tab === 'mine') loadMine(); else if (vis === 'public') loadList(0); else showTab('mine');
+  } catch (e) {
+    const missing = /shared_banks|schema cache|does not exist|permission denied/i.test(e.message || '');
+    say('shMsg', false, missing ? 'Chưa cấu hình kho cộng đồng hoặc thiếu quyền: hãy chạy đoạn SQL ở đầu file này trong Supabase. Chi tiết: ' + esc(e.message) : esc(e.message));
+  } finally { $('shBtn').disabled = false; }
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeDetail(); closeShare(); closeLogin(); } });
+
+// ---------- Khởi động ----------
+(async function init() {
+  $('demoBar').classList.toggle('hidden', !DEMO);
+  setUser(await api.user());
+  if (!DEMO) db.auth.onAuthStateChange((_e, session) => setUser(session?.user || null));
+  showTab('explore');
+  loadMeta();
+})();
+</script>
+</body>
+</html>
