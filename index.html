@@ -6,6 +6,7 @@
 <title>Mystic Exam · Luyện thi & Phòng thi Online</title>
 <meta name="description" content="Nền tảng kiểm tra và tổ chức phòng thi online thông minh: luyện tập tự do, phòng thi theo ca, trộn đề, chấm điểm tự động, hỗ trợ công thức LaTeX.">
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -52,10 +53,15 @@
     </nav>
 
     <div class="flex items-center gap-2">
-      <a data-link="student" href="#" class="btn hidden items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-md shadow-indigo-300/50 hover:bg-indigo-700 sm:inline-flex">
-        <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>
-        Đăng nhập / Đăng ký
-      </a>
+      <div id="acct" class="relative">
+        <button id="acctBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="acctMenu"
+                class="btn inline-flex max-w-[210px] items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-2 text-sm font-bold text-white shadow-md shadow-indigo-300/50 hover:bg-indigo-700 sm:px-4">
+          <svg viewBox="0 0 24 24" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+          <span id="acctLabel" class="truncate">Đăng nhập</span>
+          <svg viewBox="0 0 24 24" class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div id="acctMenu" class="absolute right-0 mt-2 hidden w-72 max-w-[calc(100vw-2rem)] rounded-2xl border border-indigo-100 bg-white p-2 text-sm shadow-xl shadow-indigo-200/60"></div>
+      </div>
       <button id="menuBtn" class="grid h-10 w-10 place-items-center rounded-xl text-indigo-900 hover:bg-indigo-50 md:hidden" aria-label="Mở menu" aria-expanded="false" aria-controls="mobileNav">
         <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
       </button>
@@ -66,7 +72,6 @@
     <a data-link="practice" href="#" class="block rounded-lg px-3 py-2.5 hover:bg-indigo-50">Luyện tập tự do</a>
     <a href="#vao-thi" class="block rounded-lg px-3 py-2.5 hover:bg-indigo-50">Phòng thi</a>
     <a data-link="admin" href="#" class="block rounded-lg px-3 py-2.5 hover:bg-indigo-50">Quản trị</a>
-    <a data-link="student" href="#" class="mt-2 block rounded-xl bg-indigo-600 px-3 py-2.5 text-center font-bold text-white">Đăng nhập / Đăng ký</a>
   </nav>
 </header>
 
@@ -159,17 +164,30 @@
         </div>
 
         <div class="relative mt-6 flex flex-1 flex-col gap-3">
-          <a data-link="room" href="#" class="btn group flex items-center gap-4 rounded-2xl bg-white p-4 text-indigo-950 shadow-lg hover:bg-violet-50">
-            <span class="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-violet-100 text-2xl" aria-hidden="true">🏫</span>
-            <span class="flex-1"><span class="block text-base font-extrabold">Tạo & Quản lý Phòng thi</span><span class="block text-xs text-slate-500">Lập ca thi, đặt giờ, xem ai đang làm bài</span></span>
+          <div id="gvLock" class="hidden rounded-2xl bg-amber-100 p-3.5 text-sm text-amber-900" role="status">
+            🔒 Bạn đang đăng nhập bằng <b>tài khoản học sinh</b> nên chưa dùng được khu vực này.
+            <button type="button" data-logout class="ml-1 font-bold underline">Đăng xuất</button> để đăng nhập tài khoản giáo viên.
+          </div>
+          <a data-link="room" data-teacher href="#" class="btn group flex items-center gap-4 rounded-2xl bg-white p-3.5 text-indigo-950 shadow-lg hover:bg-violet-50">
+            <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-violet-100 text-xl" aria-hidden="true">🏫</span>
+            <span class="min-w-0 flex-1"><span class="block text-[15px] font-extrabold">Tạo & Quản lý Phòng thi</span><span class="block text-xs text-slate-500">Lập ca thi, đặt giờ, xem ai đang làm bài</span></span>
             <span class="text-xl font-bold text-violet-600 transition group-hover:translate-x-1" aria-hidden="true">→</span>
           </a>
-          <a data-link="admin" href="#" class="btn group flex items-center gap-4 rounded-2xl bg-white p-4 text-indigo-950 shadow-lg hover:bg-emerald-50">
-            <span class="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-emerald-100 text-2xl" aria-hidden="true">🗂️</span>
-            <span class="flex-1"><span class="block text-base font-extrabold">Soạn Ngân hàng Câu hỏi</span><span class="block text-xs text-slate-500">Phân loại theo lớp, môn, chương, dạng, mức độ</span></span>
+          <a data-link="admin" data-teacher href="#" class="btn group flex items-center gap-4 rounded-2xl bg-white p-3.5 text-indigo-950 shadow-lg hover:bg-emerald-50">
+            <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-emerald-100 text-xl" aria-hidden="true">🗂️</span>
+            <span class="min-w-0 flex-1"><span class="block text-[15px] font-extrabold">Soạn Ngân hàng Câu hỏi</span><span class="block text-xs text-slate-500">Phân loại theo lớp, môn, chương, dạng, mức độ</span></span>
             <span class="text-xl font-bold text-emerald-600 transition group-hover:translate-x-1" aria-hidden="true">→</span>
           </a>
-          <a data-link="teacher" href="#" class="btn mt-auto flex items-center justify-center gap-2 rounded-xl border border-white/40 bg-white/10 px-4 py-3 text-sm font-bold hover:bg-white/20">📈 Thống kê kết quả lớp học</a>
+          <a data-link="matrix" data-teacher href="#" class="btn group flex items-center gap-4 rounded-2xl bg-white p-3.5 text-indigo-950 shadow-lg hover:bg-indigo-50">
+            <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-indigo-100 text-xl" aria-hidden="true">🧮</span>
+            <span class="min-w-0 flex-1"><span class="block text-[15px] font-extrabold">Tạo đề thi từ Ma trận</span><span class="block text-xs text-slate-500">Chọn số câu theo chương, mức độ rồi trộn đề</span></span>
+            <span class="text-xl font-bold text-indigo-600 transition group-hover:translate-x-1" aria-hidden="true">→</span>
+          </a>
+          <a data-link="teacher" data-teacher href="#" class="btn group flex items-center gap-4 rounded-2xl bg-white p-3.5 text-indigo-950 shadow-lg hover:bg-amber-50">
+            <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-amber-100 text-xl" aria-hidden="true">📈</span>
+            <span class="min-w-0 flex-1"><span class="block text-[15px] font-extrabold">Trang chủ Giáo viên</span><span class="block text-xs text-slate-500">Thống kê kết quả, phòng thi và đề đã lưu</span></span>
+            <span class="text-xl font-bold text-amber-600 transition group-hover:translate-x-1" aria-hidden="true">→</span>
+          </a>
         </div>
       </article>
     </div>
@@ -266,7 +284,8 @@ const LINKS = {                                   // đổi thành địa chỉ 
   practice: 'exam.html',                          // luyện tập tự do
   room:     'exam_room.html',                     // giáo viên quản lý phòng thi
   admin:    'admin.html',                         // ngân hàng câu hỏi
-  teacher:  'teacher_dashboard.html',             // thống kê kết quả
+  matrix:   'matrix_exam.html',                   // tạo đề từ ma trận
+  teacher:  'teacher_dashboard.html',             // trang chủ giáo viên: thống kê kết quả
   student:  'student_home.html'                   // đăng nhập, kết quả & lịch sử học sinh
 };
 const CONTACT_EMAIL = 'hotro@example.com';        // <<< thay bằng email hỗ trợ của bạn
@@ -277,6 +296,72 @@ const $ = id => document.getElementById(id);
 document.querySelectorAll('[data-link]').forEach(a => { a.href = LINKS[a.dataset.link] || '#'; });
 $('year').textContent = new Date().getFullYear();
 $('contactMail').textContent = CONTACT_EMAIL; $('contactMail').href = 'mailto:' + CONTACT_EMAIL;
+
+// ----- Tài khoản: nhận biết học sinh / giáo viên đang đăng nhập -----
+const SUPABASE_URL = 'https://xzznmfgihzjeqsmiuypi.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_dUldhQYF1ETrSCZ4jiy3Og_ygfkm9XW';
+let db = null;
+try { db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); } catch (e) { db = null; }   // không tải được thư viện → trang vẫn dùng bình thường như khách
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const ACCT = { kind: 'guest', name: '', email: '' };       // guest | student | teacher
+let acctSeq = 0;
+
+function lockTeacherCards(locked) {
+  document.querySelectorAll('[data-teacher]').forEach(a => {
+    a.classList.toggle('opacity-50', locked); a.classList.toggle('grayscale', locked);
+    a.setAttribute('aria-disabled', String(locked)); a.tabIndex = locked ? -1 : 0;
+    if (locked) a.removeAttribute('href'); else a.href = LINKS[a.dataset.link] || '#';
+  });
+  $('gvLock').classList.toggle('hidden', !locked);
+}
+function renderAcct() {
+  const m = $('acctMenu'), item = 'flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-indigo-50';
+  if (ACCT.kind === 'guest') {
+    $('acctLabel').textContent = 'Đăng nhập';
+    m.innerHTML = `<p class="px-3 pb-1 pt-2 text-xs font-bold uppercase tracking-wide text-slate-400">Bạn là ai?</p>
+      <a href="${esc(LINKS.student)}" class="${item}"><span class="grid h-9 w-9 place-items-center rounded-lg bg-indigo-100 text-lg">🎓</span><span><span class="block font-bold text-indigo-950">Tôi là học sinh</span><span class="block text-xs text-slate-500">Đăng nhập / Đăng ký tài khoản học sinh</span></span></a>
+      <a href="${esc(LINKS.teacher)}" class="${item}"><span class="grid h-9 w-9 place-items-center rounded-lg bg-violet-100 text-lg">👩‍🏫</span><span><span class="block font-bold text-indigo-950">Tôi là giáo viên</span><span class="block text-xs text-slate-500">Đăng nhập để soạn đề, quản lý phòng thi</span></span></a>`;
+    lockTeacherCards(false);
+  } else {
+    const st = ACCT.kind === 'student';
+    $('acctLabel').textContent = ACCT.name || ACCT.email;
+    m.innerHTML = `<div class="px-3 pb-2 pt-2"><p class="truncate font-bold text-indigo-950">${esc(ACCT.name || ACCT.email)}</p>
+        <p class="truncate text-xs text-slate-500">${esc(ACCT.email)}</p>
+        <span class="mt-1 inline-block rounded-full ${st ? 'bg-teal-100 text-teal-800' : 'bg-violet-100 text-violet-800'} px-2.5 py-0.5 text-xs font-bold">${st ? 'Học sinh' : 'Giáo viên'}</span></div>
+      <a href="${esc(st ? LINKS.student : LINKS.teacher)}" class="${item}"><span class="grid h-9 w-9 place-items-center rounded-lg bg-indigo-100 text-lg">${st ? '📊' : '🏠'}</span><span class="font-bold text-indigo-950">${st ? 'Kết quả & lịch sử của tôi' : 'Trang chủ giáo viên'}</span></a>
+      <button type="button" data-logout class="${item} w-full text-left"><span class="grid h-9 w-9 place-items-center rounded-lg bg-slate-100 text-lg">🚪</span><span class="font-bold text-indigo-950">Đăng xuất</span></button>`;
+    lockTeacherCards(st);
+  }
+}
+async function loadAccount(session) {
+  const seq = ++acctSeq, u = session?.user || null;
+  if (!u) { Object.assign(ACCT, { kind: 'guest', name: '', email: '' }); return renderAcct(); }
+  let kind = 'teacher', name = '';
+  try {
+    const r = await db.rpc('is_student');                    // chưa chạy student_setup.sql → lỗi → xem như giáo viên
+    if (!r.error && r.data === true) {
+      kind = 'student';
+      const p = await db.from('student_profiles').select('full_name').eq('user_id', u.id).maybeSingle();
+      name = p.data?.full_name || '';
+    }
+  } catch (e) {}
+  if (seq !== acctSeq) return;
+  Object.assign(ACCT, { kind, name, email: u.email || '' }); renderAcct();
+}
+function toggleAcct(open) {
+  const m = $('acctMenu'); open = open ?? m.classList.contains('hidden');
+  m.classList.toggle('hidden', !open); $('acctBtn').setAttribute('aria-expanded', String(open));
+}
+$('acctBtn').addEventListener('click', e => { e.stopPropagation(); toggleAcct(); });
+document.addEventListener('click', e => { if (!e.target.closest('#acct')) toggleAcct(false); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') toggleAcct(false); });
+document.addEventListener('click', e => { if (e.target.closest('[data-logout]') && db) { toggleAcct(false); db.auth.signOut(); } });
+document.querySelectorAll('[data-teacher]').forEach(a => a.addEventListener('click', e => { if (a.getAttribute('aria-disabled') === 'true') e.preventDefault(); }));
+renderAcct();
+if (db) {
+  db.auth.getSession().then(({ data }) => loadAccount(data.session)).catch(() => {});
+  db.auth.onAuthStateChange((_e, s) => setTimeout(() => loadAccount(s), 0));
+}
 
 // ----- Menu di động -----
 $('menuBtn').addEventListener('click', () => {
