@@ -18,6 +18,7 @@
 alter table questions add column if not exists question_type text not null default 'multiple_choice';
 alter table questions alter column correct_answer drop not null;   -- Tự luận không có đáp án
 alter table questions drop constraint if exists questions_correct_answer_check;  -- nếu có ràng buộc chỉ A/B/C/D
+alter table questions add column if not exists lesson text;   -- Bài / Đơn vị kiến thức (tùy chọn; dữ liệu cũ để trống = "Chưa phân bài")
 alter table questions add constraint questions_type_check
   check (question_type in ('multiple_choice','true_false','short_answer','essay'));
 -- options (jsonb): MC {A,B,C,D} | Đúng/Sai {a,b,c,d} | Trả lời ngắn & Tự luận {}
@@ -110,6 +111,11 @@ create policy "admin delete questions" on questions for delete to authenticated
         </select></label>
     </div>
 
+    <label class="block text-sm font-medium">Bài / Đơn vị kiến thức <span class="font-normal text-slate-400">(không bắt buộc)</span>
+      <input id="lesson" list="lessons" autocomplete="off" placeholder="Chọn bài đã có hoặc gõ bài mới" class="w-full border rounded p-2 mt-1">
+      <datalist id="lessons"></datalist>
+      <span id="lessonHint" class="block text-xs font-normal text-slate-500 mt-1">Gợi ý theo Lớp, Môn và Chương đang chọn. Để trống nếu chưa phân bài.</span></label>
+
     <label class="block text-sm font-medium">Nội dung câu hỏi (hỗ trợ LaTeX, vd: $x^2+1$)
       <textarea id="content" rows="4" class="w-full border rounded p-2 mt-1"></textarea></label>
 
@@ -172,7 +178,7 @@ create policy "admin delete questions" on questions for delete to authenticated
       <p id="imgHint" class="hidden text-xs text-slate-500">Mỗi dòng cho biết ảnh nào đang được gắn vào câu nào. Nếu ghép sai, dùng ▲ ▼ để đổi thứ tự ảnh; ✕ bỏ ảnh khỏi danh sách (các ảnh sau dồn lên một vị trí).</p>
     </div>
     <div class="text-xs text-slate-500 space-y-1">
-      <p>Cột chung: <code>question_type, grade, subject, chapter, difficulty, content</code>; tùy chọn: <code>explanation</code>, <code>image_url</code> (link ảnh thật hoặc thẻ <code>anh_1</code>, <code>anh_2</code>, ...). Bỏ trống <code>question_type</code> = trắc nghiệm.</p>
+      <p>Cột chung: <code>question_type, grade, subject, chapter, difficulty, content</code>; tùy chọn: <code>lesson</code> (bài / đơn vị kiến thức), <code>explanation</code>, <code>image_url</code> (link ảnh thật hoặc thẻ <code>anh_1</code>, <code>anh_2</code>, ...). Bỏ trống <code>question_type</code> = trắc nghiệm.</p>
       <p><code>multiple_choice</code>: cần <code>a,b,c,d</code> + <code>correct_answer</code> (A/B/C/D).</p>
       <p><code>true_false</code>: <code>a,b,c,d</code> là 4 phát biểu; <code>correct_answer</code> gồm 4 giá trị theo thứ tự a→d, vd <code>Đ,S,Đ,S</code> hoặc <code>DSDS</code> (Đ/D/T = Đúng, S/F = Sai).</p>
       <p><code>short_answer</code>: chỉ cần <code>correct_answer</code>. <code>essay</code>: không cần đáp án; nên điền <code>explanation</code> (hướng dẫn chấm/dàn ý).</p>
@@ -180,7 +186,7 @@ create policy "admin delete questions" on questions for delete to authenticated
     <textarea id="json" rows="12" oninput="scheduleRefresh()" class="w-full border rounded p-2 font-mono text-xs"
       placeholder='Hoặc dán JSON vào đây, ví dụ:
 [
-  {"question_type": "multiple_choice", "grade": 6, "subject": "Toán", "chapter": "Phân số", "difficulty": "nhan_biet",
+  {"question_type": "multiple_choice", "grade": 6, "subject": "Toán", "chapter": "Phân số", "lesson": "Cộng, trừ phân số", "difficulty": "nhan_biet",
    "content": "1/2 + 1/2 = ?", "options": {"A": "1", "B": "2", "C": "0", "D": "1/4"}, "correct_answer": "A"},
   {"question_type": "true_false", "grade": 6, "subject": "Toán", "chapter": "Phân số", "difficulty": "thong_hieu",
    "content": "Xét các phát biểu:", "options": {"a": "1/2 > 1/3", "b": "2/4 = 1/2", "c": "3/5 > 1", "d": "1/4 < 1/3"},
@@ -207,17 +213,19 @@ create policy "admin delete questions" on questions for delete to authenticated
       <input id="geminiKey" type="password" class="w-full border rounded p-2 mt-1" placeholder="Lưu trong trình duyệt này (localStorage)" oninput="localStorage.setItem('gemini_key', this.value.trim())"></label>
     <label class="block text-sm font-medium">Dán đề / câu hỏi thô (một hoặc nhiều câu, mọi dạng)
       <textarea id="rawText" rows="10" class="w-full border rounded p-2 mt-1"></textarea></label>
-    <p class="text-xs text-slate-500">Lớp, môn, chương, độ khó đang chọn ở tab "Nhập từng câu" được dùng làm mặc định nếu đề không ghi rõ. Kết quả được đưa vào tab "Nạp hàng loạt" để bạn kiểm tra trước khi nạp.</p>
+    <p class="text-xs text-slate-500">Lớp, môn, chương, bài, độ khó đang chọn ở tab "Nhập từng câu" được dùng làm mặc định nếu đề không ghi rõ. Kết quả được đưa vào tab "Nạp hàng loạt" để bạn kiểm tra trước khi nạp.</p>
+    <p class="text-xs text-slate-500">Ảnh minh họa: ghi <code>[Hình]</code> ở vị trí câu có hình trong đề dán vào. AI sẽ đánh dấu <code>anh_1, anh_2…</code>; chọn các tệp ảnh ở tab "Nạp hàng loạt" để hệ thống tự khớp và tải lên.</p>
     <button onclick="aiParse()" class="bg-violet-600 hover:bg-violet-700 text-white px-5 py-2 rounded-lg font-semibold">AI tách câu hỏi → JSON</button>
     <div id="msg3" class="text-sm"></div>
   </section>
 
   <!-- Quản lý ngân hàng -->
   <section id="panel4" class="hidden bg-white p-5 rounded-xl shadow space-y-4">
-    <div class="grid grid-cols-2 md:grid-cols-7 gap-2 text-sm">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
       <select id="mGrade" onchange="mgGradeChanged()" class="border rounded p-2"></select>
       <select id="mSubject" onchange="mgSubjectChanged()" class="border rounded p-2"></select>
-      <select id="mChapter" onchange="loadManage(0)" class="border rounded p-2"></select>
+      <select id="mChapter" onchange="mgChapterChanged()" class="border rounded p-2"></select>
+      <select id="mLesson" onchange="loadManage(0)" class="border rounded p-2" title="Bài / Đơn vị kiến thức"></select>
       <select id="mDiff" onchange="loadManage(0)" class="border rounded p-2">
         <option value="">Mọi độ khó</option><option value="nhan_biet">Nhận biết</option><option value="thong_hieu">Thông hiểu</option>
         <option value="van_dung">Vận dụng</option><option value="van_dung_cao">Vận dụng cao</option></select>
@@ -261,6 +269,8 @@ create policy "admin delete questions" on questions for delete to authenticated
           <option value="nhan_biet">Nhận biết</option><option value="thong_hieu">Thông hiểu</option>
           <option value="van_dung">Vận dụng</option><option value="van_dung_cao">Vận dụng cao</option></select></label>
     </div>
+    <label class="block text-sm font-medium">Bài / Đơn vị kiến thức <span class="font-normal text-slate-400">(để trống = chưa phân bài)</span>
+      <input id="eLesson" list="eLessons" autocomplete="off" class="w-full border rounded p-2 mt-1"><datalist id="eLessons"></datalist></label>
     <label class="block text-sm font-medium">Nội dung câu hỏi (LaTeX: $x^2$)
       <textarea id="eContent" rows="4" class="w-full border rounded p-2 mt-1"></textarea></label>
     <div class="space-y-2">
@@ -354,7 +364,11 @@ function parseTF(v) {
 }
 
 // Độ khó luôn không dấu: "Vận dụng cao" -> van_dung_cao
-const normDiff = v => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase().trim().replace(/[\s-]+/g, '_');
+// Chấp nhận "Nhận biết", "NB", "vận dụng cao", "VDC", "vd_cao"...
+const normDiff = v => {
+  const k = String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').toLowerCase().trim().replace(/[\s-]+/g, '_');
+  return { nb: 'nhan_biet', th: 'thong_hieu', vd: 'van_dung', vdc: 'van_dung_cao', vd_cao: 'van_dung_cao' }[k] ?? k;
+};
 // Thẻ ảnh tạm: "anh1", "Anh_01" -> "anh_1"; link thật giữ nguyên
 function normImg(v) {
   v = String(v ?? '').trim();
@@ -366,11 +380,17 @@ const slotOf = v => { const m = String(v ?? '').match(/^anh_(\d+)$/); return m ?
 
 // Sửa lỗi hay gặp khi LaTeX nằm trong JSON: \frac, \text, \theta, \beta... bị hiểu nhầm là ký tự điều khiển (\f, \t, \b)
 // hoặc gây lỗi "escape không hợp lệ" (\sqrt, \(). Chuỗi đã viết đúng (\\frac) được giữ nguyên.
+const TEX_AMBIG = ['frac', 'forall', 'fbox', 'text', 'textbf', 'textit', 'textrm', 'textsf', 'texttt', 'times', 'theta', 'tau', 'tan', 'tilde',
+  'therefore', 'triangle', 'tfrac', 'tbinom', 'top', 'to', 'tag', 'beta', 'bar', 'begin', 'binom', 'boldsymbol', 'big', 'bigg', 'bigcup', 'bigcap',
+  'bullet', 'because', 'backslash', 'bmod', 'bot', 'right', 'rightarrow', 'rho', 'rm', 'rangle', 'rfloor', 'rceil', 'nu', 'neq', 'ne', 'nabla',
+  'not', 'notin', 'newline', 'nmid', 'ni', 'nleq', 'ngeq', 'nless', 'ngtr'];      // lệnh LaTeX bắt đầu bằng b/f/n/r/t (trùng ký tự escape của JSON)
+const TEX_AMBIG_RE = new RegExp('(?<!\\\\)\\\\(?=(?:' + TEX_AMBIG.join('|') + ')(?![a-zA-Z]))', 'g');
 function fixEsc(raw) {
-  return String(raw)
-    .replace(/(?<!\\)\\(?=(?:[bft][a-zA-Z]|neq|nabla|notin|rho|right|rangle))/g, '\\\\')
-    .replace(/(?<!\\)\\(?=u(?![0-9a-fA-F]{4}))/g, '\\\\')
-    .replace(/(?<!\\)\\(?!["\\\/bfnrtu])/g, '\\\\');
+  return String(raw ?? '')
+    .replace(TEX_AMBIG_RE, '\\\\')                           // \frac \text \right \neq \nu ...  -> \\frac ...
+    .replace(/(?<!\\)\\(?=[bf][a-zA-Z])/g, '\\\\')           // \bigl \bigr \fbox ... (\b, \f + chữ cái không bao giờ là escape hợp lệ)
+    .replace(/(?<!\\)\\(?!["\\\/bfnrtu])/g, '\\\\')          // \sqrt \cdot \alpha \left ... -> \\sqrt ...
+    .replace(/(?<!\\)\\u(?![0-9a-fA-F]{4})/g, '\\\\u');      // \underline \uparrow ...
 }
 
 // ---------- Ảnh chọn từ máy (ghép theo thứ tự với thẻ anh_1, anh_2, ...) ----------
@@ -524,6 +544,7 @@ function normalize(r) {
     grade: Number(get('grade')),
     subject: get('subject'),
     chapter: get('chapter'),
+    lesson: get('lesson').replace(/\s+/g, ' ') || null,     // bài / đơn vị kiến thức (tùy chọn)
     difficulty: normDiff(get('difficulty')),
     content: get('content'),
     image_url: normImg(get('image_url')),
@@ -576,7 +597,7 @@ function collectForm() {
   const t = $('qtype').value;
   const q = {
     question_type: t, grade: $('grade').value, subject: $('subject').value, chapter: $('chapter').value,
-    difficulty: $('difficulty').value, content: $('content').value, image_url: $('image_url').value,
+    lesson: $('lesson').value, difficulty: $('difficulty').value, content: $('content').value, image_url: $('image_url').value,
     explanation: $('explanation').value, options: {}
   };
   if (t === 'multiple_choice') {
@@ -591,20 +612,80 @@ function collectForm() {
   return q;
 }
 
+// ---------- Bài / Đơn vị kiến thức ----------
+const NO_LESSON = '__none__';          // giá trị lọc "Chưa phân bài"
+let lessonOpts = [], lessonSeq = 0, lessonTimer;
+
+// Các giá trị khác nhau của 1 cột (supabase-js không có DISTINCT nên đọc từng trang 1000 dòng rồi loại trùng)
+async function distinct(col, f = {}) {
+  const out = new Set();
+  for (let from = 0; from < 20000; from += 1000) {
+    let q = db.from('questions').select(col).order('id').range(from, from + 999);
+    if (f.grade) q = q.eq('grade', Number(f.grade));
+    if (f.subject) q = q.eq('subject', f.subject);
+    if (f.chapter) q = q.eq('chapter', f.chapter);
+    const { data, error } = await q;
+    if (error) throw error;
+    data.forEach(r => { const v = String(r[col] ?? '').trim(); if (v) out.add(v); });
+    if (data.length < 1000) break;
+  }
+  return [...out].sort((a, b) => a.localeCompare(b, 'vi', { numeric: true }));   // "Bài 2" trước "Bài 10"
+}
+async function refreshLessons() {
+  if (!sess) return;
+  const seq = ++lessonSeq;
+  try {
+    const list = await distinct('lesson', { grade: $('grade').value, subject: $('subject').value.trim(), chapter: $('chapter').value.trim() });
+    if (seq !== lessonSeq) return;
+    lessonOpts = list;
+    $('lessons').innerHTML = list.map(l => `<option value="${escA(l)}">`).join('');
+    $('lessonHint').textContent = list.length
+      ? `Có ${list.length} bài gợi ý theo Lớp/Môn/Chương đang chọn. Có thể gõ bài mới.`
+      : 'Chưa có bài nào cho lựa chọn này: hãy gõ tên bài mới (hoặc để trống nếu chưa phân bài).';
+  } catch (err) { if (seq === lessonSeq) $('lessonHint').textContent = lessonColErr(err.message) ? 'Chưa có cột "lesson" trong bảng questions — chạy bank_scope_setup.sql (hoặc lệnh alter table ở cuối trang) để dùng tính năng Bài.' : 'Không tải được gợi ý bài: ' + err.message; }
+}
+const scheduleLessons = () => { clearTimeout(lessonTimer); lessonTimer = setTimeout(refreshLessons, 300); };
+// Gõ lệch hoa/thường hoặc dư khoảng trắng so với bài đã có -> dùng đúng cách viết của bài đã có
+function canonLesson(v) {
+  const t = String(v ?? '').trim().replace(/\s+/g, ' ');
+  return lessonOpts.find(x => x.toLowerCase() === t.toLowerCase()) || t;
+}
+// Gợi ý Bài cho form sửa (modal) theo Lớp / Môn / Chương trong form đó
+let eLessonSeq = 0, eLessonTimer;
+async function refreshELessons() {
+  const seq = ++eLessonSeq;
+  try {
+    const list = await distinct('lesson', { grade: $('eGrade').value, subject: $('eSubject').value.trim(), chapter: $('eChapter').value.trim() });
+    if (seq === eLessonSeq) $('eLessons').innerHTML = list.map(l => `<option value="${escA(l)}">`).join('');
+  } catch (e) {}
+}
+const lessonColErr = m => /lesson/i.test(m || '') && /column|schema cache|does not exist/i.test(m || '');
+const LESSON_SQL = 'alter table questions add column if not exists lesson text;';
+// Thông báo lỗi Supabase; riêng lỗi thiếu cột lesson thì kèm lệnh SQL cần chạy
+const dbMsg = e => lessonColErr(e.message)
+  ? `Bảng questions chưa có cột <b>lesson</b>. Chạy trong Supabase → SQL Editor: <code>${LESSON_SQL}</code> rồi thử lại.`
+  : 'Lỗi Supabase: ' + esc(e.message);
+// Dòng ghi vào DB: câu không có bài thì bỏ hẳn cột lesson để vẫn lưu được khi bảng chưa có cột này
+const insRow = q => { const r = { ...q, owner_id: curOwner() }; if (!r.lesson) delete r.lesson; return r; };
+
 // ---------- Nhập từng câu ----------
 async function saveOne() {
-  const q = normalize(collectForm());
+  const form = collectForm();
+  form.lesson = canonLesson(form.lesson);
+  const q = normalize(form);
   const errs = check(q);
   if (errs.length) return say('msg1', false, 'Dữ liệu chưa hợp lệ: ' + esc(errs.join('; ')));
   if (slotOf(q.image_url)) return say('msg1', false, 'Thẻ anh_N chỉ dùng ở tab Nạp hàng loạt; ở đây hãy dán link ảnh thật.');
 
-  const { error } = await db.from('questions').insert({ ...q, owner_id: curOwner() });
-  if (error) return say('msg1', false, 'Lỗi Supabase: ' + esc(error.message));
+  const { error } = await db.from('questions').insert(insRow(q));
+  if (error) return say('msg1', false, dbMsg(error));
 
   say('msg1', true, 'Đã lưu câu hỏi vào ' + scopeName() + '.');
-  // Giữ lại loại/lớp/môn/chương/độ khó để nhập liên tục, chỉ xóa phần nội dung
+  // Giữ lại loại/lớp/môn/chương/bài/độ khó để nhập liên tục, chỉ xóa phần nội dung
   ['content', 'image_url', 'optA', 'optB', 'optC', 'optD', 'tf_a', 'tf_b', 'tf_c', 'tf_d', 'shortAns', 'explanation'].forEach(id => $(id).value = '');
   document.querySelectorAll('input[type=radio][value="Đ"]').forEach(r => r.checked = true);
+  refreshLessons();                                          // bài mới (nếu có) xuất hiện trong gợi ý
+  if (mg.loaded) loadFilterOptions();
   $('content').focus();
 }
 
@@ -626,7 +707,13 @@ function loadFile(ev) {
   ev.target.value = '';
 }
 
+let importing = false;
 async function importBulk() {
+  if (importing) return;
+  importing = true;
+  try { await importBulkRun(); } finally { importing = false; }
+}
+async function importBulkRun() {
   let data;
   try {
     data = JSON.parse(fixEsc($('json').value));
@@ -658,10 +745,10 @@ async function importBulk() {
   let done = 0;
   for (let i = 0; i < rows.length; i += 100) {      // chia lô 100 câu
     say('msg2', true, `Đang nạp câu hỏi ${Math.min(i + 100, rows.length)}/${rows.length}...`);
-    const { error } = await db.from('questions').insert(rows.slice(i, i + 100).map(r => ({ ...r, owner_id: curOwner() })));
+    const { error } = await db.from('questions').insert(rows.slice(i, i + 100).map(insRow));
     if (error) {
       if (!done && up.paths.length) await db.storage.from('question-images').remove(up.paths);   // chưa có câu nào được nạp: dọn ảnh vừa tải
-      return say('msg2', false, `Lỗi Supabase sau khi nạp ${done}/${rows.length} câu: ${esc(error.message)}`);
+      return say('msg2', false, `Sau khi nạp ${done}/${rows.length} câu — ` + dbMsg(error));
     }
     done += Math.min(100, rows.length - i);
   }
@@ -669,14 +756,15 @@ async function importBulk() {
   say('msg2', true, `Đã nạp thành công ${done} câu hỏi vào ${scopeName()} (${Object.entries(cnt).map(([k, v]) => k + ': ' + v).join(', ')})` + (up.paths.length ? `, kèm ${up.paths.length} ảnh.` : '.'));
   $('json').value = '';
   clearImages();
+  refreshLessons(); if (mg.loaded) loadFilterOptions();
 }
 
 function downloadTemplate() {
-  const csv = '\uFEFFquestion_type,grade,subject,chapter,difficulty,content,a,b,c,d,correct_answer,explanation,image_url\n' +
-    'multiple_choice,6,Toán,Phân số,nhan_biet,"1/2 + 1/2 = ?",1,2,0,1/4,A,"Cộng hai phân số cùng mẫu.",\n' +
-    'true_false,6,Toán,Phân số,thong_hieu,"Xét các phát biểu sau:",1/2 > 1/3,2/4 = 1/2,3/5 > 1,1/4 < 1/3,"Đ,Đ,S,Đ","Giải thích từng ý.",\n' +
-    'short_answer,6,Toán,Phân số,van_dung,"3/4 của 20 là bao nhiêu?",,,,,15,"20 x 3/4 = 15",\n' +
-    'essay,6,Toán,Phân số,van_dung_cao,"Trình bày cách quy đồng mẫu số hai phân số.",,,,,,"Ý 1 (1đ): tìm MSC. Ý 2 (1đ): nhân tử phụ. Ý 3 (1đ): kết quả.",\n';
+  const csv = '\uFEFFquestion_type,grade,subject,chapter,lesson,difficulty,content,a,b,c,d,correct_answer,explanation,image_url\n' +
+    'multiple_choice,6,Toán,Phân số,Cộng trừ phân số,nhan_biet,"1/2 + 1/2 = ?",1,2,0,1/4,A,"Cộng hai phân số cùng mẫu.",\n' +
+    'true_false,6,Toán,Phân số,So sánh phân số,thong_hieu,"Xét các phát biểu sau:",1/2 > 1/3,2/4 = 1/2,3/5 > 1,1/4 < 1/3,"Đ,Đ,S,Đ","Giải thích từng ý.",\n' +
+    'short_answer,6,Toán,Phân số,Phân số của một số,van_dung,"3/4 của 20 là bao nhiêu?",,,,,15,"20 x 3/4 = 15",\n' +
+    'essay,6,Toán,Phân số,Quy đồng mẫu số,van_dung_cao,"Trình bày cách quy đồng mẫu số hai phân số.",,,,,,"Ý 1 (1đ): tìm MSC. Ý 2 (1đ): nhân tử phụ. Ý 3 (1đ): kết quả.",\n';
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
   a.download = 'mau_cau_hoi.csv';
@@ -685,7 +773,7 @@ function downloadTemplate() {
 
 // ---------- Gemini AI ----------
 const SCHEMA_PROMPT = `Bạn là trợ lý nhập liệu ngân hàng câu hỏi tiếng Việt. Nhận diện CHÍNH XÁC dạng từng câu rồi trả về DUY NHẤT JSON hợp lệ (không markdown, không giải thích) là một mảng các đối tượng:
-{"question_type","grade","subject","chapter","difficulty","content","image_url","options","correct_answer","explanation"}
+{"question_type","grade","subject","chapter","lesson","difficulty","content","image_url","options","correct_answer","explanation"}
 Quy tắc theo dạng:
 1) "multiple_choice" (trắc nghiệm A/B/C/D): options={"A":..,"B":..,"C":..,"D":..}; correct_answer là một chữ "A"|"B"|"C"|"D".
 2) "true_false" (Đúng/Sai: câu dẫn + 4 ý a), b), c), d)): content = câu dẫn chung; options={"a":..,"b":..,"c":..,"d":..} là nội dung 4 phát biểu (bỏ nhãn "a)"); correct_answer = chuỗi 4 giá trị theo thứ tự a,b,c,d, mỗi giá trị là "Đ" (Đúng) hoặc "S" (Sai), ví dụ "Đ,S,Đ,S". Phải tự xác định đúng/sai từng ý nếu đề không cho sẵn; explanation giải thích từng ý a,b,c,d.
@@ -694,6 +782,7 @@ Quy tắc theo dạng:
 Chung:
 - difficulty CHỈ được là "nhan_biet" | "thong_hieu" | "van_dung" | "van_dung_cao" (không dấu, chữ thường, gạch dưới).
 - grade là số nguyên 1-12.
+- lesson là tên bài / đơn vị kiến thức (chuỗi ngắn, vd "Cộng, trừ phân số"); nếu đề không ghi rõ thì dùng giá trị mặc định đã cho, hoặc "" nếu không có.
 - Mọi công thức, ký hiệu toán/lý/hóa giữ chuẩn LaTeX trong $...$, ví dụ $m = 10\\text{ kg}$, $v = \\frac{s}{t}$. Vì là chuỗi JSON nên mọi dấu gạch chéo ngược phải viết đôi (\\\\frac, \\\\text).
 - image_url: nếu câu có hình ảnh/đồ thị/bảng đi kèm (đề ghi "Hình", "hình vẽ", "[Hình 1]", "[ảnh]", "image"... hoặc rõ ràng cần hình), đặt image_url là thẻ tạm theo thứ tự xuất hiện trong TOÀN BỘ đề: "anh_1", "anh_2", "anh_3", ... liên tục, không bỏ số, không lặp, mỗi câu tối đa 1 thẻ. Câu không có hình: image_url = null. Tuyệt đối không bịa URL.
 - explanation là lời giải chi tiết ngắn gọn. Giữ nguyên thứ tự câu trong đề.`;
@@ -716,7 +805,7 @@ async function aiParse() {
   if (!raw) return say('msg3', false, 'Hãy dán nội dung đề vào ô trên.');
   say('msg3', true, 'Đang gọi Gemini...');
   try {
-    const d = { grade: $('grade').value, subject: $('subject').value, chapter: $('chapter').value, difficulty: $('difficulty').value };
+    const d = { grade: $('grade').value, subject: $('subject').value, chapter: $('chapter').value, lesson: $('lesson').value, difficulty: $('difficulty').value };
     const out = await gemini(`${SCHEMA_PROMPT}\n\nGiá trị mặc định nếu đề không ghi rõ: ${JSON.stringify(d)}\n\nĐỀ:\n${raw}`);
     const arr = Array.isArray(out) ? out : (out.questions || [out]);
     let n = 0;   // đánh số lại thẻ ảnh liên tục theo thứ tự câu: anh_1, anh_2, ...
@@ -808,7 +897,7 @@ function qCard(q, label, errs = []) {
     <div class="flex flex-wrap items-center gap-2 text-xs mb-1">
       ${label ? `<b class="text-slate-800">${esc(label)}</b>` : ''}
       <span class="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700">${esc(TYPE_NAME[t] || t)}</span>
-      <span class="text-slate-500">Lớp ${esc(q.grade ?? '')} · ${esc(q.subject ?? '')} · ${esc(q.chapter ?? '')} · ${esc(DIFF_NAME[q.difficulty] || q.difficulty || '')}</span>
+      <span class="text-slate-500">Lớp ${esc(q.grade ?? '')} · ${esc(q.subject ?? '')} · ${esc(q.chapter ?? '')}${q.lesson ? ' · ' + esc(q.lesson) : ''} · ${esc(DIFF_NAME[q.difficulty] || q.difficulty || '')}</span>
     </div>
     <div class="whitespace-pre-wrap font-medium">${esc(q.content)}</div>
     ${img}
@@ -827,10 +916,12 @@ async function loadManage(page = 0) {
   mg.page = page; mg.sel.clear();
   $('mList').innerHTML = '<div class="text-sm text-slate-500">Đang tải...</div>';
   let qb = db.from('questions').select('*', { count: 'exact' });
-  const g = $('mGrade').value, s = $('mSubject').value, c = $('mChapter').value, d = $('mDiff').value, t = $('mType').value, kw = $('mKw').value.trim();
+  const g = $('mGrade').value, s = $('mSubject').value, c = $('mChapter').value, ls = $('mLesson').value, d = $('mDiff').value, t = $('mType').value, kw = $('mKw').value.trim();
   if (g) qb = qb.eq('grade', Number(g));
   if (s) qb = qb.eq('subject', s);
   if (c) qb = qb.eq('chapter', c);
+  if (ls === NO_LESSON) qb = qb.or('lesson.is.null,lesson.eq.');       // dữ liệu cũ: null hoặc rỗng
+  else if (ls) qb = qb.eq('lesson', ls);
   if (d) qb = qb.eq('difficulty', d);
   if (t) qb = qb.eq('question_type', t);
   if (kw) qb = qb.ilike('content', likeOf(kw));
@@ -842,7 +933,7 @@ async function loadManage(page = 0) {
   $('msg4').innerHTML = '';
   if (!data.length && page > 0) return loadManage(page - 1);
   mg.rows = data; mg.total = count ?? data.length;
-  if (!mg.total) { const why = await diagnoseEmpty({ g, s, c, d, t, kw }); if (why) say('msg4', false, why); }
+  if (!mg.total) { const why = await diagnoseEmpty({ g, s, c, d, t, kw, ls }); if (why) say('msg4', false, why); }
   mg.byId = new Map(data.map(r => [String(r.id), r]));
   renderManage();
 }
@@ -861,7 +952,7 @@ function renderManage() {
             <span class="font-semibold text-slate-700">#${esc(id)}</span>
             ${q.owner_id ? '<span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">📁 Cá nhân</span>' : '<span class="px-2 py-0.5 rounded bg-sky-50 text-sky-700">🌐 Chung</span>'}
             <span class="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700">${esc(TYPE_NAME[q.question_type] || q.question_type || 'Trắc nghiệm')}</span>
-            <span>Lớp ${esc(q.grade)} · ${esc(q.subject)} · ${esc(q.chapter)} · ${esc(DIFF_NAME[q.difficulty] || q.difficulty)}</span>
+            <span>Lớp ${esc(q.grade)} · ${esc(q.subject)} · ${esc(q.chapter)} · ${q.lesson && String(q.lesson).trim() ? esc(q.lesson) : '<i class="text-slate-400">Chưa phân bài</i>'} · ${esc(DIFF_NAME[q.difficulty] || q.difficulty)}</span>
           </div>
           <div class="mt-1 text-sm whitespace-pre-wrap" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">${esc(q.content)}</div>
         </div>
@@ -882,14 +973,19 @@ function renderManage() {
   updateSelUi();
   math($('mList'));
 }
-function resetManageFilters() { ['mGrade', 'mSubject', 'mChapter', 'mDiff', 'mType', 'mKw', 'mScope'].forEach(id => $(id).value = ''); fillFilterOptions(); loadManage(0); }
+function resetManageFilters() { ['mGrade', 'mSubject', 'mChapter', 'mLesson', 'mDiff', 'mType', 'mKw', 'mScope'].forEach(id => $(id).value = ''); fillFilterOptions(); loadManage(0); }
 
 // Danh sách lớp / môn / chương lấy từ chính dữ liệu trong bảng (đúng từng ký tự nên không bị lệch dấu, khoảng trắng, hoa/thường)
 mg.meta = [];
 async function loadFilterOptions() {
   const rows = [];
+  let cols = mg.noLesson ? 'grade, subject, chapter' : 'grade, subject, chapter, lesson';
   for (let a = 0; ; a += 1000) {
-    const { data, error } = await db.from('questions').select('grade, subject, chapter').order('id').range(a, a + 999);
+    let { data, error } = await db.from('questions').select(cols).order('id').range(a, a + 999);
+    if (error && !mg.noLesson && lessonColErr(error.message)) {        // bảng chưa có cột lesson
+      mg.noLesson = true; cols = 'grade, subject, chapter';
+      ({ data, error } = await db.from('questions').select(cols).order('id').range(a, a + 999));
+    }
     if (error || !data) break;
     rows.push(...data);
     if (data.length < 1000) break;
@@ -898,7 +994,7 @@ async function loadFilterOptions() {
   fillFilterOptions();
 }
 function fillFilterOptions() {
-  const keep = { g: $('mGrade').value, s: $('mSubject').value, c: $('mChapter').value };
+  const keep = { g: $('mGrade').value, s: $('mSubject').value, c: $('mChapter').value, l: $('mLesson').value };
   const tally = (list, key) => { const m = new Map(); list.forEach(r => { const v = r[key]; if (v != null && String(v).trim() !== '') m.set(String(v), (m.get(String(v)) || 0) + 1); }); return m; };
   const opts = (m, all, sel, fmt = v => v) => `<option value="">${all}</option>` + [...m.keys()].sort((a, b) => a.localeCompare(b, 'vi', { numeric: true }))
     .map(v => `<option value="${escA(v)}"${v === sel ? ' selected' : ''}>${esc(fmt(v))} (${m.get(v)})</option>`).join('');
@@ -912,9 +1008,16 @@ function fillFilterOptions() {
   const cm = tally(byS, 'chapter');
   $('mChapter').innerHTML = opts(cm, 'Mọi chương', keep.c);
   if (!cm.has(keep.c)) $('mChapter').value = '';
+  const byC = $('mChapter').value ? byS.filter(r => String(r.chapter) === $('mChapter').value) : byS;
+  const lm = tally(byC, 'lesson'), noL = byC.filter(r => !String(r.lesson ?? '').trim()).length;
+  $('mLesson').innerHTML = `<option value="">Mọi bài</option>` + (noL && lm.size ? `<option value="${NO_LESSON}"${keep.l === NO_LESSON ? ' selected' : ''}>(Chưa phân bài) (${noL})</option>` : '')
+    + [...lm.keys()].sort((a, b) => a.localeCompare(b, 'vi', { numeric: true })).map(v => `<option value="${escA(v)}"${v === keep.l ? ' selected' : ''}>${esc(v)} (${lm.get(v)})</option>`).join('');
+  if (keep.l !== NO_LESSON && !lm.has(keep.l)) $('mLesson').value = '';
+  $('mLesson').disabled = !!mg.noLesson;
 }
 function mgGradeChanged() { fillFilterOptions(); loadManage(0); }
 function mgSubjectChanged() { fillFilterOptions(); loadManage(0); }
+function mgChapterChanged() { fillFilterOptions(); loadManage(0); }
 
 // Khi không có kết quả: đếm theo từng bước để biết bộ lọc nào làm về 0, hoặc database không cho đọc
 async function diagnoseEmpty(f) {
@@ -928,6 +1031,7 @@ async function diagnoseEmpty(f) {
   if (f.g && f.s) steps.push(`+ môn "${esc(f.s)}": <b>${await cnt(q => q.eq('grade', gNum).eq('subject', f.s))}</b>`);
   if (!f.g && f.s) steps.push(`môn "${esc(f.s)}": <b>${await cnt(q => q.eq('subject', f.s))}</b>`);
   if (f.c) steps.push(`+ chương "${esc(f.c)}": <b>${await cnt(q => { q = q.eq('chapter', f.c); if (f.g) q = q.eq('grade', gNum); if (f.s) q = q.eq('subject', f.s); return q; })}</b>`);
+  if (f.ls) steps.push(`+ bài "${f.ls === NO_LESSON ? 'chưa phân bài' : esc(f.ls)}" và các bộ lọc còn lại: <b>0</b>`);
   const grades = [...new Set(mg.meta.map(r => r.grade))].filter(v => v != null).sort((a, b) => a - b);
   return `Không có câu nào khớp bộ lọc. Đếm theo từng bước: ${steps.join(' → ')}.` + (grades.length ? ` Các lớp đang có dữ liệu: ${grades.join(', ')}.` : '');
 }
@@ -1000,6 +1104,7 @@ function mgEdit(id) {
   $('eType').value = TYPES.includes(q.question_type) ? q.question_type : 'multiple_choice';
   $('eGrade').value = q.grade ?? 1;
   $('eSubject').value = q.subject ?? ''; $('eChapter').value = q.chapter ?? '';
+  $('eLesson').value = q.lesson ?? ''; $('eLessons').innerHTML = ''; refreshELessons();     // dữ liệu cũ chưa có bài -> để trống
   const nd = normDiff(q.difficulty); $('eDiff').value = LEVELS.includes(nd) ? nd : '';
   $('eContent').value = q.content ?? ''; $('eExp').value = q.explanation ?? '';
   $('eImg').value = q.image_url ?? ''; $('eImgFile').value = '';
@@ -1018,7 +1123,7 @@ function closeEdit() { $('editModal').classList.add('hidden'); if (eBlob) { URL.
 
 function eRaw() {
   const t = $('eType').value;
-  const q = { question_type: t, grade: $('eGrade').value, subject: $('eSubject').value, chapter: $('eChapter').value, difficulty: $('eDiff').value,
+  const q = { question_type: t, grade: $('eGrade').value, subject: $('eSubject').value, chapter: $('eChapter').value, lesson: $('eLesson').value, difficulty: $('eDiff').value,
     content: $('eContent').value, image_url: $('eImg').value, explanation: $('eExp').value, options: {} };
   if (t === 'multiple_choice') {
     q.options = { A: $('eA').value, B: $('eB').value, C: $('eC').value, D: $('eD').value };
@@ -1046,17 +1151,20 @@ async function uploadOne(f) {
 }
 async function saveEdit() {
   if (!editing) return;
-  const q = normalize(eRaw()), errs = check(q);
+  const raw = eRaw(); raw.lesson = (await distinct('lesson', { grade: raw.grade, subject: String(raw.subject).trim(), chapter: String(raw.chapter).trim() }).catch(() => []))
+    .find(x => x.toLowerCase() === String(raw.lesson).trim().replace(/\s+/g, ' ').toLowerCase()) || raw.lesson;       // khớp cách viết bài đã có
+  const q = normalize(raw), errs = check(q);
   if (errs.length) return say('eMsg', false, 'Dữ liệu chưa hợp lệ: ' + esc(errs.join('; ')));
   if (slotOf(q.image_url)) return say('eMsg', false, 'Thẻ anh_N chỉ dùng khi nạp hàng loạt; ở đây hãy dán link ảnh thật hoặc chọn file ảnh.');
   const f = $('eImgFile').files[0];
   try { if (f) { say('eMsg', true, 'Đang tải ảnh lên...'); q.image_url = await uploadOne(f); } }
   catch (e) { return say('eMsg', false, 'Lỗi tải ảnh lên bucket "question-images": ' + esc(e.message)); }
   say('eMsg', true, 'Đang lưu...');
+  if (!q.lesson && !('lesson' in editing)) delete q.lesson;      // bảng chưa có cột lesson và câu không có bài: không gửi cột này
   const { data, error } = await db.from('questions').update(q).eq('id', editing.id).select('id');
-  if (error) return say('eMsg', false, 'Lỗi Supabase: ' + esc(error.message));
+  if (error) return say('eMsg', false, dbMsg(error));
   if (!data || !data.length) return say('eMsg', false, rlsHelp('cập nhật'));
-  closeEdit(); toast('Đã lưu thay đổi.'); loadManage(mg.page); loadFilterOptions();
+  closeEdit(); toast('Đã lưu thay đổi.'); loadManage(mg.page); loadFilterOptions(); refreshLessons();
 }
 
 // ----- Xóa (nhập lại mật khẩu; xóa nhiều câu phải gõ XOA) -----
@@ -1185,11 +1293,14 @@ function render(session) {
   if ((session?.user?.id || null) !== (prev || null) || !$('roleTag').textContent) loadRole();
   $('loginBox').classList.toggle('hidden', !!session);
   $('app').classList.toggle('hidden', !session);
+  if (session && (session.user.id !== prev)) refreshLessons();
 }
 
 $('grade').innerHTML = Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}">Lớp ${i + 1}</option>`).join('');
 $('geminiKey').value = localStorage.getItem('gemini_key') || '';
 fillFilterOptions();
+['grade', 'subject', 'chapter'].forEach(id => { $(id).addEventListener('input', scheduleLessons); $(id).addEventListener('change', scheduleLessons); });   // gợi ý Bài đổi theo Lớp/Môn/Chương
+['eGrade', 'eSubject', 'eChapter'].forEach(id => { const f = () => { clearTimeout(eLessonTimer); eLessonTimer = setTimeout(refreshELessons, 300); }; $(id).addEventListener('input', f); $(id).addEventListener('change', f); });
 $('mKw').addEventListener('keydown', e => { if (e.key === 'Enter') loadManage(0); });
 applyType();
 refreshBulk();
