@@ -82,6 +82,7 @@ create policy "admin delete questions" on questions for delete to authenticated
     <button id="tab2" onclick="showTab(2)" class="px-4 py-2 rounded-lg font-semibold">Nạp hàng loạt</button>
     <button id="tab3" onclick="showTab(3)" class="px-4 py-2 rounded-lg font-semibold">AI nhập liệu</button>
     <button id="tab4" onclick="showTab(4)" class="px-4 py-2 rounded-lg font-semibold">Quản lý ngân hàng</button>
+    <button id="tab5" onclick="showTab(5)" class="px-4 py-2 rounded-lg font-semibold">🚩 Báo lỗi <span id="rpBadge" class="hidden ml-1 align-middle text-xs bg-rose-600 text-white rounded-full px-1.5 py-0.5"></span></button>
   </div>
 
   <!-- Nhập từng câu -->
@@ -246,6 +247,21 @@ create policy "admin delete questions" on questions for delete to authenticated
     <div id="mList" class="space-y-2"></div>
     <div id="mPager" class="flex items-center justify-center gap-3 text-sm"></div>
     <div id="msg4" class="text-sm"></div>
+  </section>
+
+  <!-- Báo lỗi câu hỏi từ học sinh -->
+  <section id="panel5" class="hidden bg-white p-5 rounded-xl shadow space-y-4">
+    <div class="flex flex-wrap items-center gap-3 text-sm">
+      <label class="font-medium">Hiển thị
+        <select id="rpStatus" onchange="loadReports(0)" class="border rounded p-2 ml-1">
+          <option value="open">Chờ xử lý</option><option value="done">Đã xử lý</option><option value="all">Tất cả</option></select></label>
+      <button onclick="loadReports(rp.page)" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold">Làm mới</button>
+      <span id="rpInfo" class="text-slate-500"></span>
+    </div>
+    <p class="text-xs text-slate-500">Học sinh báo lỗi sau khi làm xong bài (tối đa 3 câu/ngày/học sinh). Bạn chỉ thấy báo lỗi của câu thuộc ngân hàng cá nhân của mình; câu ở ngân hàng chung chỉ tài khoản quản trị thấy. Sửa câu xong hãy bấm "Đã xử lý".</p>
+    <div id="rpList" class="space-y-3"></div>
+    <div id="rpPager" class="flex items-center justify-center gap-3 text-sm"></div>
+    <div id="msg5" class="text-sm"></div>
   </section>
 </div>
 
@@ -1164,7 +1180,7 @@ async function saveEdit() {
   const { data, error } = await db.from('questions').update(q).eq('id', editing.id).select('id');
   if (error) return say('eMsg', false, dbMsg(error));
   if (!data || !data.length) return say('eMsg', false, rlsHelp('cập nhật'));
-  closeEdit(); toast('Đã lưu thay đổi.'); loadManage(mg.page); loadFilterOptions(); refreshLessons();
+  closeEdit(); toast('Đã lưu thay đổi.'); loadManage(mg.page); loadFilterOptions(); refreshLessons(); if (rp.loaded) loadReports(rp.page);
 }
 
 // ----- Xóa (nhập lại mật khẩu; xóa nhiều câu phải gõ XOA) -----
@@ -1238,14 +1254,92 @@ async function confirmDelete() {
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeEdit(); closeDel(); } });
 
+// ---------- Báo lỗi câu hỏi từ học sinh (cần chạy question_report_setup.sql) ----------
+const RP_NAME = { wrong_answer: ['🔴', 'Sai đáp án'], image: ['🖼️', 'Lỗi hình ảnh'], latex: ['🔣', 'Lỗi công thức LaTeX'], typo: ['📝', 'Lỗi chính tả / thiếu dữ kiện'] };
+const RP_STATUS = { open: 'Chờ xử lý', resolved: 'Đã xử lý', rejected: 'Bỏ qua' };
+const RP_PAGE = 20;
+const rp = { items: [], total: 0, page: 0, loaded: false };
+const rpMissing = m => /question_report|list_question_reports|count_open_question_reports|schema cache|Could not find the function/i.test(m || '');
+
+async function refreshReportBadge() {
+  if (!sess) return;
+  const { data, error } = await db.rpc('count_open_question_reports'), b = $('rpBadge');
+  if (error || !data) { b.classList.add('hidden'); return; }
+  b.textContent = data; b.classList.remove('hidden');
+}
+async function loadReports(page = 0) {
+  if (!sess) return;
+  rp.page = Math.max(0, page); rp.loaded = true;
+  $('rpList').innerHTML = '<div class="text-sm text-slate-500">Đang tải...</div>';
+  const { data, error } = await db.rpc('list_question_reports', { p_status: $('rpStatus').value, p_limit: RP_PAGE, p_offset: rp.page * RP_PAGE });
+  if (error) {
+    $('rpList').innerHTML = ''; rp.items = []; rp.total = 0; $('rpPager').innerHTML = ''; $('rpInfo').textContent = '';
+    return say('msg5', false, rpMissing(error.message) ? 'Chưa cài đặt tính năng báo lỗi: chạy file <code>question_report_setup.sql</code> trong Supabase → SQL Editor (sau exam_room_setup.sql, bank_scope_setup.sql, student_setup.sql).' : 'Lỗi Supabase: ' + esc(error.message));
+  }
+  $('msg5').innerHTML = '';
+  if (!(data.items || []).length && rp.page > 0) return loadReports(rp.page - 1);
+  rp.items = data.items || []; rp.total = data.total || 0;
+  renderReports(); refreshReportBadge();
+}
+function renderReports() {
+  const pages = Math.max(1, Math.ceil(rp.total / RP_PAGE));
+  $('rpInfo').textContent = `${rp.total} câu hỏi · trang ${rp.page + 1}/${pages}`;
+  $('rpList').innerHTML = rp.items.length ? rp.items.map(it => {
+    const q = it.question, reps = it.reports || [], sum = {};
+    reps.filter(r => r.status === 'open' || !it.open_count).forEach(r => sum[r.reason] = (sum[r.reason] || 0) + 1);
+    const chips = Object.entries(sum).map(([k, n]) => `<span class="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 text-xs">${(RP_NAME[k] || ['', k])[0]} ${esc((RP_NAME[k] || ['', k])[1])} × ${n}</span>`).join(' ');
+    const detail = reps.map(r => `<div class="flex flex-wrap gap-x-3 gap-y-0.5 py-1.5 border-t first:border-t-0">
+        <span class="text-slate-500 whitespace-nowrap">${esc(new Date(r.created_at).toLocaleString('vi-VN', { hour12: false }))}</span>
+        <span>${(RP_NAME[r.reason] || ['', ''])[0]} ${esc((RP_NAME[r.reason] || ['', r.reason])[1])}</span>
+        <span class="text-slate-600">${esc(r.student_name || 'Học sinh')}${r.student_code ? ' (' + esc(r.student_code) + ')' : ''}${r.class_name ? ' · ' + esc(r.class_name) : ''}</span>
+        <span class="text-xs px-1.5 rounded ${r.status === 'open' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-500'}">${RP_STATUS[r.status] || r.status}</span>
+        ${r.note ? `<div class="basis-full text-slate-700">“${esc(r.note)}”</div>` : ''}</div>`).join('');
+    const done = !it.open_count;
+    return `
+    <div class="border rounded-xl p-3 space-y-2 ${done ? 'bg-slate-50' : 'bg-white'}">
+      <div class="flex flex-wrap items-center gap-2">
+        <b class="text-rose-700">🚩 ${it.total_count} báo lỗi${it.open_count ? ` (${it.open_count} chờ xử lý)` : ' · đã xử lý'}</b>${chips}
+        <span class="ml-auto text-xs text-slate-400">${esc(new Date(it.last_at).toLocaleString('vi-VN', { hour12: false }))}</span>
+      </div>
+      ${qCard(q, '#' + q.id)}
+      <details class="text-sm"><summary class="cursor-pointer text-indigo-600">Chi tiết từng báo cáo</summary><div class="mt-1">${detail}</div></details>
+      <div class="flex flex-wrap gap-2 text-sm">
+        <button onclick="rpEdit('${escA(String(q.id))}')" class="px-3 py-1.5 rounded-lg bg-indigo-50 text-indigo-700 font-semibold hover:bg-indigo-100">✏️ Sửa câu hỏi</button>
+        ${done ? `<button onclick="rpAct('${escA(String(q.id))}', 'open')" class="px-3 py-1.5 rounded-lg bg-slate-100 font-semibold">↩ Mở lại</button>`
+               : `<button onclick="rpAct('${escA(String(q.id))}', 'resolved')" class="px-3 py-1.5 rounded-lg bg-green-600 text-white font-semibold">✔ Đã xử lý</button>
+                  <button onclick="rpAct('${escA(String(q.id))}', 'rejected')" class="px-3 py-1.5 rounded-lg bg-slate-100 font-semibold" title="Câu hỏi không có lỗi">Bỏ qua (không phải lỗi)</button>`}
+      </div>
+    </div>`;
+  }).join('') : '<div class="text-sm text-slate-500">Không có báo lỗi nào ở mục này.</div>';
+  $('rpPager').innerHTML = `
+    <button onclick="loadReports(${rp.page - 1})" ${rp.page === 0 ? 'disabled' : ''} class="px-3 py-1 rounded bg-slate-100 disabled:opacity-40">← Trước</button>
+    <span>Trang ${rp.page + 1}/${pages}</span>
+    <button onclick="loadReports(${rp.page + 1})" ${rp.page + 1 >= pages ? 'disabled' : ''} class="px-3 py-1 rounded bg-slate-100 disabled:opacity-40">Sau →</button>`;
+  math($('rpList'));
+}
+async function rpAct(id, status) {
+  const { error } = await db.rpc('resolve_question_reports', { p_question: Number(id), p_status: status });
+  if (error) return say('msg5', false, 'Lỗi: ' + esc(error.message));
+  toast(status === 'resolved' ? 'Đã đánh dấu đã xử lý.' : status === 'rejected' ? 'Đã bỏ qua báo lỗi này.' : 'Đã mở lại báo lỗi.');
+  loadReports(rp.page);
+}
+function rpEdit(id) {                                   // mở cửa sổ sửa câu hỏi ngay từ danh sách báo lỗi
+  const it = rp.items.find(x => String(x.question.id) === String(id));
+  if (!it) return;
+  mg.byId.set(String(id), it.question);
+  mgEdit(id);
+}
+setInterval(() => { if (sess && !document.hidden) refreshReportBadge(); }, 120000);
+
 // ---------- Giao diện & đăng nhập ----------
 function showTab(n) {
-  [1, 2, 3, 4].forEach(i => {
+  [1, 2, 3, 4, 5].forEach(i => {
     $('panel' + i).classList.toggle('hidden', n !== i);
     $('tab' + i).className = 'px-4 py-2 rounded-lg font-semibold ' + (n === i ? 'bg-indigo-600 text-white' : 'bg-white');
   });
   if (n === 4 && !mg.loaded) { mg.loaded = true; loadFilterOptions(); loadManage(0); }
   if (n === 2) renderPreview();
+  if (n === 5) loadReports(0);
 }
 
 async function login() {
@@ -1293,7 +1387,7 @@ function render(session) {
   if ((session?.user?.id || null) !== (prev || null) || !$('roleTag').textContent) loadRole();
   $('loginBox').classList.toggle('hidden', !!session);
   $('app').classList.toggle('hidden', !session);
-  if (session && (session.user.id !== prev)) refreshLessons();
+  if (session && (session.user.id !== prev)) { refreshLessons(); refreshReportBadge(); }
 }
 
 $('grade').innerHTML = Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}">Lớp ${i + 1}</option>`).join('');

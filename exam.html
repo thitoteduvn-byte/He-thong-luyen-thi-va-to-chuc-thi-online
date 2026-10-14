@@ -9,14 +9,18 @@
 <!-- KaTeX: hiển thị công thức LaTeX trong câu hỏi -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/mhchem.min.js"></script>   <!-- \ce{H2O}: công thức hóa học -->
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
 <style>
+  .katex { font-size: 1.08em; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
   body.room-mode #qbox { -webkit-user-select: none; user-select: none; }
   body.room-mode #qbox input, body.room-mode #qbox textarea { -webkit-user-select: text; user-select: text; }
 </style>
 </head>
 <body class="bg-slate-100 text-slate-800 min-h-screen">
 <div class="max-w-5xl mx-auto p-4">
+  <div id="homeBar" class="hidden text-sm"><a href="student_home.html" class="homeLink text-indigo-600 hover:underline font-medium">← Trang chủ học sinh</a></div>
 
   <!-- ============ 0. MÀN HÌNH VÀO PHÒNG THI (exam.html?room=MA_PHONG&shift=MA_CA) ============ -->
   <section id="screenJoin" class="hidden max-w-md mx-auto mt-12 bg-white p-6 rounded-xl shadow space-y-4">
@@ -26,6 +30,7 @@
       <p id="jSub" class="text-sm text-slate-500"></p>
     </div>
     <div id="jInfo" class="hidden rounded-lg bg-slate-50 border border-slate-200 px-4 py-3 text-sm space-y-1"></div>
+    <div id="jLogged" class="text-xs text-slate-600"></div>
     <div id="jMsg" class="hidden text-sm rounded-lg px-3 py-2"></div>
     <div id="jForm" class="hidden space-y-3">
       <label class="block text-sm font-medium">Mã học sinh <input id="jCode" autocomplete="off" class="w-full border rounded p-2 mt-1 font-normal"></label>
@@ -127,7 +132,7 @@
       </div>
       <aside class="bg-white p-4 rounded-xl shadow h-fit md:order-last order-first">
         <div class="text-sm font-semibold mb-2">Danh sách câu hỏi</div>
-        <div id="nav" class="grid grid-cols-5 gap-2"></div>
+        <div id="nav"></div>
         <div class="text-xs text-slate-500 mt-3">Màu tím: đã trả lời · Viền đậm: đang xem</div>
       </aside>
     </div>
@@ -140,7 +145,9 @@
       <div id="score" class="text-5xl font-bold text-indigo-600 my-2"></div>
       <div id="stats" class="flex flex-wrap justify-center gap-x-6 gap-y-1 text-sm font-medium"></div>
       <div id="scoreNote" class="text-xs text-slate-500 mt-2 space-y-1"></div>
-      <div class="mt-4 flex justify-center gap-3">
+      <div id="saveNote" class="text-xs mt-2"></div>
+      <div class="mt-4 flex flex-wrap justify-center gap-3">
+        <a id="homeBtn" href="student_home.html" class="homeLink px-4 py-2 rounded-lg bg-slate-200 font-semibold">🏠 Trang chủ học sinh</a>
         <button onclick="toggleWrong()" id="wrongBtn" class="px-4 py-2 rounded-lg bg-slate-200 font-semibold">Chỉ xem câu sai/chưa làm</button>
         <button id="againBtn" onclick="backToStart()" class="px-4 py-2 rounded-lg bg-indigo-600 text-white font-semibold">Làm đề khác</button>
       </div>
@@ -149,6 +156,32 @@
     <div id="review" class="space-y-4"></div>
   </section>
 </div>
+
+<!-- ===== BÁO LỖI CÂU HỎI: chỉ mở được từ màn hình chữa bài / xem lại ===== -->
+<div id="rpModal" class="hidden fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-3" onclick="if (event.target === this) closeReport()" role="dialog" aria-modal="true" aria-labelledby="rpTitle">
+  <div class="w-full max-w-md bg-white rounded-2xl shadow-xl p-5 space-y-3">
+    <div class="flex items-start justify-between gap-3">
+      <div>
+        <h2 id="rpTitle" class="text-lg font-bold">🚩 Báo lỗi câu hỏi</h2>
+        <p id="rpSub" class="text-xs text-slate-500 mt-0.5 line-clamp-2"></p>
+      </div>
+      <button type="button" onclick="closeReport()" class="text-slate-400 hover:text-slate-700 text-xl leading-none px-1" aria-label="Đóng">✕</button>
+    </div>
+    <div class="text-sm font-medium">Câu này có vấn đề gì?</div>
+    <div id="rpReasons" class="grid gap-2"></div>
+    <label class="block text-sm font-medium">Ghi chú thêm <span class="font-normal text-slate-400">(không bắt buộc)</span>
+      <textarea id="rpNote" rows="2" maxlength="300" placeholder="Ví dụ: theo mình đáp án đúng là C vì..." class="w-full border rounded-lg p-2 mt-1 text-sm"></textarea></label>
+    <div id="rpMsg" class="hidden text-sm rounded-lg px-3 py-2 bg-red-100 text-red-700"></div>
+    <div class="flex items-center justify-between gap-3">
+      <span id="rpQuota" class="text-xs text-slate-500"></span>
+      <div class="flex gap-2">
+        <button type="button" onclick="closeReport()" class="px-4 py-2 rounded-lg bg-slate-100 font-semibold text-sm">Hủy</button>
+        <button id="rpSend" type="button" onclick="sendReport()" disabled class="px-4 py-2 rounded-lg bg-rose-600 text-white font-semibold text-sm disabled:opacity-40">Gửi báo cáo</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div id="rpToast" role="status" aria-live="polite" class="hidden fixed bottom-4 right-4 left-4 sm:left-auto sm:max-w-sm z-[60] bg-slate-800 text-white text-sm px-4 py-3 rounded-xl shadow-lg"></div>
 
 <script>
 // ================== CẤU HÌNH KẾT NỐI (điền thông tin của bạn) ==================
@@ -169,7 +202,22 @@ const escA = s => esc(s).replace(/"/g, '&quot;');
 
 let questions = [], answers = {}, cur = 0, timerId = null, onlyWrong = false, examInfo = '';
 
+// ---------- Các phần của đề (Phần I, II, III, IV): luôn giữ nguyên thứ tự theo dạng câu hỏi, chỉ trộn bên trong từng phần ----------
+const PART_ORDER = ['multiple_choice', 'true_false', 'short_answer', 'essay'];
+const PART_TITLE = { multiple_choice: 'Trắc nghiệm nhiều phương án lựa chọn', true_false: 'Trắc nghiệm đúng sai', short_answer: 'Trắc nghiệm trả lời ngắn', essay: 'Tự luận' };
+const ROMAN = ['I', 'II', 'III', 'IV'];
+let parts = [];
+function sortParts() {            // sắp ổn định theo dạng: không làm đổi thứ tự (đã trộn) bên trong mỗi dạng
+  const rk = q => { const k = PART_ORDER.indexOf(q.question_type); return k < 0 ? 9 : k; };
+  questions = questions.map((q, i) => [q, i]).sort((a, b) => rk(a[0]) - rk(b[0]) || a[1] - b[1]).map(x => x[0]);
+  parts = [];
+  questions.forEach((q, i) => { const l = parts[parts.length - 1]; if (l && l.type === q.question_type) l.to = i; else parts.push({ type: q.question_type, from: i, to: i }); });
+  parts.forEach((p, k) => { p.roman = ROMAN[k] || String(k + 1); p.title = PART_TITLE[p.type] || TYPE_NAME[p.type] || ''; });
+}
+const partOf = i => parts.find(p => i >= p.from && i <= p.to);
+
 function screen(name) {
+  if (name !== 'Result') reportOn = false;                 // báo lỗi chỉ tồn tại ở màn hình chữa bài / xem lại
   ['Join', 'Start', 'Exam', 'Result'].forEach(n => $('screen' + n).classList.toggle('hidden', n !== name));
   window.scrollTo(0, 0);
 }
@@ -180,30 +228,54 @@ function screen(name) {
 const T_ATOM  = String.raw`\\[a-zA-Z]+(?:\[[^\]]*\])?(?:\{(?:[^{}]|\{[^{}]*\})*\})*`;  // \sqrt{..}, \frac{..}{..}
 const T_SUP   = String.raw`[\^_](?:\{(?:[^{}]|\{[^{}]*\})*\}|[A-Za-z0-9])`;            // ^2, ^{n+1}, _i
 // ký tự dính liền: số, toán tử, biến 1 chữ cái; hoặc 1 dấu cách đứng trước toán tử/biến đơn/lệnh LaTeX
-const T_PLAIN = String.raw`[0-9.()=+\-*/]|[A-Za-z](?![\p{L}])| (?=[=+\-*/\\]|[A-Za-z0-9](?![\p{L}\p{N}]))`;
+const LAT = String.raw`A-Za-zÀ-ɏḀ-ỿ`;                      // chữ Latin (kể cả tiếng Việt) - KHÔNG gồm chữ Hy Lạp
+const T_PLAIN = String.raw`[0-9.()=+\-*/Ͱ-Ͽ∀-⋿±×÷]|[A-Za-z](?![${LAT}])| (?=[=+\-*/\\Ͱ-Ͽ]|[A-Za-z0-9](?![${LAT}\p{N}]))`;   // gồm ω, π, Δ, ≤, ≥...
 const T_BODY  = `(?:${T_PLAIN}|${T_ATOM}|${T_SUP})*(?:${T_ATOM}|${T_SUP})(?:${T_PLAIN}|${T_ATOM}|${T_SUP})*`;
 // nhóm 1: ký tự đứng trước (ranh giới từ, tránh cắt giữa từ tiếng Việt), nhóm 2: đoạn công thức
 const T_RUN = new RegExp(String.raw`(^|[^\p{L}\p{N}]|(?=\\))((?! )${T_BODY})`, 'gu');
 
-function autoWrapLatex(s) {
-  s = String(s ?? '').replace(/\\\\(?=[a-zA-Z])/g, '\\');          // "\\frac" (gạch chéo kép) -> "\frac"
-  if (/\$|\\\(|\\\[/.test(s)) return s;                              // đã có dấu phân cách
-  return s.replace(T_RUN, (_m, pre, run) => {
+// Công thức chuẩn LaTeX: $...$, $$...$$, \(...\), \[...\]. Phần nằm NGOÀI các dấu phân cách mà còn lệnh LaTeX trần
+// (\sqrt, \frac, x^2...) cũng được tự bọc $...$, nên đề viết lẫn lộn vẫn hiển thị đúng.
+const MATH_SEG = /(\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|(?<![\\$])\$(?!\$)[^$\n]+?(?<!\\)\$)/;
+// Chuẩn hóa dữ liệu "bẩn": gạch chéo kép, thực thể HTML, thẻ <br>/<sup>/<sub>
+function normText(s) {
+  s = String(s ?? '');
+  s = s.replace(/\\\\(?=[a-zA-Z()\[\]])/g, '\\');                     // "\\frac", "\\(" (gạch chéo kép) -> "\frac", "\("
+  if (/[&<]/.test(s)) s = s.replace(/<br\s*\/?>/gi, '\n').replace(/<sup>([\s\S]*?)<\/sup>/gi, '^{$1}').replace(/<sub>([\s\S]*?)<\/sub>/gi, '_{$1}')
+    .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  return s;
+}
+function wrapBare(part) {
+  return part.replace(T_RUN, (_m, pre, run) => {
     const tail = (run.match(/[.\s]+$/) || [''])[0];                  // không kéo dấu chấm/cách cuối vào công thức
-    return pre + '$' + run.slice(0, run.length - tail.length) + '$' + tail;
+    const body = run.slice(0, run.length - tail.length)
+      .replace(/_([A-Za-z][A-Za-z0-9]*|\d{2,})/g, '_{$1}')              // a_ht -> a_{ht}, x_12 -> x_{12}
+      .replace(/\^(\d{2,})/g, '^{$1}');                                  // x^10 -> x^{10}
+    return pre + '$' + body + '$' + tail;
   });
+}
+function autoWrapLatex(s) {
+  return normText(s).split(MATH_SEG).map((part, i) => i % 2 ? part : wrapBare(part)).join('');
 }
 const tex = s => esc(autoWrapLatex(s));                              // bọc $ rồi escape HTML
 
-function math() {
+// Macro cho các lệnh hay gặp trong đề LaTeX của giáo viên (gói ex_test, tex VN) mà KaTeX chưa có sẵn
+const KATEX_MACROS = {
+  '\\heva': '\\left\\{\\begin{aligned}#1\\end{aligned}\\right.', '\\hoac': '\\left[\\begin{aligned}#1\\end{aligned}\\right.',
+  '\\overparen': '\\overgroup{#1}', '\\vect': '\\overrightarrow{#1}', '\\ds': '\\displaystyle', '\\degree': '^\\circ',
+  '\\R': '\\mathbb{R}', '\\N': '\\mathbb{N}', '\\Z': '\\mathbb{Z}', '\\Q': '\\mathbb{Q}', '\\C': '\\mathbb{C}',
+  '\\dpi': '\\displaystyle\\pi', '\\ensuremath': '#1'
+};
+const MATH_OPTS = {
+  delimiters: [
+    { left: '$$', right: '$$', display: true }, { left: '\\[', right: '\\]', display: true },
+    { left: '$', right: '$', display: false }, { left: '\\(', right: '\\)', display: false }
+  ], throwOnError: false, strict: false, macros: KATEX_MACROS, trust: false
+};
+function math(root) {
   // KaTeX tải bằng defer: nếu chưa sẵn sàng thì đợi trang tải xong rồi vẽ lại
-  if (typeof renderMathInElement !== 'function') { window.addEventListener('load', math, { once: true }); return; }
-  renderMathInElement(document.body, {
-    delimiters: [
-      { left: '$$', right: '$$', display: true }, { left: '\\[', right: '\\]', display: true },
-      { left: '$', right: '$', display: false }, { left: '\\(', right: '\\)', display: false }
-    ], throwOnError: false
-  });
+  if (typeof renderMathInElement !== 'function') { window.addEventListener('load', () => math(root), { once: true }); return; }
+  try { renderMathInElement(root || document.body, { ...MATH_OPTS, macros: { ...KATEX_MACROS } }); } catch (e) { console.warn('KaTeX:', e); }
 }
 // ---------- Thẻ "Thông tin đề thi": thông số + trạng thái số câu khả dụng ----------
 const BADGE_STYLE = {
@@ -335,8 +407,9 @@ async function startExam() {
   if (!data.length) return scheduleCheck();
   syncBtn();
 
-  questions = pickQuestions(data, types, want);
+  questions = pickQuestions(data, types, want); sortParts();
   answers = {}; cur = 0; onlyWrong = false;
+  pracCfg = { grade, subject, chapters: chapters.length === chapterList.length ? [] : chapters, types }; pracT0 = Date.now();
   examInfo = `Lớp ${grade} · ${subject}` + (chapters.length === chapterList.length ? '' : chapters.length === 1 ? ` · ${chapters[0]}` : ` · ${chapters.length} chương`);
   $('examTitle').textContent = `${examInfo} · ${questions.length} câu`;
 
@@ -392,7 +465,8 @@ function showQuestion(i) {
     body = `<textarea id="ansText" rows="10" oninput="typeAns(this.value)" placeholder="Trình bày bài làm của bạn..." class="w-full border rounded-lg p-3">${esc(a || '')}</textarea>`;
   }
   $('qbox').innerHTML = `
-    <div class="text-sm text-slate-500 mb-2">Câu ${i + 1} / ${questions.length} · ${TYPE_NAME[t]}</div>
+    <div class="mb-2"><span class="inline-block text-xs font-bold uppercase tracking-wide rounded bg-indigo-100 text-indigo-700 px-2 py-0.5">Phần ${partOf(i).roman}. ${partOf(i).title}</span>
+      <span class="text-sm text-slate-500 ml-2">Câu ${i + 1} / ${questions.length}</span></div>
     <div class="whitespace-pre-wrap font-medium text-lg">${tex(q.content)}</div>
     ${q.image_url ? `<img src="${esc(q.image_url)}" alt="" class="max-h-64 my-3 rounded border">` : ''}
     <div class="mt-4 space-y-2">${body}</div>`;
@@ -432,10 +506,15 @@ function gradeQ(q, a) {
 function go(d) { const n = cur + d; if (n >= 0 && n < questions.length) showQuestion(n); }
 
 function renderNav() {
-  $('nav').innerHTML = questions.map((q, i) => {
-    const done = gradeQ(q, answers[i]).s !== 'blank';
-    return `<button onclick="showQuestion(${i})" class="h-9 rounded text-sm font-semibold border
-      ${done ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white'} ${i === cur ? 'ring-2 ring-offset-1 ring-slate-800' : ''}">${i + 1}</button>`;
+  $('nav').innerHTML = parts.map(p => {
+    const btns = [];
+    for (let i = p.from; i <= p.to; i++) {
+      const done = gradeQ(questions[i], answers[i]).s !== 'blank';
+      btns.push(`<button onclick="showQuestion(${i})" class="h-9 rounded text-sm font-semibold border
+        ${done ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white'} ${i === cur ? 'ring-2 ring-offset-1 ring-slate-800' : ''}">${i + 1}</button>`);
+    }
+    return `<div class="text-xs font-semibold text-slate-500 mt-3 first:mt-0 mb-1">Phần ${p.roman} · ${p.title} <span class="font-normal">(câu ${p.from + 1}–${p.to + 1})</span></div>
+      <div class="grid grid-cols-5 gap-2">${btns.join('')}</div>`;
   }).join('');
 }
 
@@ -472,8 +551,11 @@ function submitExam(auto) {
     `<a href="#rq${i}" class="h-8 rounded text-xs font-semibold flex items-center justify-center text-white ${S_BG[r.s]}">${i + 1}</a>`).join('');
 
   window._res = res;
+  $('saveNote').innerHTML = '';
+  reportOn = true;                                         // đã nộp bài: được báo lỗi từng câu
   renderReview();
   screen('Result');
+  practiceSaved = savePractice(res, autoN, pts);
   if (auto) alert('Hết giờ! Bài làm đã được nộp tự động.');
 }
 
@@ -502,12 +584,18 @@ function reviewBody(q, a, r) {
 function renderReview() {
   $('wrongBtn').textContent = onlyWrong ? 'Xem tất cả câu' : 'Chỉ xem câu sai/chưa làm';
   const LABEL = { right: 'Đúng', wrong: 'Sai', partial: 'Đúng một phần', essay: 'Tự luận (tự đối chiếu)', blank: 'Chưa làm' };
+  let lastPart = null;
   $('review').innerHTML = questions.map((q, i) => {
     const r = window._res[i], s = r.s;
     if (onlyWrong && s === 'right') return '';
-    return `
+    const pt = partOf(i), head = pt !== lastPart ? `<h2 class="text-lg font-bold text-indigo-700 pt-2">Phần ${pt.roman}. ${pt.title}</h2>` : '';
+    lastPart = pt;
+    return head + `
     <div id="rq${i}" class="bg-white p-5 rounded-xl shadow border-l-4 ${S_BORDER[s]}">
-      <div class="text-sm font-semibold mb-1">Câu ${i + 1} · ${TYPE_NAME[q.question_type]} · ${LABEL[s]}</div>
+      <div class="flex items-start justify-between gap-2 mb-1">
+        <div class="text-sm font-semibold">Câu ${i + 1} · ${TYPE_NAME[q.question_type]} · ${LABEL[s]}</div>
+        ${rpBtn(q, i)}
+      </div>
       <div class="whitespace-pre-wrap font-medium">${tex(q.content)}</div>
       ${q.image_url ? `<img src="${esc(q.image_url)}" alt="" class="max-h-56 my-3 rounded border">` : ''}
       <div class="mt-3 space-y-1">${reviewBody(q, answers[i], r)}</div>
@@ -518,6 +606,7 @@ function renderReview() {
     </div>`;
   }).join('');
   math();
+  syncReports();
 }
 
 function toggleWrong() { onlyWrong = !onlyWrong; renderReview(); }
@@ -592,7 +681,7 @@ async function joinRoom() {
 function beginRoomExam(s) {
   clearInterval(joinTimer);
   sess = s; clockOff = Date.parse(s.server_now) - Date.now();
-  questions = s.questions || [];
+  questions = s.questions || []; sortParts();
   if (!questions.length) { screen('Join'); return jMsg('Đề thi chưa có câu hỏi. Hãy báo giáo viên.', 'err'); }
   answers = {}; cur = 0; onlyWrong = false; submitting = false; nextTry = 0;
   try { const b = JSON.parse(lsGet(bkKey()) || 'null'); if (b && b.rid === s.result_id && b.a) answers = b.a; } catch (e) {}
@@ -734,8 +823,189 @@ function showRoomResult(r, auto) {
   $('scoreNote').innerHTML = notes.map(t => `<p>${t}</p>`).join('');
   $('resultNav').innerHTML = res.map((z, i) => `<a href="#rq${i}" class="h-8 rounded text-xs font-semibold flex items-center justify-center text-white ${S_BG[z.s]}">${i + 1}</a>`).join('');
   ['resultNav', 'review', 'wrongBtn'].forEach(id => $(id).classList.remove('hidden'));
-  window._res = res; renderReview(); screen('Result');
+  window._res = res; reportOn = true; renderReview(); screen('Result');
   if (auto) alert('Hết giờ! Bài làm đã được nộp tự động.');
+}
+
+// =====================================================================
+// TÀI KHOẢN HỌC SINH (student_home.html): lưu lịch sử luyện tập, xem lại bài
+// Không đăng nhập vẫn luyện tập bình thường, chỉ là không có lịch sử.
+// =====================================================================
+const HOME_URL = 'student_home.html';                   // đổi nếu đặt trang chủ ở nơi khác
+document.querySelectorAll('.homeLink').forEach(a => a.href = HOME_URL);
+let authUser = null, pracCfg = null, pracT0 = 0;
+async function getUser() {
+  try { const { data } = await db.auth.getSession(); authUser = data?.session?.user || null; } catch (e) { authUser = null; }
+  return authUser;
+}
+const compactAnswers = () => {
+  const out = {};
+  questions.forEach((q, i) => { const a = answers[i]; if (a == null || a === '' || (typeof a === 'object' && !Object.keys(a).length)) return; out[q.id] = a; });
+  return out;
+};
+async function savePractice(res, autoN, pts) {
+  const note = $('saveNote');
+  const u = await getUser();
+  if (!u) { note.innerHTML = `<span class="text-slate-500">Bài này chưa được lưu vào lịch sử. <a class="homeLink text-indigo-600 underline" href="${HOME_URL}">Đăng nhập tại trang chủ học sinh</a> để theo dõi kết quả.</span>`; return; }
+  const ans = compactAnswers();
+  const row = {
+    title: examInfo, grade: pracCfg?.grade ?? null, subject: pracCfg?.subject ?? null, chapters: pracCfg?.chapters || [], types: pracCfg?.types || [],
+    total: questions.length, auto_total: autoN, right_count: res.filter(r => r.s === 'right').length,
+    answered: res.filter(r => r.s !== 'blank').length, score: autoN ? +(pts / autoN * 10).toFixed(2) : null,
+    duration_seconds: Math.round((Date.now() - pracT0) / 1000), question_ids: questions.map(q => q.id), answers: ans };
+  const { error } = await db.from('practice_attempts').insert(row);
+  note.innerHTML = error
+    ? `<span class="text-amber-700">Chưa lưu được vào lịch sử (${esc(error.message)}).</span>`
+    : `<span class="text-green-700">✔ Đã lưu vào lịch sử học tập của bạn.</span>`;
+}
+
+// Xem lại bài đã làm:  exam.html?review=P12 (luyện tập)  hoặc  exam.html?review=R34 (phòng thi)
+const REVIEW = (QS.get('review') || '').trim();
+async function loadReview() {
+  const kind = REVIEW[0]?.toUpperCase(), id = Number(REVIEW.slice(1));
+  const fail = msg => { $('score').textContent = '!'; $('stats').innerHTML = ''; $('scoreNote').innerHTML = `<p class="text-red-600">${esc(msg)}</p>`;
+    ['resultNav', 'review', 'wrongBtn'].forEach(x => $(x).classList.add('hidden')); screen('Result'); };
+  $('againBtn').classList.add('hidden'); $('homeBar').classList.add('hidden');
+  const u = await getUser();
+  if (!u) return fail('Bạn cần đăng nhập ở trang chủ học sinh để xem lại bài làm.');
+  if (!id || !'PR'.includes(kind || '-')) return fail('Đường dẫn xem lại không hợp lệ.');
+  let qs, ans, per = null, title, score, vio = 0;
+  if (kind === 'P') {
+    const { data: a, error } = await db.from('practice_attempts').select('title, score, question_ids, answers, duration_seconds').eq('id', id).maybeSingle();
+    if (error || !a) return fail(error ? error.message : 'Không tìm thấy bài làm.');
+    const { data: q, error: e2 } = await db.from('questions').select('id, question_type, content, image_url, options, correct_answer, explanation').in('id', a.question_ids);
+    if (e2) return fail(e2.message);
+    const m = Object.fromEntries(q.map(x => [x.id, x])); qs = a.question_ids.map(i => m[i]).filter(Boolean);
+    ans = a.answers || {}; title = a.title; score = a.score;
+    if (qs.length < a.question_ids.length) pracMissing = a.question_ids.length - qs.length;
+  } else {
+    const { data, error } = await db.rpc('my_room_review', { p_result: id });
+    if (error) return fail(error.message);
+    qs = data.questions; ans = data.answers || {}; per = data.per || {}; title = data.title; score = data.score; vio = data.violations || 0;
+  }
+  questions = qs; sortParts(); answers = {};
+  questions.forEach((q, i) => { if (ans[q.id] !== undefined) answers[i] = ans[q.id]; });
+  const res = questions.map((q, i) => {
+    const g = gradeQ(q, answers[i]), x = per && per[q.id];
+    return x && x.s ? { ...g, s: x.s, pts: x.p ?? g.pts } : g; });
+  const cnt = z => res.filter(r => r.s === z).length;
+  document.title = 'Xem lại: ' + title;
+  $('score').textContent = score == null ? '—' : Number(score).toFixed(2).replace(/\.?0+$/, '');
+  $('stats').innerHTML = `
+    <span class="text-green-600">✔ Đúng: ${cnt('right')}</span>
+    ${cnt('partial') ? `<span class="text-amber-600">◐ Đúng một phần: ${cnt('partial')}</span>` : ''}
+    <span class="text-red-600">✘ Sai: ${cnt('wrong')}</span>
+    ${cnt('essay') ? `<span class="text-sky-600">✎ Tự luận đã làm: ${cnt('essay')}</span>` : ''}
+    <span class="text-slate-500">○ Chưa làm: ${cnt('blank')}</span>`;
+  $('scoreNote').innerHTML = `<p class="font-semibold text-slate-700">${esc(title)}</p>` +
+    (vio ? `<p>Bài này có ${vio} lần vi phạm quy chế (điểm hiển thị là điểm sau khi trừ).</p>` : '') +
+    (pracMissing ? `<p>${pracMissing} câu hỏi của bài này không còn trong ngân hàng nên không hiển thị.</p>` : '');
+  $('resultNav').innerHTML = res.map((r, i) => `<a href="#rq${i}" class="h-8 rounded text-xs font-semibold flex items-center justify-center text-white ${S_BG[r.s]}">${i + 1}</a>`).join('');
+  ['resultNav', 'review', 'wrongBtn'].forEach(x => $(x).classList.remove('hidden'));
+  window._res = res; onlyWrong = false; reportOn = true; renderReview(); screen('Result');
+}
+let pracMissing = 0;
+
+
+// =====================================================================
+// BÁO LỖI CÂU HỎI  (chỉ ở màn hình chữa bài / xem lại; ẩn hoàn toàn khi đang làm bài)
+// Giới hạn 3 câu/ngày: máy chủ (question_report_setup.sql) là nơi quyết định; localStorage `report_count_YYYYMMDD_<id>` chỉ để phản hồi nhanh.
+// =====================================================================
+const REPORT_LIMIT = 3;
+const REPORT_REASONS = [['wrong_answer', '🔴', 'Sai đáp án'], ['image', '🖼️', 'Lỗi hình ảnh'], ['latex', '🔣', 'Lỗi công thức LaTeX'], ['typo', '📝', 'Lỗi chính tả / thiếu dữ kiện']];
+const MSG_LIMIT = 'Bạn đã đạt giới hạn báo lỗi 3 câu/ngày. Cảm ơn bạn đã hỗ trợ kiểm tra chất lượng!';
+const MSG_THANKS = 'Cảm ơn bạn đã đóng góp ý kiến để hoàn thiện bộ đề!';
+let reportOn = false, reportedSet = new Set(), reportSyncKey = '', reportIdx = -1, reportReason = '', reportBusy = false, practiceSaved = Promise.resolve();
+
+// Ngày theo giờ Việt Nam (khớp với máy chủ): YYYYMMDD
+const ymdVN = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(new Date()).replace(/-/g, '');
+const rpKey = () => `report_count_${ymdVN()}_${authUser?.id || 'guest'}`;
+function rpCount() { return Math.max(0, parseInt(lsGet(rpKey()), 10) || 0); }
+function rpSetCount(n) {
+  lsSet(rpKey(), String(n));
+  try { for (let i = localStorage.length - 1; i >= 0; i--) { const k = localStorage.key(i); if (k && k.startsWith('report_count_') && !k.startsWith('report_count_' + ymdVN() + '_')) localStorage.removeItem(k); } } catch (e) {}   // dọn các ngày cũ
+}
+let rpToastTimer = null;
+function rpToast(msg) { const t = $('rpToast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(rpToastTimer); rpToastTimer = setTimeout(() => t.classList.add('hidden'), 4500); }
+
+function rpBtn(q, i) {
+  if (!reportOn) return '';                                // đang làm bài: không có nút
+  const done = reportedSet.has(Number(q.id));
+  return done
+    ? `<span data-rq="${q.id}" class="shrink-0 text-xs font-semibold text-slate-400 px-2 py-1">✔ Đã báo lỗi</span>`
+    : `<button type="button" data-rq="${q.id}" onclick="openReport(${i})" title="Báo lỗi câu này" class="shrink-0 text-xs font-semibold text-rose-600 border border-rose-200 rounded-lg px-2.5 py-1 hover:bg-rose-50">🚩 Báo lỗi câu này</button>`;
+}
+// Lấy từ máy chủ: những câu đã báo lỗi + số câu đã báo hôm nay (đồng bộ cả khi đổi thiết bị)
+async function syncReports() {
+  if (!reportOn) return;
+  const u = await getUser(); if (!u) return;
+  const key = u.id + ':' + questions.map(q => q.id).join(',');
+  if (key === reportSyncKey) return;
+  reportSyncKey = key;
+  try {
+    const [a, b] = await Promise.all([db.rpc('my_reported_ids', { p_ids: questions.map(q => Number(q.id)) }), db.rpc('my_report_count_today')]);
+    if (!b.error && typeof b.data === 'number') rpSetCount(b.data);
+    if (!a.error && Array.isArray(a.data)) { reportedSet = new Set(a.data.map(Number)); a.data.forEach(id => markReported(id)); }
+  } catch (e) {}
+}
+function markReported(id) {
+  document.querySelectorAll(`[data-rq="${id}"]`).forEach(el => { el.outerHTML = `<span data-rq="${id}" class="shrink-0 text-xs font-semibold text-slate-400 px-2 py-1">✔ Đã báo lỗi</span>`; });
+}
+
+async function openReport(i) {
+  const q = questions[i];
+  if (!reportOn || !q) return;
+  const u = await getUser();
+  if (!u) return rpToast('Hãy đăng nhập tài khoản học sinh (ở Trang chủ học sinh) để báo lỗi câu hỏi.');
+  if (reportedSet.has(Number(q.id))) return rpToast('Bạn đã báo lỗi câu này rồi. Cảm ơn bạn!');
+  if (rpCount() >= REPORT_LIMIT) return rpToast(MSG_LIMIT);              // câu thứ 4 trở đi trong ngày
+  reportIdx = i; reportReason = ''; reportBusy = false;
+  $('rpSub').textContent = `Câu ${i + 1}: ` + String(q.content || '').replace(/\s+/g, ' ').trim().slice(0, 90);
+  $('rpReasons').innerHTML = REPORT_REASONS.map(([k, ic, lb]) =>
+    `<label class="rpOpt flex items-center gap-3 border-2 rounded-xl px-3 py-2.5 cursor-pointer hover:bg-slate-50"><input type="radio" name="rpReason" value="${k}" class="accent-rose-600" onchange="pickReason('${k}')"><span class="text-lg">${ic}</span><span class="text-sm font-medium">${lb}</span></label>`).join('');
+  $('rpNote').value = ''; $('rpMsg').classList.add('hidden'); $('rpSend').disabled = true; $('rpSend').textContent = 'Gửi báo cáo';
+  $('rpQuota').textContent = `Hôm nay: ${rpCount()}/${REPORT_LIMIT} câu`;
+  $('rpModal').classList.remove('hidden');
+}
+function pickReason(k) {
+  reportReason = k; $('rpSend').disabled = false;
+  document.querySelectorAll('#rpReasons .rpOpt').forEach(l => l.classList.toggle('border-rose-500', l.querySelector('input').value === k));
+}
+function closeReport() { $('rpModal').classList.add('hidden'); reportIdx = -1; }
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('rpModal').classList.contains('hidden')) closeReport(); });
+
+async function sendReport() {
+  const q = questions[reportIdx];
+  if (!q || !reportReason || reportBusy) return;
+  reportBusy = true; $('rpSend').disabled = true; $('rpSend').textContent = 'Đang gửi...'; $('rpMsg').classList.add('hidden');
+  await practiceSaved;                                      // bài luyện tập phải được lưu xong thì máy chủ mới cho báo lỗi
+  const { data, error } = await db.rpc('report_question', { p_question: Number(q.id), p_reason: reportReason, p_note: $('rpNote').value.trim() || null });
+  reportBusy = false;
+  if (error) {
+    const m = error.message || '';
+    if (/^LIMIT/.test(m)) { rpSetCount(REPORT_LIMIT); closeReport(); return rpToast(MSG_LIMIT); }
+    if (/^DUP/.test(m)) { reportedSet.add(Number(q.id)); markReported(q.id); closeReport(); return rpToast('Bạn đã báo lỗi câu này rồi. Cảm ơn bạn!'); }
+    $('rpSend').disabled = false; $('rpSend').textContent = 'Gửi báo cáo';
+    $('rpMsg').textContent = /report_question|schema cache|Could not find the function/i.test(m)
+      ? 'Chưa cài đặt tính năng báo lỗi: giáo viên cần chạy question_report_setup.sql trong Supabase.' : m;
+    $('rpMsg').classList.remove('hidden');
+    return;
+  }
+  rpSetCount(typeof data?.count === 'number' ? data.count : rpCount() + 1);
+  reportedSet.add(Number(q.id)); markReported(q.id);
+  closeReport();
+  rpToast(MSG_THANKS);
+}
+
+// Phòng thi: điền sẵn mã HS / họ tên / lớp từ hồ sơ khi đã đăng nhập
+async function fillProfile() {
+  const u = await getUser(), tag = $('jLogged');
+  if (!u) { if (tag) tag.innerHTML = `Bạn chưa đăng nhập: bài thi vẫn được ghi nhận nhưng <b>sẽ không hiện trong lịch sử</b> của bạn. <a class="homeLink text-indigo-600 underline" href="${HOME_URL}">Đăng nhập</a>`; return; }
+  try {
+    const { data } = await db.from('student_profiles').select('full_name, student_code, class_name').eq('user_id', u.id).maybeSingle();
+    if (data) { $('jCode').value = data.student_code || $('jCode').value; $('jName').value = data.full_name || $('jName').value; $('jClass').value = data.class_name || $('jClass').value; }
+    if (tag) tag.innerHTML = `✔ Đã đăng nhập${data ? ' là ' + esc(data.full_name) : ''}: bài thi sẽ được lưu vào lịch sử của bạn.`;
+  } catch (e) {}
 }
 
 // Tích/bỏ tích chương hoặc mức độ: cập nhật thẻ thông tin và kiểm tra số câu ngay (realtime)
@@ -743,8 +1013,9 @@ $('screenStart').addEventListener('change', e => {
   if (e.target.matches('.chapChk, .diffChk, .typeChk')) scheduleCheck();
 });
 
-if (ROOM_MODE) { screen('Join'); loadJoin(); }     // vào bằng link phòng/ca
-else { updateSummary(); loadSubjects(); }          // chế độ luyện tập như cũ
+if (REVIEW) { loadReview(); }                       // xem lại bài đã làm
+else if (ROOM_MODE) { screen('Join'); loadJoin().then(fillProfile); }     // vào bằng link phòng/ca
+else { updateSummary(); loadSubjects(); getUser().then(u => $('homeBar').classList.remove('hidden')); }          // chế độ luyện tập như cũ
 </script>
 <!-- Cảnh báo vi phạm (chế độ phòng thi) -->
 <div id="vioOverlay" class="hidden fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" role="alertdialog" aria-modal="true">
