@@ -65,7 +65,7 @@
   .mx tfoot td { background: #f8fafc; font-weight: 600; font-size: 12px; }
   .mx .tot { min-width: 3.5rem; font-weight: 700; background: #f8fafc; }
   .mx thead th.t-multiple_choice { background: #e0e7ff; } .mx thead th.t-true_false { background: #d1fae5; }
-  .mx thead th.t-group { background: #fef3c7; } .mx thead th.t-short_answer { background: #ffe4e6; }
+  .mx thead th.t-essay { background: #fef3c7; } .mx thead th.t-short_answer { background: #ffe4e6; }
   .mx .nohas { font-weight: 400; font-size: 10px; color: #94a3b8; }
   .mx tbody tr:hover > td, .mx tbody tr:focus-within > td { background: #f1f5f9; }            /* tô nổi hàng */
   .mx td.col-hot, .mx th.col-hot, .mx tfoot td.col-hot { background: #eef2ff !important; }     /* tô nổi cột */
@@ -181,6 +181,7 @@
       <h2 class="text-xl font-bold">Đề đã lưu</h2>
       <button onclick="show('Matrix')" class="px-3 py-1.5 rounded bg-slate-200 font-semibold text-sm">← Về ma trận</button>
     </div>
+    <div id="savedTabs" class="flex flex-wrap gap-2 text-sm"></div>
     <div id="savedList" class="space-y-2"></div>
   </section>
 
@@ -195,7 +196,7 @@
               <input id="gKey" type="password" autocomplete="off" oninput="saveGemini()" onchange="saveGemini()" onblur="saveGemini()" placeholder="AIza..." class="border rounded px-2 py-1 w-44 font-normal"></label>
             <button type="button" onclick="$('gKey').type = $('gKey').type === 'password' ? 'text' : 'password'" class="px-2 py-1 border rounded" title="Hiện/ẩn key">👁</button>
             <label class="flex items-center gap-1 font-medium">Model
-              <input id="gModel" type="text" oninput="saveGemini()" placeholder="gemini-2.5-flash" class="border rounded px-2 py-1 w-40 font-normal"></label>
+              <input id="gModel" type="text" oninput="saveGemini()" placeholder="gemini-3.8-flash" class="border rounded px-2 py-1 w-40 font-normal"></label>
           </div>
           <button type="button" onclick="openKeyGuide()" class="text-xs text-indigo-600 underline hover:text-indigo-800">❓ Hướng dẫn lấy Gemini API Key miễn phí</button>
         </div>
@@ -227,6 +228,7 @@
       </div>
       <div id="eNote" class="text-sm"></div>
       <div id="eMode" class="text-sm"></div>
+      <div id="privBox" class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm rounded-lg border bg-slate-50 px-3 py-2"></div>
     </div>
     <div id="paper" class="bg-white p-8 rounded-xl shadow print:shadow-none print:p-0 print:rounded-none"></div>
   </section>
@@ -244,6 +246,17 @@
       <li><b>Bước 3:</b> Sao chép (Copy) mã key vừa tạo và dán vào ô <b>Gemini API Key</b> trên giao diện này.</li>
     </ol>
     <div class="flex justify-end pt-1"><button onclick="closeKeyGuide()" class="px-4 py-1.5 rounded bg-indigo-600 text-white font-semibold text-sm">Đóng</button></div>
+  </div>
+</div>
+<div id="proModal" class="hidden print:hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onclick="if (event.target === this) closePaywall()">
+  <div class="bg-white rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4 text-center" role="dialog" aria-modal="true" aria-labelledby="proTitle">
+    <div class="text-4xl" aria-hidden="true">🔒</div>
+    <h3 id="proTitle" class="text-lg font-bold">Kho đề riêng · Tài khoản Pro</h3>
+    <p class="text-slate-600 leading-relaxed">Tính năng Bảo mật kho đề riêng dành cho Tài khoản Pro. Nâng cấp ngay để giữ bản quyền bộ đề của bạn!</p>
+    <div class="flex flex-col gap-2">
+      <button onclick="upgradeNow()" class="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-semibold">⭐ Nâng cấp ngay</button>
+      <button onclick="closePaywall()" class="px-4 py-2 rounded-lg text-slate-500 text-sm">Để sau, tiếp tục dùng miễn phí</button>
+    </div>
   </div>
 </div>
 <div id="toast" class="hidden print:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-slate-800 text-white text-sm px-4 py-2 rounded-lg shadow-lg"></div>
@@ -268,7 +281,9 @@ const MIN_PER_QUESTION = 1.5;
 
 let chapters = [], avail = {}, pool = {}, exam = [], grade = 10, subject = '', rpcBroken = false;
 let subjSeq = 0, mxSeq = 0;   // (state ma trận: xem khối MA TRẬN SOẠN ĐỀ)
-let versions = null, savedId = null, session = null;   // versions: [{code, questions}] khi xem nhiều mã đề
+let versions = null, savedId = null, session = null;
+let isPro = false, isAdmin = false, examPublic = true, planReady = Promise.resolve();   // examPublic: đề đang soạn ở chế độ Công khai (true) hay Riêng tư (false)
+const UPGRADE_URL = '';   // (tùy chọn) trang / liên kết nâng cấp Pro, VD 'https://zalo.me/...' hoặc 'mailto:ban@example.com'; để trống = nhắc liên hệ quản trị   // versions: [{code, questions}] khi xem nhiều mã đề
 
 // ---------- KaTeX: tự bọc $...$ cho đoạn LaTeX chưa có dấu phân cách ----------
 const T_ATOM  = String.raw`\\[a-zA-Z]+(?:\[[^\]]*\])?(?:\{(?:[^{}]|\{[^{}]*\})*\})*`;
@@ -298,6 +313,7 @@ function math() {
 // ---------- Tiện ích ----------
 function show(name) {
   ['Matrix', 'Editor', 'Saved'].forEach(n => $('s' + n).classList.toggle('hidden', n !== name));
+  if (name === 'Editor') renderPrivacy();
   window.scrollTo(0, 0);
 }
 function setMsg(type, html = '') {
@@ -341,10 +357,10 @@ async function loadSubjects() {
 const USE_MOCK = new URLSearchParams(location.search).has('mock');
 // Số câu mẫu theo [NB, TH, VD, VDC]. Chương 3, 4 có đủ 4 dạng × 4 mức độ; Chương 1, 2 chỉ có trắc nghiệm (để thử cảnh báo "chưa có câu").
 const MOCK_PLAN = {
-  'Chương 1. Dao động':                  { multiple_choice: [8, 6, 4, 2],  true_false: [0, 0, 0, 0], group: [0, 0, 0, 0], short_answer: [0, 0, 0, 0] },
-  'Chương 2. Sóng':                      { multiple_choice: [8, 6, 4, 2],  true_false: [0, 0, 0, 0], group: [0, 0, 0, 0], short_answer: [0, 0, 0, 0] },
-  'Chương 3. Điện trường':               { multiple_choice: [12, 10, 8, 5], true_false: [5, 4, 3, 2], group: [4, 4, 3, 2], short_answer: [6, 6, 5, 4] },
-  'Chương 4. Dòng điện, mạch điện':      { multiple_choice: [10, 8, 6, 4],  true_false: [4, 4, 3, 2], group: [3, 3, 3, 2], short_answer: [5, 5, 4, 3] }
+  'Chương 1. Dao động':                  { multiple_choice: [8, 6, 4, 2],  true_false: [0, 0, 0, 0], short_answer: [0, 0, 0, 0], essay: [0, 0, 0, 0] },
+  'Chương 2. Sóng':                      { multiple_choice: [8, 6, 4, 2],  true_false: [0, 0, 0, 0], short_answer: [0, 0, 0, 0], essay: [0, 0, 0, 0] },
+  'Chương 3. Điện trường':               { multiple_choice: [12, 10, 8, 5], true_false: [5, 4, 3, 2], short_answer: [6, 6, 5, 4], essay: [4, 4, 3, 2] },
+  'Chương 4. Dòng điện, mạch điện':      { multiple_choice: [10, 8, 6, 4],  true_false: [4, 4, 3, 2], short_answer: [5, 5, 4, 3], essay: [3, 3, 3, 2] }
 };
 const MOCK_LESSONS = {
   'Chương 1. Dao động': ['Bài 1. Mô tả dao động', 'Bài 2. Phương trình dao động điều hòa'],
@@ -359,7 +375,7 @@ function mockLesson(chapter, d, j) {                                    // rải
 }
 function mockQuestion(id, chapter, type, d, j) {
   // một phần dữ liệu cố ý dùng tên gọi / cách lưu khác nhau để kiểm tra việc chuẩn hóa
-  const raw = type === 'multiple_choice' && j % 3 === 0 ? 'trac_nghiem' : type === 'group' && j % 2 === 0 ? 'passage' : type;
+  const raw = type === 'multiple_choice' && j % 3 === 0 ? 'trac_nghiem' : type === 'essay' && j % 2 === 0 ? 'tu_luan' : type;
   const tag = `[Mẫu] ${chapter.split('.')[0]} · ${d.a} · #${j}`;
   const q = { id, grade: 11, subject: 'Vật lý', chapter, difficulty: d.k, question_type: raw, lesson: mockLesson(chapter, d, j), image_url: null, options: null };
   let expl = '';
@@ -381,7 +397,7 @@ function mockQuestion(id, chapter, type, d, j) {
     else if (form === 2) q.options = { A: st[0], B: st[1], C: st[2], D: st[3] };   // khóa chữ hoa
     else Object.assign(q, { a: st[0], b: st[1], c: st[2], d: st[3] });             // cột riêng a, b, c, d
     expl = `a) Đúng: điện thế giảm dọc theo chiều đường sức. b) Đúng: $\\vec{F} = q\\vec{E}$ với $q > 0$. c) Sai: công của lực điện không phụ thuộc hình dạng đường đi. d) Đúng: $U = Ed$.`;
-  } else if (type === 'group') {
+  } else if (type === 'essay') {
     const C = j + 1;
     Object.assign(q, {
       content: `${tag}: Đọc đoạn thông tin rồi trả lời các câu hỏi bên dưới.\nMột tụ điện phẳng có điện dung $C = ${C}\\,\\mu F$ được tích điện dưới hiệu điện thế $U = 12\\,V$.\na) Tính điện tích của tụ.\nb) Tính năng lượng điện trường dự trữ trong tụ.`,
@@ -393,7 +409,7 @@ function mockQuestion(id, chapter, type, d, j) {
       correct_answer: String(j * 2) });
     expl = `$F = qE = ${j}\\cdot 10^{-9}\\cdot 2000 = ${j * 2}\\,\\mu N$.`;
   }
-  if (j === 1 && chapter.startsWith('Chương 3') && d.k === 'nhan_biet' && type !== 'group') q.image_url = MOCK_IMG;   // câu có hình dạng Base64
+  if (j === 1 && chapter.startsWith('Chương 3') && d.k === 'nhan_biet' && type !== 'essay') q.image_url = MOCK_IMG;   // câu có hình dạng Base64
   if (j % 4 === 0) q.loi_giai = expl; else q.explanation = expl;          // một phần lưu ở cột tên khác để thử chuẩn hóa
   return q;
 }
@@ -410,20 +426,20 @@ const MOCK_QUESTIONS = (() => {
 const QTYPES = [
   { k: 'multiple_choice', t: 'Trắc nghiệm 4 lựa chọn',      s: 'TN 4 lựa chọn' },
   { k: 'true_false',      t: 'Trắc nghiệm Đúng/Sai',        s: 'Đúng / Sai' },
-  { k: 'group',           t: 'Câu hỏi nhóm / Đoạn văn',     s: 'Nhóm / Đoạn văn' },
-  { k: 'short_answer',    t: 'Trả lời ngắn / Tự luận ngắn', s: 'Trả lời ngắn' }
+  { k: 'short_answer',    t: 'Trả lời ngắn',                s: 'Trả lời ngắn' },
+  { k: 'essay',           t: 'Tự luận (essay)',             s: 'Tự luận (essay)' }
 ];
 const QTYPE_KEYS = QTYPES.map(t => t.k), DIFF_KEYS = DIFFS.map(d => d.k), COLS = QTYPES.length * DIFFS.length;
 const QTYPE_TITLE = { multiple_choice: 'Câu trắc nghiệm nhiều phương án lựa chọn', true_false: 'Câu trắc nghiệm đúng sai',
-  group: 'Câu hỏi nhóm (đọc hiểu / đoạn văn)', short_answer: 'Câu trắc nghiệm trả lời ngắn' };
+  short_answer: 'Câu trắc nghiệm trả lời ngắn', essay: 'Câu tự luận' };
 const ROMAN = ['I', 'II', 'III', 'IV'];
 
 // ---- Khớp mã dạng câu: giao diện dùng 4 mã chuẩn (key của QTYPES), ngân hàng có thể lưu bằng nhiều tên ----
 const QTYPE_ALIASES = {
   multiple_choice: ['multiple_choice', 'trac_nghiem', 'mcq'],
   true_false:      ['true_false', 'dung_sai'],
-  group:           ['group', 'passage'],
-  short_answer:    ['short_answer', 'short']
+  short_answer:    ['short_answer', 'short'],
+  essay:           ['essay', 'tu_luan']
 };
 const ALIAS_TO_KEY = Object.fromEntries(Object.entries(QTYPE_ALIASES).flatMap(([k, list]) => list.map(a => [a, k])));
 // Chuẩn hóa giá trị question_type của 1 dòng: trả về mã chuẩn; để trống/null => multiple_choice (dữ liệu cũ); lạ => null (KHÔNG gộp bừa vào dạng khác)
@@ -431,11 +447,12 @@ const normType = v => {
   const s = String(v ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
   return s === '' ? 'multiple_choice' : (ALIAS_TO_KEY[s] ?? null);
 };
-const qtypeOf = q => normType(q?.question_type) ?? 'multiple_choice';   // dùng khi hiển thị/in đề
+const qtypeOf = q => normType(q?.question_type) ?? 'multiple_choice';
+const isEssay = q => qtypeOf(q) === 'essay';   // tự luận: không có đáp số, có hướng dẫn chấm
 
 // Ma trận mẫu: tỉ lệ % theo mức độ (NB, TH, VD, VDC) và trọng số tương đối giữa các dạng câu.
 // Chỉnh các con số này cho khớp quy định của Sở/trường. Dạng nào ngân hàng chưa có câu sẽ tự bị bỏ qua.
-const BGD_TEMPLATE = { levels: [40, 30, 20, 10], types: { multiple_choice: 60, true_false: 15, group: 10, short_answer: 15 }, defaultTotal: 40 };
+const BGD_TEMPLATE = { levels: [40, 30, 20, 10], types: { multiple_choice: 60, true_false: 15, short_answer: 15, essay: 10 }, defaultTotal: 40 };
 
 // Cột question_type có thể chưa tồn tại: null = chưa dò, true/false = kết quả dò
 let typeColState = null;
@@ -499,7 +516,7 @@ async function loadMatrix() {
     const unknown = {}, byType = Object.fromEntries(QTYPE_KEYS.map(k => [k, 0])), lc = {};
     rows.forEach(r => {
       if (!r.chapter || !DIFF_KEYS.includes(r.difficulty)) return;
-      const t = normType(r.question_type);                       // khớp mọi tên gọi: multiple_choice/trac_nghiem, group/passage, short_answer...
+      const t = normType(r.question_type);                       // khớp mọi tên gọi: multiple_choice/trac_nghiem, short_answer, essay/tu_luan...
       if (t === null) { unknown[r.question_type] = (unknown[r.question_type] || 0) + 1; return; }   // giá trị lạ: không gộp bừa vào dạng nào
       byType[t]++;
       const ls = lessonKey(r.lesson);
@@ -887,7 +904,7 @@ async function drawExam() {
     });
     exam = (await hydrate(parts.flat())).map(normQ);        // bù cột explanation nếu RPC thiếu, chuẩn hóa phương án/phát biểu
     if (!exam.length) throw new Error('Không bốc được câu hỏi nào.');
-    $('eCode').value = ''; codeAuto = false; versions = null; savedId = null;
+    $('eCode').value = ''; codeAuto = false; versions = null; savedId = null; examPublic = true;
     $('eTitle').value = `ĐỀ KIỂM TRA ${subject.toUpperCase()} ${grade}`;
     $('eMin').value = Math.max(1, Math.round(exam.length * (mx.perQ > 0 ? mx.perQ : MIN_PER_QUESTION)));
     $('eNote').innerHTML = lack.length
@@ -911,6 +928,7 @@ const partHead = (parts, list, i) => parts && (i === 0 || qtypeOf(list[i - 1]) !
 function optsHtml(q, edit) {
   const t = qtypeOf(q), o = q.options || {}, has = LETTERS.some(L => String(o[L] ?? '').trim());
   if (t === 'short_answer') return '<div class="ml-12 mt-1 text-sm">Đáp số: ......................................</div>';
+  if (t === 'essay') return '<div class="ml-12 mt-1 text-sm">Bài làm: ......................................</div>';
   if (t === 'true_false') {   // 4 phát biểu a) b) c) d), mỗi ý có ô chọn Đ/S; ở chế độ biên tập hiện thêm kết quả đúng
     const v = edit ? parseTF(q.correct_answer) : null;
     return `<div class="mt-1 ml-12 space-y-1">${LETTERS.map((L, j) => {
@@ -1035,6 +1053,7 @@ function ansInline(q) {
   const t = qtypeOf(q), a = q.correct_answer;
   if (t === 'multiple_choice') return esc(a);
   if (t === 'true_false') { const v = parseTF(a); if (v) return v.map((x, j) => `${'abcd'[j]}-${x ? 'Đ' : 'S'}`).join(', '); }
+  if (isEssay(q) && !String(a ?? '').trim()) return 'Tự luận (xem hướng dẫn chấm)';
   return tex(a);
 }
 function ansBody(t, items) {
@@ -1055,7 +1074,7 @@ function ansBody(t, items) {
   }
   const cols = t === 'short_answer' ? 'sm:grid-cols-2' : '';      // trả lời ngắn: 2 cột; nhóm/đoạn văn: mỗi câu 1 dòng (thường dài)
   return `<div class="grid grid-cols-1 ${cols} gap-x-6 gap-y-1 text-sm">${items.map(x =>
-    `<div class="q ans-item"><b>${x.n}.</b> <span class="whitespace-pre-wrap">${tex(x.q.correct_answer) || '—'}</span></div>`).join('')}</div>`;
+    `<div class="q ans-item"><b>${x.n}.</b> <span class="whitespace-pre-wrap">${tex(x.q.correct_answer) || (t === 'essay' ? 'Xem hướng dẫn chấm' : '—')}</span></div>`).join('')}</div>`;
 }
 function answerKeyHtml(list) {
   const present = QTYPES.map(t => t.k).filter(k => list.some(q => qtypeOf(q) === k));
@@ -1206,7 +1225,8 @@ function shuffleExam() {
 // ---------- Tài khoản (chỉ cần để lưu và xem lại đề) ----------
 function renderAuth() {
   $('authBox').innerHTML = session
-    ? `<span class="text-slate-500">${esc(session.user.email)}</span><button onclick="db.auth.signOut()" class="underline text-indigo-600">Đăng xuất</button>`
+    ? `<span class="text-slate-500">${esc(session.user.email)}</span>
+       <span class="px-2 py-0.5 rounded-full text-xs font-bold ${isPro ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-600'}" title="${isPro ? 'Tài khoản Pro: dùng được Kho riêng' : 'Tài khoản Miễn phí'}">${isPro ? '⭐ PRO' : 'Miễn phí'}</span><button onclick="db.auth.signOut()" class="underline text-indigo-600">Đăng xuất</button>`
     : `<input id="aEmail" type="email" placeholder="Email" class="border rounded px-2 py-1 w-40">
        <input id="aPass" type="password" placeholder="Mật khẩu" class="border rounded px-2 py-1 w-32">
        <button onclick="login()" class="px-3 py-1.5 rounded bg-indigo-600 text-white font-semibold">Đăng nhập</button>`;
@@ -1224,8 +1244,51 @@ async function deepLink() {
   await openExam(id);
   if (DEEP.get('action') === 'shuffle') shuffleExam();       // nút "Trộn đề" ở trang chủ
 }
-db.auth.getSession().then(({ data }) => { session = data.session; renderAuth(); deepLink(); });
-db.auth.onAuthStateChange((_e, s) => { session = s; renderAuth(); deepLink(); });
+// ---------- Gói tài khoản (Miễn phí / Pro): do máy chủ quyết định qua hàm my_plan; lỗi hoặc chưa chạy SQL → coi như Miễn phí ----------
+function loadPlan() {
+  planReady = (async () => {
+    isPro = false; isAdmin = false;
+    if (session) {
+      const { data, error } = await db.rpc('my_plan');
+      if (!error && data) { isPro = data.is_pro === true; isAdmin = data.is_admin === true; }
+    }
+    if (!isPro && !savedId) examPublic = true;           // Miễn phí: luôn Công khai
+    renderAuth(); renderPrivacy();
+  })();
+  return planReady;
+}
+function afterAuth() { renderAuth(); renderPrivacy(); setTimeout(() => { loadPlan(); deepLink(); }, 0); }   // setTimeout: không gọi Supabase ngay trong callback đăng nhập
+db.auth.getSession().then(({ data }) => { session = data.session; afterAuth(); });
+db.auth.onAuthStateChange((_e, s) => { session = s; afterAuth(); });
+
+// ---------- Quyền riêng tư của đề: 🌐 Công khai (mặc định, Miễn phí) / 🔒 Riêng tư (Pro) ----------
+function renderPrivacy() {
+  const box = $('privBox'); if (!box) return;
+  const priv = !examPublic;
+  const msg = priv ? '🔒 <b>Kho riêng:</b> chỉ mình bạn nhìn thấy và quản lý đề này.'
+    : isPro ? '🌐 <b>Công khai:</b> giáo viên khác có thể xem và dùng đề này.'
+    : '🌐 <b>Tài khoản Miễn phí:</b> Đề thi của bạn sẽ được chia sẻ chung lên hệ thống để đóng góp cho cộng đồng.';
+  box.innerHTML = `
+    <button type="button" id="privToggle" role="switch" aria-checked="${priv}" onclick="togglePrivate()" class="flex items-center gap-2 font-semibold ${isPro ? '' : 'text-slate-500'}" title="${isPro ? 'Bật để chỉ mình bạn thấy đề này' : 'Dành cho Tài khoản Pro'}">
+      <span class="relative inline-block w-10 h-5 rounded-full transition ${priv ? 'bg-emerald-600' : 'bg-slate-300'}"><span class="absolute top-0.5 ${priv ? 'left-5' : 'left-0.5'} w-4 h-4 rounded-full bg-white shadow transition-all"></span></span>
+      <span>🔒 Đặt làm Kho riêng (Private)</span>${isPro ? '' : '<span class="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-xs font-bold">PRO</span>'}
+    </button>
+    <span class="${priv ? 'text-emerald-800' : 'text-slate-600'}">${msg}</span>`;
+}
+function togglePrivate() {
+  if (!isPro) { openPaywall(); return; }               // Miễn phí: khóa tùy chọn, hiện hộp mời nâng cấp
+  examPublic = !examPublic; renderPrivacy();
+  toast(examPublic ? 'Đề sẽ ở chế độ Công khai. Bấm "💾 Lưu đề" để áp dụng.' : 'Đề sẽ ở Kho riêng. Bấm "💾 Lưu đề" để áp dụng.');
+}
+function openPaywall() { $('proModal').classList.remove('hidden'); }
+function closePaywall() { $('proModal').classList.add('hidden'); }
+function upgradeNow() {
+  if (UPGRADE_URL) window.open(UPGRADE_URL, '_blank', 'noopener');
+  else toast('Vui lòng liên hệ quản trị viên để nâng cấp Tài khoản Pro.');
+  closePaywall();
+}
+const needsPro = err => /PRO_REQUIRED/.test(err?.message || '');
+const privacyColMissing = err => /is_public|owner_id/.test(err?.message || '');
 
 // ---------- Lưu / xem lại đề (bảng exams) ----------
 async function saveExam(asNew = false) {
@@ -1236,40 +1299,85 @@ async function saveExam(asNew = false) {
     minutes: Number($('eMin').value) || null, question_count: exam.length, version_count: versions ? versions.length : 1,
     data: { questions: exam, versions, code: $('eCode').value.trim(), codeAuto, showKey: $('eKey').checked }   // lưu nguyên nội dung câu hỏi tại thời điểm lưu
   };
-  const req = savedId && !asNew
-    ? db.from('exams').update(row).eq('id', savedId).select('id').single()
-    : db.from('exams').insert(row).select('id').single();
-  const { data, error } = await req;
-  if (error) return toast('Lỗi lưu đề: ' + error.message);
-  savedId = data.id; renderPaper();
-  toast('Đã lưu đề. Xem lại ở mục "Đề đã lưu".');
+  await planReady;
+  const updating = !!savedId && !asNew;
+  if (isPro || updating) row.is_public = examPublic; else { row.is_public = true; examPublic = true; }   // Miễn phí: đề mới luôn Công khai (máy chủ cũng kiểm tra lại)
+  const send = r => updating
+    ? db.from('exams').update(r).eq('id', savedId).select('id').single()
+    : db.from('exams').insert(r).select('id').single();
+  let { data, error } = await send(row);
+  if (error && privacyColMissing(error)) {               // chưa chạy exam_privacy_setup.sql
+    if (!examPublic) return toast('Chưa bật được Kho riêng: hãy chạy file exam_privacy_setup.sql trong Supabase. Đề CHƯA được lưu.');
+    const { is_public, ...plain } = row; ({ data, error } = await send(plain));
+  }
+  if (error) {
+    if (needsPro(error)) { examPublic = true; renderPrivacy(); return openPaywall(); }
+    return toast('Lỗi lưu đề: ' + error.message);
+  }
+  savedId = data.id; renderPaper(); renderPrivacy();
+  toast(examPublic ? '🌐 Đã lưu đề (Công khai). Xem lại ở mục "Đề đã lưu".' : '🔒 Đã lưu đề vào Kho riêng. Xem lại ở mục "Đề đã lưu".');
 }
 
+let savedRows = [], savedFilter = 'all';
 async function openSaved() {
   if (!session) return toast('Hãy đăng nhập để xem đề đã lưu.');
-  show('Saved'); $('savedList').innerHTML = '<p class="text-sm text-slate-500">Đang tải...</p>';
-  const { data, error } = await db.from('exams')
-    .select('id, title, grade, subject, question_count, version_count, created_at').order('created_at', { ascending: false }).limit(100);
+  show('Saved'); $('savedList').innerHTML = '<p class="text-sm text-slate-500">Đang tải...</p>'; $('savedTabs').innerHTML = '';
+  await planReady;
+  const q = cols => db.from('exams').select(cols).order('created_at', { ascending: false }).limit(100);
+  let { data, error } = await q('id, title, grade, subject, question_count, version_count, created_at, is_public, owner_id');
+  if (error && privacyColMissing(error)) {               // chưa chạy exam_privacy_setup.sql: hiện như đề Công khai của chính mình
+    ({ data, error } = await q('id, title, grade, subject, question_count, version_count, created_at'));
+    if (data) data = data.map(r => ({ ...r, is_public: true, owner_id: session.user.id }));
+  }
   if (error) { $('savedList').innerHTML = `<p class="text-sm text-red-600">Lỗi: ${esc(error.message)}</p>`; return; }
-  $('savedList').innerHTML = data.length ? data.map(r => `
+  savedRows = data; renderSaved();
+}
+const canEditRow = r => r.owner_id === session?.user?.id || (!r.owner_id && isAdmin);
+function setSavedFilter(f) { savedFilter = f; renderSaved(); }
+function renderSaved() {
+  const mine = savedRows.filter(canEditRow), pub = savedRows.filter(r => r.is_public !== false), priv = savedRows.filter(r => r.is_public === false);
+  const tabs = [['all', 'Tất cả', savedRows.length], ['mine', 'Của tôi', mine.length], ['public', '🌐 Công khai', pub.length], ['private', '🔒 Riêng tư', priv.length]];
+  $('savedTabs').innerHTML = tabs.map(([k, t, n]) => `<button onclick="setSavedFilter('${k}')" class="px-3 py-1 rounded-full border ${savedFilter === k ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600'}">${t} (${n})</button>`).join('');
+  const list = { all: savedRows, mine, public: pub, private: priv }[savedFilter];
+  $('savedList').innerHTML = list.length ? list.map(r => {
+    const own = canEditRow(r), isPub = r.is_public !== false;
+    const badge = isPub
+      ? '<span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-sky-100 text-sky-800">🌐 Công khai (Public)</span>'
+      : '<span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">🔒 Riêng tư (Private)</span>';
+    const who = own ? '' : ` · <span class="italic">${r.owner_id ? 'đề chia sẻ từ giáo viên khác' : 'đề chung của hệ thống'}</span>`;
+    return `
     <div class="flex items-center justify-between gap-3 border rounded-lg p-3">
-      <div><div class="font-semibold">${esc(r.title)}</div>
-        <div class="text-xs text-slate-500">${esc(r.subject)} ${r.grade} · ${r.question_count} câu${r.version_count > 1 ? ` · ${r.version_count} mã đề` : ''} · ${new Date(r.created_at).toLocaleString('vi-VN')}</div></div>
-      <div class="flex gap-2 shrink-0">
+      <div class="min-w-0"><div class="font-semibold flex flex-wrap items-center gap-2"><span>${esc(r.title)}</span>${badge}</div>
+        <div class="text-xs text-slate-500">${esc(r.subject)} ${r.grade} · ${r.question_count} câu${r.version_count > 1 ? ` · ${r.version_count} mã đề` : ''} · ${new Date(r.created_at).toLocaleString('vi-VN')}${who}</div></div>
+      <div class="flex flex-wrap justify-end gap-2 shrink-0">
         <button onclick="openExam(${r.id})" class="px-3 py-1 rounded bg-indigo-600 text-white text-sm font-semibold">Mở</button>
-        <button onclick="deleteExam(${r.id})" class="px-3 py-1 rounded border text-sm text-red-600">Xóa</button></div>
-    </div>`).join('') : '<p class="text-sm text-slate-500">Chưa có đề nào được lưu.</p>';
+        ${own ? `<button onclick="setVisibility(${r.id}, ${!isPub})" class="px-3 py-1 rounded border text-sm ${isPub && !isPro ? 'text-slate-500' : ''}" title="${isPub ? 'Chuyển sang Kho riêng (Pro)' : 'Chia sẻ công khai'}">${isPub ? '🔒 Đặt riêng tư' : '🌐 Công khai'}</button>
+        <button onclick="deleteExam(${r.id})" class="px-3 py-1 rounded border text-sm text-red-600">Xóa</button>` : ''}</div>
+    </div>`;
+  }).join('') : '<p class="text-sm text-slate-500">Chưa có đề nào trong mục này.</p>';
+}
+async function setVisibility(id, toPublic) {
+  if (!toPublic && !isPro) return openPaywall();
+  const { error } = await db.from('exams').update({ is_public: toPublic }).eq('id', id).select('id').single();
+  if (error) { if (needsPro(error)) return openPaywall(); return toast('Lỗi đổi chế độ: ' + error.message); }
+  if (savedId === id) { examPublic = toPublic; renderPrivacy(); }
+  toast(toPublic ? '🌐 Đề đã chuyển sang Công khai.' : '🔒 Đề đã chuyển vào Kho riêng.');
+  openSaved();
 }
 
 async function openExam(id) {
   const { data: r, error } = await db.from('exams').select('*').eq('id', id).single();
   if (error) return toast('Lỗi mở đề: ' + error.message);
-  exam = (r.data.questions || []).map(normQ); versions = r.data.versions || null; savedId = r.id;
+  await planReady;
+  const own = canEditRow(r);
+  exam = (r.data.questions || []).map(normQ); versions = r.data.versions || null; savedId = own ? r.id : null;   // đề của người khác: "Lưu đề" sẽ tạo bản sao riêng của bạn
+  examPublic = own ? r.is_public !== false : true;
   if (versions) versions.forEach(v => v.questions.forEach(normQ));
   grade = r.grade; subject = r.subject; codeAuto = !!r.data.codeAuto;
   $('eTitle').value = r.title; $('eMin').value = r.minutes || ''; $('eSchool').value = r.school || '';
   $('eCode').value = r.data.code || ''; $('eKey').checked = r.data.showKey !== false; $('eNote').innerHTML = '';
   show('Editor'); renderPaper();
+  if (!own) toast('Đề của giáo viên khác: bấm "💾 Lưu đề" sẽ tạo bản sao thuộc về bạn.');
 }
 
 async function deleteExam(id) {
@@ -1281,8 +1389,8 @@ async function deleteExam(id) {
 }
 
 // ---------- Gợi ý lời giải bằng Gemini AI ----------
-const GEMINI_DEFAULT_MODEL = 'gemini-2.5-flash';
-const GEMINI_FALLBACKS = ['gemini-flash-latest', 'gemini-1.5-flash'];   // thử lần lượt khi model chính vẫn lỗi sau 3 lần
+const GEMINI_DEFAULT_MODEL = 'gemini-3.8-flash';
+const GEMINI_FALLBACKS = ['gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-flash-latest'];   // thử lần lượt khi model chính vẫn lỗi sau 3 lần
 const GEMINI_TRIES = 3, GEMINI_WAIT_MS = 2000;                          // mỗi model thử tối đa 3 lần, cách nhau 2 giây
 const aiBusy = new Set();                              // id các câu đang chờ AI
 const findQ = id => exam.find(x => String(x.id) === String(id));
@@ -1428,10 +1536,10 @@ const DW_TEXT = DW.w - 2 * DW.m;                                                
 const DOC_PARTS = {                                                                // tiêu đề + dòng hướng dẫn của từng phần
   multiple_choice: { title: 'TRẮC NGHIỆM NHIỀU PHƯƠNG ÁN LỰA CHỌN', note: (a, b) => `Thí sinh trả lời từ câu ${a} đến câu ${b}. Mỗi câu hỏi thí sinh chỉ chọn một phương án.` },
   true_false:      { title: 'TRẮC NGHIỆM ĐÚNG / SAI', note: (a, b) => `Thí sinh trả lời từ câu ${a} đến câu ${b}. Trong mỗi ý a), b), c), d) ở mỗi câu, thí sinh chọn đúng hoặc sai.` },
-  group:           { title: 'CÂU HỎI NHÓM / ĐỌC HIỂU ĐOẠN VĂN', note: (a, b) => `Đọc đoạn thông tin và trả lời các câu hỏi (câu ${a} đến câu ${b}).` },
-  short_answer:    { title: 'TRẢ LỜI NGẮN / TỰ LUẬN', note: (a, b) => `Thí sinh trình bày và ghi đáp số từ câu ${a} đến câu ${b}.` }
+  short_answer:    { title: 'TRẢ LỜI NGẮN', note: (a, b) => `Thí sinh ghi đáp số từ câu ${a} đến câu ${b}.` },
+  essay:           { title: 'TỰ LUẬN', note: (a, b) => `Thí sinh trình bày lời giải từ câu ${a} đến câu ${b}.` }
 };
-const TYPE_FILL = { multiple_choice: 'E0E7FF', true_false: 'D1FAE5', group: 'FEF3C7', short_answer: 'FFE4E6' };
+const TYPE_FILL = { multiple_choice: 'E0E7FF', true_false: 'D1FAE5', short_answer: 'FFE4E6', essay: 'FEF3C7' };
 
 // ---------- 1. ZIP (kiểu STORE, không nén) ----------
 const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
@@ -1746,6 +1854,7 @@ async function questionXml({ q, n, t }, ctx) {
   }
   if (t === 'true_false') x += statementsXml(q);
   else if (t === 'short_answer') x += para(run('Đáp số: ', { i: true }) + run('.'.repeat(60)), { left: 454, after: 100 });
+  else if (t === 'essay') x += para(run('Bài làm: ', { i: true }) + run('.'.repeat(60)), { left: 454, after: 100 });
   else x += optionsXml(q);
   return x;
 }
@@ -1767,6 +1876,7 @@ async function examBodyXml(list, ctx) {
 const ansPlain = q => {                   // đáp án dạng chữ (có thể chứa LaTeX) của 1 câu
   const t = qtypeOf(q), a = q.correct_answer;
   if (t === 'true_false') { const v = parseTF(a); if (v) return v.map((b, j) => `${'abcd'[j]}-${b ? 'Đ' : 'S'}`).join(', '); }
+  if (isEssay(q) && !String(a ?? '').trim()) return 'Tự luận (xem hướng dẫn chấm)';
   return String(a ?? '');
 };
 function answerTablesXml(items) {         // các bảng đáp án chia theo PHẦN (dùng cho đề đơn)
@@ -1794,7 +1904,7 @@ function answerTablesXml(items) {         // các bảng đáp án chia theo PH�
       const wc = Math.floor(DW_TEXT / 2), cols = t === 'short_answer' ? 2 : 1, wcell = cols === 2 ? wc : DW_TEXT;
       let rows = '';
       for (let k = 0; k < its.length; k += cols) {
-        rows += tr(its.slice(k, k + cols).map(c => tc(para(run(`${c.n}. `, { b: true }) + richRuns(String(c.q.correct_answer ?? '—')), { after: 20, line: 264 }), { w: wcell, va: 'top' })).join('')
+        rows += tr(its.slice(k, k + cols).map(c => tc(para(run(`${c.n}. `, { b: true }) + richRuns(String(c.q.correct_answer || (t === 'essay' ? 'Xem hướng dẫn chấm' : '—'))), { after: 20, line: 264 }), { w: wcell, va: 'top' })).join('')
           + (cols === 2 && its.length - k < 2 ? tc('', { w: wcell }) : ''));
       }
       x += tbl(rows, Array(cols).fill(wcell));
@@ -1903,7 +2013,7 @@ if (USE_MOCK) { last = { grade: 11, subject: 'Vật lý' }; $('mockBar').classLi
 restoreSubject = last.subject || null;
 $('grade').innerHTML = Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}"${i + 1 === (Number(last.grade) || 10) ? ' selected' : ''}>Lớp ${i + 1}</option>`).join('');
 try { $('eSchool').value = localStorage.getItem('exam_school') || ''; $('eDept').value = localStorage.getItem('exam_dept') || ''; $('eExam').value = localStorage.getItem('exam_name') || ''; } catch {}
-try { $('gKey').value = localStorage.getItem('gemini_key') || ''; $('gModel').value = localStorage.getItem('gemini_model2') || GEMINI_DEFAULT_MODEL; } catch {}
+try { $('gKey').value = localStorage.getItem('gemini_key') || ''; { const m = localStorage.getItem('gemini_model2'); $('gModel').value = (!m || /^gemini-[12]\./.test(m)) ? GEMINI_DEFAULT_MODEL : m; } } catch {}   // model cũ (1.x / 2.x) tự chuyển sang Gemini 3.x
 updateKeyUi();
 loadSubjects();
 /* ===== Khu vực GIÁO VIÊN: chặn tài khoản HỌC SINH =====
