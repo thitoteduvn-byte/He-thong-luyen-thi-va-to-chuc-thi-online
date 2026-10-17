@@ -294,6 +294,7 @@ async function loadAll() {
   renderShifts(live, next, stats);
   buildNotes(live, next, stats);
   loadAsg();
+  if (!loadAll.deep && new URLSearchParams(location.search).get('assign') === 'new') { loadAll.deep = true; openAssign(); }   // vào từ nút "Giao bài tập" ở trang chủ
 }
 
 function renderExams(err) {

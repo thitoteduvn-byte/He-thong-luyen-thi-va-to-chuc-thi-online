@@ -138,6 +138,14 @@
           </button>
         </form>
 
+        <form id="hwForm" class="relative mt-3 flex items-center gap-2 rounded-2xl bg-white/10 p-2 pl-3.5 ring-1 ring-white/30" novalidate>
+          <label for="hwCode" class="shrink-0 text-sm font-bold">📚 Mã bài tập</label>
+          <input id="hwCode" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="200" placeholder="VD: K7M2QX"
+                 class="min-w-0 flex-1 rounded-xl bg-white px-3 py-2 text-sm font-semibold uppercase tracking-widest text-indigo-950 outline-none placeholder:normal-case placeholder:tracking-normal placeholder:text-slate-400 focus:ring-2 focus:ring-amber-300">
+          <button type="submit" class="btn shrink-0 rounded-xl bg-white px-4 py-2 text-sm font-extrabold text-indigo-700 hover:bg-indigo-50">Làm bài</button>
+        </form>
+        <p id="hwMsg" role="alert" class="relative mt-2 hidden rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700"></p>
+
         <div class="relative mt-4 grid gap-3 sm:grid-cols-2">
           <a data-link="practice" href="#" class="btn flex items-center justify-center gap-2 rounded-xl border border-white/40 bg-white/10 px-4 py-3 text-sm font-bold hover:bg-white/20">📝 Luyện tập tự do</a>
           <a data-link="student" href="#" class="btn flex items-center justify-center gap-2 rounded-xl border border-white/40 bg-white/10 px-4 py-3 text-sm font-bold hover:bg-white/20">📊 Kết quả & lịch sử của tôi</a>
@@ -173,21 +181,16 @@
             <span class="min-w-0 flex-1"><span class="block text-[15px] font-extrabold">Tạo & Quản lý Phòng thi</span><span class="block text-xs text-slate-500">Lập ca thi, đặt giờ, xem ai đang làm bài</span></span>
             <span class="text-xl font-bold text-violet-600 transition group-hover:translate-x-1" aria-hidden="true">→</span>
           </a>
-          <a data-link="admin" data-teacher href="#" class="btn group flex items-center gap-4 rounded-2xl bg-white p-3.5 text-indigo-950 shadow-lg hover:bg-emerald-50">
-            <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-emerald-100 text-xl" aria-hidden="true">🗂️</span>
-            <span class="min-w-0 flex-1"><span class="block text-[15px] font-extrabold">Soạn Ngân hàng Câu hỏi</span><span class="block text-xs text-slate-500">Phân loại theo lớp, môn, chương, dạng, mức độ</span></span>
-            <span class="text-xl font-bold text-emerald-600 transition group-hover:translate-x-1" aria-hidden="true">→</span>
+          <a data-link="assign" data-teacher href="#" class="btn group flex items-center gap-4 rounded-2xl bg-white p-3.5 text-indigo-950 shadow-lg hover:bg-rose-50">
+            <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-rose-100 text-xl" aria-hidden="true">📚</span>
+            <span class="min-w-0 flex-1"><span class="block text-[15px] font-extrabold">Giao bài tập</span><span class="block text-xs text-slate-500">Chọn đề đã lưu, tạo mã giao bài, xem báo cáo</span></span>
+            <span class="text-xl font-bold text-rose-600 transition group-hover:translate-x-1" aria-hidden="true">→</span>
           </a>
-          <a data-link="matrix" data-teacher href="#" class="btn group flex items-center gap-4 rounded-2xl bg-white p-3.5 text-indigo-950 shadow-lg hover:bg-indigo-50">
-            <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-indigo-100 text-xl" aria-hidden="true">🧮</span>
-            <span class="min-w-0 flex-1"><span class="block text-[15px] font-extrabold">Tạo đề thi từ Ma trận</span><span class="block text-xs text-slate-500">Chọn số câu theo chương, mức độ rồi trộn đề</span></span>
-            <span class="text-xl font-bold text-indigo-600 transition group-hover:translate-x-1" aria-hidden="true">→</span>
-          </a>
-          <a data-link="teacher" data-teacher href="#" class="btn group flex items-center gap-4 rounded-2xl bg-white p-3.5 text-indigo-950 shadow-lg hover:bg-amber-50">
-            <span class="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-amber-100 text-xl" aria-hidden="true">📈</span>
-            <span class="min-w-0 flex-1"><span class="block text-[15px] font-extrabold">Trang chủ Giáo viên</span><span class="block text-xs text-slate-500">Thống kê kết quả, phòng thi và đề đã lưu</span></span>
-            <span class="text-xl font-bold text-amber-600 transition group-hover:translate-x-1" aria-hidden="true">→</span>
-          </a>
+          <div class="grid grid-cols-3 gap-3">
+            <a data-link="admin" data-teacher href="#" class="btn flex flex-col items-center gap-1 rounded-2xl bg-white/95 px-2 py-3 text-center text-xs font-extrabold leading-tight text-indigo-950 shadow-lg hover:bg-emerald-50"><span class="text-xl" aria-hidden="true">🗂️</span>Ngân hàng câu hỏi</a>
+            <a data-link="matrix" data-teacher href="#" class="btn flex flex-col items-center gap-1 rounded-2xl bg-white/95 px-2 py-3 text-center text-xs font-extrabold leading-tight text-indigo-950 shadow-lg hover:bg-indigo-50"><span class="text-xl" aria-hidden="true">🧮</span>Tạo đề từ ma trận</a>
+            <a data-link="teacher" data-teacher href="#" class="btn flex flex-col items-center gap-1 rounded-2xl bg-white/95 px-2 py-3 text-center text-xs font-extrabold leading-tight text-indigo-950 shadow-lg hover:bg-amber-50"><span class="text-xl" aria-hidden="true">📈</span>Trang chủ giáo viên</a>
+          </div>
         </div>
       </article>
     </div>
@@ -286,6 +289,7 @@ const LINKS = {                                   // đổi thành địa chỉ 
   admin:    'admin.html',                         // ngân hàng câu hỏi
   matrix:   'matrix_exam.html',                   // tạo đề từ ma trận
   teacher:  'teacher_dashboard.html',             // trang chủ giáo viên: thống kê kết quả
+  assign:   'teacher_dashboard.html?assign=new',  // giao bài tập (mở sẵn hộp thoại giao bài)
   student:  'student_home.html'                   // đăng nhập, kết quả & lịch sử học sinh
 };
 const CONTACT_EMAIL = 'hotro@example.com';        // <<< thay bằng email hỗ trợ của bạn
@@ -399,6 +403,18 @@ $('joinForm').addEventListener('submit', e => {
   if (!room || !shift) return joinMsg('Hãy nhập cả mã phòng thi và mã ca thi (giáo viên sẽ cung cấp), hoặc dán đường link phòng thi.');
   if (!CODE_OK.test(room) || !CODE_OK.test(shift)) return joinMsg('Mã chỉ gồm chữ không dấu, số, dấu - hoặc _ (2–40 ký tự). Kiểm tra lại giúp em nhé.');
   location.href = LINKS.practice + '?room=' + encodeURIComponent(room) + '&shift=' + encodeURIComponent(shift);
+});
+
+// ----- Mã bài tập (giao bài): nhập mã hoặc dán link -----
+function hwMsg(t) { const el = $('hwMsg'); el.textContent = t || ''; el.classList.toggle('hidden', !t); }
+$('hwCode').addEventListener('input', () => hwMsg(''));
+$('hwForm').addEventListener('submit', e => {
+  e.preventDefault();
+  let v = $('hwCode').value.trim(); const m = v.match(/[?&]hw=([A-Za-z0-9]+)/i); if (m) v = m[1];
+  v = v.toUpperCase();
+  if (!v) return hwMsg('Hãy nhập mã bài tập giáo viên đã giao (hoặc dán đường link bài tập).');
+  if (!/^[A-Z0-9]{4,12}$/.test(v)) return hwMsg('Mã bài tập gồm chữ và số, không dấu (ví dụ K7M2QX). Kiểm tra lại giúp em nhé.');
+  location.href = LINKS.practice + '?hw=' + encodeURIComponent(v);
 });
 
 // ----- Góc khám phá: giai thoại khoa học -----
