@@ -108,7 +108,22 @@
       <!-- Thẻ điều hướng -->
       <section aria-label="Tính năng">
         <h2 class="font-semibold mb-3">Tính năng</h2>
-        <div id="featureGrid" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"></div>
+        <div id="featureGrid" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5"></div>
+      </section>
+
+      <!-- Bài tập đã giao -->
+      <section id="asgSection" class="bg-white rounded-2xl border" aria-label="Bài tập đã giao">
+        <div class="p-4 flex flex-wrap items-center gap-2 border-b">
+          <h2 class="font-semibold">📚 Bài tập đã giao</h2>
+          <span class="text-xs text-slate-400">Học sinh làm ở màn luyện tập · đề không trộn</span>
+          <button onclick="openAssign()" class="ml-auto text-sm rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 font-medium">+ Giao bài mới</button>
+        </div>
+        <div class="overflow-x-auto"><table class="w-full text-sm">
+          <thead class="bg-slate-50 text-slate-500 text-left"><tr>
+            <th class="p-3 font-medium">Bài giao</th><th class="p-3 font-medium">Mã</th><th class="p-3 font-medium">Trạng thái</th><th class="p-3 font-medium">Hạn nộp</th>
+            <th class="p-3 font-medium text-right">Học sinh đã nộp</th><th class="p-3 font-medium text-right">Điểm TB</th><th class="p-3 font-medium text-right">Thao tác</th></tr></thead>
+          <tbody id="asgRows"><tr><td colspan="7" class="p-6 text-center text-slate-400">Đang tải…</td></tr></tbody>
+        </table></div>
       </section>
 
       <!-- Đề gần đây + Ca thi -->
@@ -154,7 +169,7 @@ const SUPABASE_URL = 'https://xzznmfgihzjeqsmiuypi.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_dUldhQYF1ETrSCZ4jiy3Og_ygfkm9XW';
 // Địa chỉ các trang tính năng. Mặc định là tên file nằm cùng thư mục với trang này.
 // Khi đưa lên web, có thể đổi bằng nút "Cài đặt tài khoản & liên kết" (lưu trên trình duyệt) hoặc sửa trực tiếp ở đây.
-const DEFAULT_LINKS = { bank: 'admin.html', matrix: 'matrix_exam.html', room: 'exam_room.html', community: 'community.html' };
+const DEFAULT_LINKS = { bank: 'admin.html', matrix: 'matrix_exam.html', room: 'exam_room.html', community: 'community.html', exam: 'exam.html' };
 const DEFAULT_PROFILE = { name: '', role: 'Giáo viên Bộ môn Vật lí', avatar: '' };
 // ===============================================
 
@@ -185,9 +200,10 @@ const FEATURES = [
   { key: 'bank', icon: '📂', title: 'Ngân hàng câu hỏi & Nhập liệu', desc: 'Thêm, nhập hàng loạt (Excel/JSON), sửa và xóa câu hỏi trong kho cá nhân.', tone: 'indigo', kw: 'câu hỏi kho nhập liệu ngân hàng import' },
   { key: 'matrix', icon: '📊', title: 'Ma trận đề kiểm tra', desc: 'Tạo đề theo ma trận chương × dạng × mức độ, trộn mã đề, xuất đề.', tone: 'violet', kw: 'ma trận đề kiểm tra trộn xuất' },
   { key: 'room', icon: '🏫', title: 'Phòng thi trực tuyến', desc: 'Tạo phòng và ca thi, cấp mã vào ca, theo dõi học sinh làm bài, xuất điểm.', tone: 'emerald', kw: 'phòng thi ca thi kết quả điểm học sinh' },
+  { key: 'assign', icon: '📚', title: 'Giao bài tập', desc: 'Chọn đề đã lưu, tạo mã giao bài cho học sinh làm ở màn luyện tập (không trộn đề), xem báo cáo.', tone: 'rose', kw: 'giao bài tập bài tập về nhà mã giao bài báo cáo', action: 'openAssign()' },
   { key: 'community', icon: '🌐', title: 'Kho học liệu cộng đồng', desc: 'Khám phá, chia sẻ và sao chép (clone) đề, bộ câu hỏi về kho của bạn.', tone: 'amber', kw: 'cộng đồng chia sẻ marketplace clone sao chép' }
 ];
-const TONE = { indigo: 'bg-indigo-50 text-indigo-700', violet: 'bg-violet-50 text-violet-700', emerald: 'bg-emerald-50 text-emerald-700', amber: 'bg-amber-50 text-amber-700' };
+const TONE = { indigo: 'bg-indigo-50 text-indigo-700', violet: 'bg-violet-50 text-violet-700', emerald: 'bg-emerald-50 text-emerald-700', amber: 'bg-amber-50 text-amber-700', rose: 'bg-rose-50 text-rose-700' };
 
 function renderChrome() {
   const nm = displayName(), ini = nm.trim().split(/\s+/).slice(-2).map(w => w[0]).join('').toUpperCase() || 'GV';
@@ -198,13 +214,15 @@ function renderChrome() {
   $('hello').textContent = `Chào ${part}, ${nm}!`;
   $('today').textContent = new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
   $('sideNav').innerHTML = `<a href="#" class="navi on flex items-center gap-3 px-3 py-2 rounded-lg"><span class="dot w-1.5 h-1.5 rounded-full bg-slate-300"></span>🏠 Tổng quan</a>` +
-    FEATURES.map(f => `<a data-link="${f.key}" class="navi flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-100"><span class="dot w-1.5 h-1.5 rounded-full bg-slate-300"></span>${f.icon} ${esc(f.title)}</a>`).join('');
+    FEATURES.map(f => f.action
+      ? `<a href="#asgSection" onclick="${f.action}; toggleSide(false); return false;" class="navi flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-100"><span class="dot w-1.5 h-1.5 rounded-full bg-slate-300"></span>${f.icon} ${esc(f.title)}</a>`
+      : `<a data-link="${f.key}" class="navi flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-100"><span class="dot w-1.5 h-1.5 rounded-full bg-slate-300"></span>${f.icon} ${esc(f.title)}</a>`).join('');
   $('featureGrid').innerHTML = FEATURES.map(f => `
-    <a data-link="${f.key}" class="card-link block bg-white rounded-2xl border p-5">
+    <a ${f.action ? `href="#asgSection" onclick="${f.action}; return false;"` : `data-link="${f.key}"`} class="card-link block bg-white rounded-2xl border p-5">
       <div class="w-11 h-11 rounded-xl ${TONE[f.tone]} flex items-center justify-center text-xl">${f.icon}</div>
       <div class="font-semibold mt-3">${esc(f.title)}</div>
       <p class="text-sm text-slate-500 mt-1">${esc(f.desc)}</p>
-      <div class="text-sm text-indigo-600 font-medium mt-3">Mở trang →</div></a>`).join('');
+      <div class="text-sm text-indigo-600 font-medium mt-3">${f.action ? 'Giao bài mới →' : 'Mở trang →'}</div></a>`).join('');
   applyLinks();
 }
 function toggleSide(on) { $('side').classList.toggle('-translate-x-full', !on); $('scrim').classList.toggle('hidden', !on); }
@@ -240,17 +258,17 @@ async function loadAll() {
   const [qAll, qMine, exams, rooms, results, doing, shiftRows, recent, ...byType] = await Promise.allSettled([
     db.from('questions').select('id', head).or(OWN()),
     db.from('questions').select('id', head).eq('owner_id', user.id),
-    db.from('exams').select('id', head),
+    db.from('exams').select('id', head).or(`owner_id.eq.${user.id},owner_id.is.null`),
     db.from('exam_rooms').select('id', head),
     db.from('exam_results').select('id', head),
     db.from('exam_results').select('id', head).is('submitted_at', null),
     db.from('exam_shifts').select('id, room_id, shift_name, shift_code, start_time, end_time, is_active, exam_rooms(title, room_code)').gte('end_time', nowIso).order('start_time').limit(30),
-    db.from('exams').select('id, title, grade, subject, question_count, version_count, created_at').order('created_at', { ascending: false }).limit(6),
+    db.from('exams').select('id, title, grade, subject, question_count, version_count, created_at, is_public, owner_id').or(`owner_id.eq.${user.id},owner_id.is.null`).order('created_at', { ascending: false }).limit(6),   // "Đề của tôi" (kèm đề cũ chưa có chủ)
     ...TYPES.map(([t]) => db.from('questions').select('id', head).or(OWN()).eq('question_type', t))
   ]);
 
   setStat('stQ', 'stQs', cnt(qAll), '', 1); if (cnt(qAll) != null) $('stQs').textContent = cnt(qMine) != null ? `${nf(cnt(qMine))} câu do bạn tạo / sao chép` : '';
-  setStat('stE', 'stEs', cnt(exams), 'đề đã lưu trong hệ thống', 1);
+  setStat('stE', 'stEs', cnt(exams), 'đề đã lưu của bạn', 1);
 
   shifts = (val(shiftRows) || []).filter(s => s.is_active);
   const now = Date.now(), live = shifts.filter(s => +new Date(s.start_time) <= now && +new Date(s.end_time) >= now), next = shifts.filter(s => +new Date(s.start_time) > now);
@@ -258,8 +276,12 @@ async function loadAll() {
   setStat('stR', 'stRs', shiftRows.status === 'fulfilled' && !shiftRows.value.error ? liveRooms : null, `${live.length} ca đang diễn ra · ${next.length} ca sắp tới` + (cnt(rooms) != null ? ` · ${cnt(rooms)} phòng` : ''), 1);
   setStat('stS', 'stSs', cnt(results), cnt(doing) != null ? `${nf(cnt(doing))} lượt đang làm bài / chưa nộp` : '', 1);
 
-  recentExams = val(recent) || [];
-  renderExams(recent.status === 'fulfilled' && !recent.value.error ? null : (recent.reason?.message || recent.value?.error?.message || 'lỗi'));
+  let recentRes = recent;
+  if (recent.status === 'fulfilled' && /is_public|owner_id/.test(recent.value.error?.message || '')) {   // chưa chạy exam_privacy_setup.sql: tải lại không kèm cột quyền riêng tư
+    try { recentRes = { status: 'fulfilled', value: await db.from('exams').select('id, title, grade, subject, question_count, version_count, created_at').order('created_at', { ascending: false }).limit(6) }; } catch (e) {}
+  }
+  recentExams = val(recentRes) || [];
+  renderExams(recentRes.status === 'fulfilled' && !recentRes.value.error ? null : (recentRes.reason?.message || recentRes.value?.error?.message || 'lỗi'));
   renderTypeBars(TYPES.map(([t, n], i) => [n, cnt(byType[i]) ?? 0]), byType.some(r => cnt(r) == null));
 
   // thông tin ca thi: số bài đã nộp / đang làm + vi phạm
@@ -271,6 +293,7 @@ async function loadAll() {
   }
   renderShifts(live, next, stats);
   buildNotes(live, next, stats);
+  loadAsg();
 }
 
 function renderExams(err) {
@@ -278,7 +301,7 @@ function renderExams(err) {
   if (err) return tb.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-red-600">Không tải được danh sách đề: ${esc(err)}</td></tr>`;
   if (!recentExams.length) return tb.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-400">Chưa có đề nào. <a data-link="matrix" class="text-indigo-600 underline">Tạo đề đầu tiên</a></td></tr>`, applyLinks();
   tb.innerHTML = recentExams.map(e => `<tr class="border-t hover:bg-slate-50">
-    <td class="p-3 font-medium max-w-[16rem] truncate" title="${esc(e.title)}">${esc(e.title)}</td>
+    <td class="p-3 font-medium max-w-[18rem]"><div class="truncate" title="${esc(e.title)}">${esc(e.title)}</div>${e.is_public === false ? '<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800">🔒 Riêng tư (Private)</span>' : '<span class="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-100 text-sky-800">🌐 Công khai (Public)</span>'}</td>
     <td class="p-3 whitespace-nowrap">${esc(e.subject)} · ${esc(e.grade)}</td>
     <td class="p-3 text-right">${esc(e.question_count ?? '')}</td>
     <td class="p-3 text-right">${esc(e.version_count || 1)}</td>
@@ -296,9 +319,10 @@ function askDelExam(id) {
     <button onclick="doDelExam(${id})" class="px-4 py-2 rounded-lg bg-red-600 text-white text-sm">Xóa đề</button></div>`);
 }
 async function doDelExam(id) {
-  const { error } = await db.from('exams').delete().eq('id', id);
+  const { data, error } = await db.from('exams').delete().eq('id', id).select('id');
   closeModal();
   if (error) return toast('Không xóa được: ' + error.message);
+  if (!data || !data.length) return toast('Không xóa được: bạn không phải chủ của đề này.');
   toast('Đã xóa đề'); loadAll();
 }
 
@@ -361,7 +385,7 @@ function onSearch() {
   }, 300);
   function render(feats, exs, qs, loading) {
     let h = '';
-    if (feats.length) h += `<div class="px-3 pt-2 pb-1 text-xs font-semibold text-slate-400 uppercase">Chức năng</div>` + feats.map(f => `<a data-link="${f.key}" href="${esc(L(f.key))}" class="flex gap-2 px-3 py-2 hover:bg-slate-50">${f.icon} ${esc(f.title)}</a>`).join('');
+    if (feats.length) h += `<div class="px-3 pt-2 pb-1 text-xs font-semibold text-slate-400 uppercase">Chức năng</div>` + feats.map(f => f.action ? `<a href="#asgSection" onclick="${f.action}; $('qBox').classList.add('hidden'); return false;" class="flex gap-2 px-3 py-2 hover:bg-slate-50">${f.icon} ${esc(f.title)}</a>` : `<a data-link="${f.key}" href="${esc(L(f.key))}" class="flex gap-2 px-3 py-2 hover:bg-slate-50">${f.icon} ${esc(f.title)}</a>`).join('');
     if (exs.length) h += `<div class="px-3 pt-2 pb-1 text-xs font-semibold text-slate-400 uppercase">Đề thi</div>` + exs.map(e => `<a href="${esc(L('matrix'))}?open=${e.id}" class="flex gap-2 px-3 py-2 hover:bg-slate-50">📄 <span class="truncate">${esc(e.title)}</span></a>`).join('');
     if (qs && qs.length) h += `<div class="px-3 pt-2 pb-1 text-xs font-semibold text-slate-400 uppercase">Câu hỏi trong kho</div>` + qs.map(x => `<a href="${esc(L('bank'))}" class="block px-3 py-2 hover:bg-slate-50"><div class="truncate">${esc(String(x.content).slice(0, 90))}</div><div class="text-xs text-slate-400">Lớp ${esc(x.grade)} · ${esc(x.subject)} · ${esc(x.chapter || '')}</div></a>`).join('');
     if (!h) h = `<p class="p-4 text-slate-400">${loading ? 'Đang tìm…' : 'Không tìm thấy kết quả.'}</p>`;
@@ -377,8 +401,247 @@ document.addEventListener('click', e => {
   if (!e.target.closest('#bell, #bellBox')) $('bellBox').classList.add('hidden');
 });
 
+/* ------------------ GIAO BÀI TẬP (assignment_setup.sql) ------------------ */
+let asgList = [], asgRep = null, asgExams = [], asgPick = null, asgSort = 'name';
+const ASG_ERR = e => /assignment_|schema cache|Could not find the function|does not exist/i.test(e?.message || '')
+  ? 'Chưa dùng được tính năng giao bài. Hãy chạy (hoặc chạy lại) file assignment_setup.sql trong Supabase → SQL Editor rồi tải lại trang. Chi tiết lỗi: ' + (e?.message || '') : (e?.message || 'lỗi');
+const fmtDur = s => s == null ? '–' : (s >= 3600 ? Math.floor(s / 3600) + ' giờ ' : '') + Math.floor(s % 3600 / 60) + ' phút ' + String(s % 60).padStart(2, '0') + ' giây';
+const scoreTxt = v => v == null ? '–' : String(+Number(v).toFixed(2)).replace('.', ',');
+const asgLink = code => new URL(L('exam'), location.href).href.split('?')[0] + '?hw=' + encodeURIComponent(code);
+const ST = { open: ['Đang mở', 'bg-emerald-100 text-emerald-700'], ended: ['Hết hạn', 'bg-amber-100 text-amber-800'], closed: ['Đã đóng', 'bg-slate-200 text-slate-700'] };
+
+async function loadAsg() {
+  const { data, error } = await db.rpc('assignment_list');
+  if (error) { asgList = []; return $('asgRows').innerHTML = `<tr><td colspan="7" class="p-6 text-center text-amber-700">${esc(ASG_ERR(error))}</td></tr>`; }
+  asgList = Array.isArray(data) ? data : [];
+  renderAsg();
+}
+function renderAsg() {
+  if (!asgList.length) return $('asgRows').innerHTML = `<tr><td colspan="7" class="p-8 text-center text-slate-400">Chưa giao bài nào. Bấm “+ Giao bài mới”, chọn một đề đã lưu để tạo mã giao bài.</td></tr>`;
+  $('asgRows').innerHTML = asgList.map(a => {
+    const st = ST[a.state] || ST.closed;
+    return `<tr class="border-t hover:bg-slate-50">
+      <td class="p-3 max-w-[16rem]"><div class="font-medium truncate" title="${esc(a.title)}">${esc(a.title)}</div>
+        <div class="text-xs text-slate-500">${esc([a.subject, a.grade && 'Lớp ' + a.grade].filter(Boolean).join(' · '))} · ${a.total} câu · ${a.minutes} phút · ${a.max_attempts ? a.max_attempts + ' lần' : 'không giới hạn lần'}${a.show_key ? '' : ' · ẩn đáp án'}</div></td>
+      <td class="p-3"><span class="font-mono font-bold tracking-widest text-indigo-700">${esc(a.code)}</span></td>
+      <td class="p-3"><span class="px-2 py-0.5 rounded-full text-[11px] font-semibold ${st[1]}">${st[0]}</span></td>
+      <td class="p-3 whitespace-nowrap text-slate-600">${a.deadline ? fmtDT(a.deadline) : 'Không giới hạn'}</td>
+      <td class="p-3 text-right">${nf(a.students)}<span class="text-xs text-slate-400"> (${nf(a.submitted)} lượt)</span></td>
+      <td class="p-3 text-right font-semibold">${scoreTxt(a.avg_score)}</td>
+      <td class="p-3 whitespace-nowrap text-right">
+        <button onclick="openAsgReport(${a.id})" class="px-2.5 py-1 rounded-lg border text-xs hover:bg-indigo-50 text-indigo-700">Báo cáo</button>
+        <button onclick="copyAsg(${a.id})" class="px-2.5 py-1 rounded-lg border text-xs hover:bg-slate-100">Sao chép link</button>
+        <button onclick="toggleAsg(${a.id})" class="px-2.5 py-1 rounded-lg border text-xs hover:bg-slate-100">${a.is_open ? 'Đóng bài' : 'Mở lại'}</button>
+        <button onclick="askDelAsg(${a.id})" class="px-2.5 py-1 rounded-lg border border-red-200 text-xs text-red-600 hover:bg-red-50">Xóa</button></td></tr>`;
+  }).join('');
+}
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); return true; } catch (e) {}
+  try { const ta = document.createElement('textarea'); ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); const ok = document.execCommand('copy'); ta.remove(); return ok; } catch (e) { return false; }
+}
+async function copyAsg(id) {
+  const a = asgList.find(x => x.id === id); if (!a) return;
+  const txt = `Bài tập: ${a.title}\nMã giao bài: ${a.code}\nLink làm bài: ${asgLink(a.code)}`;
+  toast(await copyText(txt) ? 'Đã sao chép mã và link giao bài' : 'Không sao chép được, hãy chép thủ công: ' + a.code);
+}
+async function toggleAsg(id) {
+  const a = asgList.find(x => x.id === id); if (!a) return;
+  const { error } = await db.rpc('assignment_update', { p_id: id, p_is_open: !a.is_open });
+  if (error) return toast('Không đổi được: ' + error.message);
+  toast(a.is_open ? 'Đã đóng bài: học sinh không bắt đầu lượt mới được' : 'Đã mở lại bài giao'); loadAsg();
+}
+function askDelAsg(id) {
+  const a = asgList.find(x => x.id === id); if (!a) return;
+  openModal(`<h3 class="font-bold text-lg text-red-600">Xóa bài giao?</h3>
+    <p class="text-sm mt-2">Bài giao “<b>${esc(a.title)}</b>” (mã ${esc(a.code)}) và <b>toàn bộ ${nf(a.submitted)} bài làm</b> của học sinh sẽ bị xóa vĩnh viễn. Nếu chỉ muốn ngừng nhận bài, hãy dùng “Đóng bài”.</p>
+    <div class="flex justify-end gap-2 mt-5"><button onclick="closeModal()" class="px-4 py-2 rounded-lg border text-sm">Hủy</button>
+    <button onclick="doDelAsg(${id})" class="px-4 py-2 rounded-lg bg-red-600 text-white text-sm">Xóa bài giao</button></div>`);
+}
+async function doDelAsg(id) {
+  const { error } = await db.rpc('assignment_delete', { p_id: id });
+  closeModal(); if (error) return toast('Không xóa được: ' + error.message);
+  toast('Đã xóa bài giao'); loadAsg();
+}
+
+/* ---- Tạo bài giao mới ---- */
+async function openAssign() {
+  asgPick = null;
+  openModal('<p class="text-sm text-slate-500">Đang tải danh sách đề đã lưu…</p>');
+  const cols = 'id, title, grade, subject, minutes, question_count, created_at';
+  let r = await db.from('exams').select(cols + ', is_public, owner_id').or(`owner_id.eq.${user.id},owner_id.is.null`).order('created_at', { ascending: false }).limit(200);
+  if (r.error && /is_public|owner_id/.test(r.error.message || '')) r = await db.from('exams').select(cols).order('created_at', { ascending: false }).limit(200);
+  if (r.error) return openModal(`<h3 class="font-bold text-lg">Giao bài tập</h3><p class="text-sm text-red-600 mt-2">Không tải được danh sách đề: ${esc(r.error.message)}</p>
+    <div class="text-right mt-4"><button onclick="closeModal()" class="px-4 py-2 rounded-lg border text-sm">Đóng</button></div>`);
+  asgExams = r.data || [];
+  if (!asgExams.length) return openModal(`<h3 class="font-bold text-lg">Giao bài tập</h3><p class="text-sm mt-2">Bạn chưa có đề đã lưu nào. Hãy tạo và lưu đề ở trang <a data-link="matrix" href="${esc(L('matrix'))}" class="text-indigo-600 underline">Ma trận đề kiểm tra</a> trước.</p>
+    <div class="text-right mt-4"><button onclick="closeModal()" class="px-4 py-2 rounded-lg border text-sm">Đóng</button></div>`);
+  openModal(`<h3 class="font-bold text-lg">📚 Giao bài tập mới</h3>
+    <p class="text-xs text-slate-500">Chọn một đề đã lưu. Thứ tự câu hỏi được giữ cố định cho mọi học sinh (không trộn đề) để thầy cô chữa bài theo một số thứ tự.</p>
+    <div class="mt-3 text-sm font-medium">1. Chọn đề đã lưu</div>
+    <input id="aSearch" oninput="filterAsgExams()" placeholder="Tìm theo tên đề…" class="w-full border rounded-lg p-2 mt-1 text-sm">
+    <div id="aExamList" class="mt-2 max-h-56 overflow-y-auto border rounded-lg divide-y"></div>
+    <div id="aForm" class="hidden mt-4 grid gap-3 text-sm">
+      <div class="font-medium">2. Thiết lập bài giao</div>
+      <label class="font-medium">Tên bài giao <input id="aTitle" maxlength="120" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="font-medium">Thời gian làm bài (phút) <input id="aMin" type="number" min="1" max="300" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+        <label class="font-medium">Số lần được làm
+          <select id="aAtt" class="w-full border rounded-lg p-2 mt-1 font-normal"><option value="1">1 lần</option><option value="2">2 lần</option><option value="3">3 lần</option><option value="5">5 lần</option><option value="">Không giới hạn</option></select></label>
+      </div>
+      <label class="font-medium">Hạn nộp <span class="font-normal text-slate-400">(không bắt buộc)</span> <input id="aDead" type="datetime-local" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+      <label class="flex items-start gap-2"><input id="aKey" type="checkbox" checked class="mt-0.5"><span>Cho học sinh xem đáp án và lời giải sau khi nộp <span class="block text-xs text-slate-500">Bỏ chọn nếu muốn giữ đề để dùng lại hoặc chưa muốn lộ đáp án; có thể đổi sau.</span></span></label>
+    </div>
+    <div id="aErr" class="hidden text-sm text-red-600 mt-3"></div>
+    <div class="flex justify-end gap-2 mt-5"><button onclick="closeModal()" class="px-4 py-2 rounded-lg border text-sm">Hủy</button>
+    <button id="aBtn" onclick="createAsg()" disabled class="px-5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium disabled:opacity-40">Tạo mã giao bài</button></div>`);
+  filterAsgExams();
+}
+function filterAsgExams() {
+  const q = ($('aSearch')?.value || '').trim().toLowerCase();
+  const l = asgExams.filter(e => !q || String(e.title).toLowerCase().includes(q));
+  $('aExamList').innerHTML = l.length ? l.map(e => `<label class="flex items-start gap-2 p-2.5 cursor-pointer hover:bg-slate-50 ${asgPick === e.id ? 'bg-indigo-50' : ''}">
+      <input type="radio" name="aExam" value="${e.id}" ${asgPick === e.id ? 'checked' : ''} onchange="pickAsgExam(${e.id})" class="mt-1">
+      <span class="min-w-0"><span class="block font-medium truncate">${esc(e.title)}</span>
+      <span class="block text-xs text-slate-500">${esc([e.subject, e.grade && 'Lớp ' + e.grade].filter(Boolean).join(' · '))} · ${esc(e.question_count ?? '?')} câu · ${fmtDate(e.created_at)}</span></span></label>`).join('')
+    : '<p class="p-3 text-sm text-slate-400">Không có đề nào khớp.</p>';
+}
+function pickAsgExam(id) {
+  asgPick = id; const e = asgExams.find(x => x.id === id); if (!e) return;
+  $('aForm').classList.remove('hidden'); $('aBtn').disabled = false;
+  $('aTitle').value = e.title; $('aMin').value = e.minutes || 45;
+  document.querySelectorAll('#aExamList label').forEach(l => l.classList.toggle('bg-indigo-50', +l.querySelector('input').value === id));
+}
+async function createAsg() {
+  const err = $('aErr'); err.classList.add('hidden');
+  if (!asgPick) return;
+  const min = parseInt($('aMin').value, 10);
+  if (!(min >= 1 && min <= 300)) { err.textContent = 'Thời gian làm bài phải từ 1 đến 300 phút.'; return err.classList.remove('hidden'); }
+  let dead = null;
+  if ($('aDead').value) { const d = new Date($('aDead').value); if (isNaN(d) || d <= new Date()) { err.textContent = 'Hạn nộp phải là một thời điểm trong tương lai.'; return err.classList.remove('hidden'); } dead = d.toISOString(); }
+  $('aBtn').disabled = true; $('aBtn').textContent = 'Đang tạo…';
+  const { data, error } = await db.rpc('assignment_create', { p_exam: asgPick, p_title: $('aTitle').value.trim() || null, p_minutes: min, p_deadline: dead,
+    p_max_attempts: $('aAtt').value ? +$('aAtt').value : null, p_show_key: $('aKey').checked });
+  $('aBtn').disabled = false; $('aBtn').textContent = 'Tạo mã giao bài';
+  if (error) { err.textContent = ASG_ERR(error); return err.classList.remove('hidden'); }
+  loadAsg();
+  const link = asgLink(data.code);
+  openModal(`<div class="text-center"><div class="text-4xl">✅</div><h3 class="font-bold text-lg mt-1">Đã tạo bài giao</h3>
+    <p class="text-sm text-slate-500 mt-1">${data.total} câu · thứ tự cố định${data.missing ? ` · <span class="text-amber-700">${data.missing} câu của đề không còn trong ngân hàng nên bị bỏ qua</span>` : ''}</p>
+    <div class="mt-4 text-xs text-slate-500">Mã giao bài</div>
+    <div class="font-mono text-4xl font-bold tracking-[.3em] text-indigo-700 mt-1">${esc(data.code)}</div></div>
+    <div class="mt-4 text-xs text-slate-500">Link cho học sinh</div>
+    <input readonly value="${esc(link)}" onclick="this.select()" class="w-full border rounded-lg p-2 text-sm bg-slate-50">
+    <p class="text-xs text-slate-500 mt-2">Học sinh đăng nhập tài khoản ở Trang chủ học sinh, mở tab “Bài được giao” và nhập mã, hoặc bấm thẳng vào link.</p>
+    <div class="flex justify-end gap-2 mt-5"><button onclick="copyAsgNew('${esc(data.code)}')" class="px-4 py-2 rounded-lg border text-sm hover:bg-slate-50">Sao chép mã + link</button>
+    <button onclick="closeModal()" class="px-5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium">Xong</button></div>`);
+}
+async function copyAsgNew(code) { toast(await copyText(`Mã giao bài: ${code}\nLink làm bài: ${asgLink(code)}`) ? 'Đã sao chép mã và link giao bài' : 'Không sao chép được'); }
+
+/* ---- Báo cáo ---- */
+async function openAsgReport(id) {
+  openModal('<p class="text-sm text-slate-500">Đang tính báo cáo…</p>', true);
+  const { data, error } = await db.rpc('assignment_report', { p_id: id });
+  if (error) return openModal(`<p class="text-sm text-red-600">${esc(ASG_ERR(error))}</p><div class="text-right mt-4"><button onclick="closeModal()" class="px-4 py-2 rounded-lg border text-sm">Đóng</button></div>`);
+  asgRep = data; asgSort = 'name'; renderAsgReport();
+}
+const TYPE_VN = { multiple_choice: 'TN', true_false: 'Đ/S', short_answer: 'TLN', essay: 'Tự luận' };
+function sortedStudents() {
+  const l = [...(asgRep.students || [])];
+  if (asgSort === 'high') l.sort((a, b) => (b.best_score ?? -1) - (a.best_score ?? -1));
+  else if (asgSort === 'low') l.sort((a, b) => (a.best_score ?? 99) - (b.best_score ?? 99));
+  return l;
+}
+function renderAsgReport() {
+  const { assignment: a, summary: s0, students, questions } = asgRep, s = s0 || {}, n = s.students || 0;
+  const card = (t, v, sub, cls = '') => `<div class="rounded-xl border p-3"><div class="text-xs text-slate-500">${t}</div><div class="text-2xl font-bold mt-0.5 ${cls}">${v}</div><div class="text-[11px] text-slate-400">${sub || '&nbsp;'}</div></div>`;
+  const dist = [['≥ 8,0', s.ge8, 'bg-emerald-500'], ['6,5 – 7,9', s.ge65, 'bg-sky-500'], ['5,0 – 6,4', s.ge5, 'bg-amber-500'], ['< 5,0', s.lt5, 'bg-rose-500']];
+  const mx = Math.max(1, ...dist.map(d => d[1] || 0));
+  const hardest = questions.filter(q => q.type !== 'essay' && n).map(q => ({ q, p: q.n_right / n })).sort((x, y) => x.p - y.p).slice(0, 3).filter(x => x.p < 0.5);
+  openModal(`
+    <div class="flex flex-wrap items-start gap-2">
+      <div class="min-w-0"><h3 class="font-bold text-lg truncate">${esc(a.title)}</h3>
+        <div class="text-xs text-slate-500">Mã <b class="font-mono tracking-widest text-indigo-700">${esc(a.code)}</b> · ${a.total} câu · ${a.minutes} phút · ${a.max_attempts ? a.max_attempts + ' lần' : 'không giới hạn lần'} · ${a.deadline ? 'hạn ' + fmtDT(a.deadline) : 'không giới hạn hạn nộp'} · <span class="font-semibold">${(ST[a.state] || ST.closed)[0]}</span></div></div>
+      <div class="ml-auto flex gap-2"><button onclick="exportAsgCsv()" class="px-3 py-1.5 rounded-lg border text-sm hover:bg-slate-50">⬇ Xuất CSV</button>
+        <button onclick="closeModal()" class="px-3 py-1.5 rounded-lg border text-sm hover:bg-slate-50">Đóng</button></div></div>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+      ${card('Học sinh đã nộp', nf(n), `${nf(asgRep.total_attempts)} lượt nộp${asgRep.in_progress ? ` · ${asgRep.in_progress} đang làm` : ''}`)}
+      ${card('Điểm trung bình', scoreTxt(s.avg), 'tính trên bài tốt nhất mỗi em', 'text-indigo-700')}
+      ${card('Cao nhất / Thấp nhất', `${scoreTxt(s.max)} / ${scoreTxt(s.min)}`, '')}
+      ${card('Thời gian làm TB', s.avg_time == null ? '–' : fmtDur(s.avg_time), s.late ? `${s.late} em nộp muộn` : 'không có bài nộp muộn')}
+    </div>
+
+    ${n ? `<div class="grid md:grid-cols-2 gap-4 mt-4">
+      <div class="rounded-xl border p-3"><div class="text-sm font-semibold mb-2">Phân bố điểm</div>
+        ${dist.map(([l, c, col]) => `<div class="flex items-center gap-2 text-xs mb-1.5"><span class="w-16 shrink-0 text-slate-600">${l}</span><div class="flex-1 h-4 rounded bg-slate-100"><div class="h-4 rounded ${col}" style="width:${(c || 0) / mx * 100}%"></div></div><span class="w-14 text-right">${c || 0} em (${Math.round((c || 0) / n * 100)}%)</span></div>`).join('')}</div>
+      <div class="rounded-xl border p-3"><div class="text-sm font-semibold mb-2">Câu hỏi cần chữa kỹ</div>
+        ${hardest.length ? hardest.map(({ q, p }) => `<div class="text-xs mb-2"><span class="font-semibold text-rose-600">Câu ${q.no}</span> · chỉ ${Math.round(p * 100)}% làm đúng <span class="text-slate-400">(${TYPE_VN[q.type] || ''})</span><div class="text-slate-500 truncate">${esc(q.content)}</div></div>`).join('')
+          : '<p class="text-xs text-slate-400">Chưa có câu nào có tỉ lệ đúng dưới 50%.</p>'}</div></div>` : ''}
+
+    <div class="mt-5 flex flex-wrap items-center gap-2"><h4 class="font-semibold">Danh sách học sinh</h4>
+      <select onchange="asgSort = this.value; renderAsgReport()" class="ml-auto border rounded-lg p-1.5 text-xs">
+        <option value="name" ${asgSort === 'name' ? 'selected' : ''}>Sắp xếp: Lớp, tên</option><option value="high" ${asgSort === 'high' ? 'selected' : ''}>Điểm cao → thấp</option><option value="low" ${asgSort === 'low' ? 'selected' : ''}>Điểm thấp → cao</option></select></div>
+    <div class="overflow-x-auto mt-2 border rounded-xl"><table class="w-full text-sm"><thead class="bg-slate-50 text-slate-500 text-left"><tr>
+      <th class="p-2.5 font-medium">#</th><th class="p-2.5 font-medium">Họ tên</th><th class="p-2.5 font-medium">Mã HS</th><th class="p-2.5 font-medium">Lớp</th>
+      <th class="p-2.5 font-medium text-right">Điểm cao nhất</th><th class="p-2.5 font-medium text-right">Số lần</th><th class="p-2.5 font-medium text-right">Đúng/Tự động</th>
+      <th class="p-2.5 font-medium text-right">Thời gian</th><th class="p-2.5 font-medium">Nộp lúc</th><th class="p-2.5 font-medium"></th></tr></thead><tbody>
+      ${students.length ? sortedStudents().map((r, i) => `<tr class="border-t hover:bg-slate-50"><td class="p-2.5 text-slate-400">${i + 1}</td>
+        <td class="p-2.5 font-medium">${esc(r.name || '(chưa có tên)')}</td><td class="p-2.5">${esc(r.code || '')}</td><td class="p-2.5">${esc(r.class || '')}</td>
+        <td class="p-2.5 text-right font-bold ${r.best_score >= 8 ? 'text-emerald-600' : r.best_score >= 5 ? 'text-slate-800' : 'text-rose-600'}">${scoreTxt(r.best_score)}</td>
+        <td class="p-2.5 text-right">${r.attempts}${r.attempts > 1 ? `<span class="text-xs text-slate-400"> (lần cuối ${scoreTxt(r.last_score)})</span>` : ''}</td>
+        <td class="p-2.5 text-right">${r.right}/${r.auto_total}</td><td class="p-2.5 text-right whitespace-nowrap">${fmtDur(r.time_spent)}</td>
+        <td class="p-2.5 whitespace-nowrap text-slate-500">${fmtDT(r.submitted_at)}${r.late ? ' <span class="text-[11px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800">muộn</span>' : ''}</td>
+        <td class="p-2.5 text-right"><button onclick="openAttempt(${r.attempt_id})" class="px-2 py-1 rounded-lg border text-xs hover:bg-indigo-50 text-indigo-700">Xem bài</button></td></tr>`).join('')
+        : '<tr><td colspan="10" class="p-6 text-center text-slate-400">Chưa có học sinh nào nộp bài.</td></tr>'}</tbody></table></div>
+
+    <h4 class="font-semibold mt-5">Thống kê từng câu <span class="text-xs font-normal text-slate-400">(theo thứ tự trong bài, tính trên bài tốt nhất của mỗi học sinh)</span></h4>
+    <div class="overflow-x-auto mt-2 border rounded-xl"><table class="w-full text-sm"><thead class="bg-slate-50 text-slate-500 text-left"><tr>
+      <th class="p-2.5 font-medium">Câu</th><th class="p-2.5 font-medium">Dạng</th><th class="p-2.5 font-medium">Nội dung</th><th class="p-2.5 font-medium">Đáp án</th>
+      <th class="p-2.5 font-medium w-48">Tỉ lệ làm đúng</th><th class="p-2.5 font-medium text-right">Đúng</th><th class="p-2.5 font-medium text-right">Một phần</th><th class="p-2.5 font-medium text-right">Sai</th><th class="p-2.5 font-medium text-right">Bỏ trống</th></tr></thead><tbody>
+      ${questions.map(q => { const es = q.type === 'essay', p = n && !es ? q.n_right / n : null;
+        return `<tr class="border-t"><td class="p-2.5 font-semibold">${q.no}</td><td class="p-2.5">${TYPE_VN[q.type] || ''}</td>
+          <td class="p-2.5 max-w-[22rem]"><div class="truncate" title="${esc(q.content)}">${esc(q.content)}</div><div class="text-[11px] text-slate-400">${esc(q.chapter || '')}</div></td>
+          <td class="p-2.5 whitespace-nowrap">${es ? '–' : esc(q.correct_answer ?? '')}</td>
+          <td class="p-2.5">${es ? '<span class="text-xs text-slate-400">Tự luận: giáo viên chấm</span>' : p == null ? '–' : `<div class="flex items-center gap-2"><div class="flex-1 h-2 rounded bg-slate-100"><div class="h-2 rounded ${p < .4 ? 'bg-rose-500' : p < .7 ? 'bg-amber-500' : 'bg-emerald-500'}" style="width:${p * 100}%"></div></div><span class="w-9 text-right text-xs font-semibold">${Math.round(p * 100)}%</span></div>`}</td>
+          <td class="p-2.5 text-right">${q.n_right}</td><td class="p-2.5 text-right">${q.n_partial || ''}</td><td class="p-2.5 text-right">${q.n_wrong}</td><td class="p-2.5 text-right">${es ? q.n_essay + ' bài' : q.n_blank}</td></tr>`; }).join('')}
+      </tbody></table></div>`, true);
+}
+function exportAsgCsv() {
+  const { assignment: a, students } = asgRep;
+  const c = v => { v = String(v ?? ''); return /[",\n;]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  const rows = [['STT', 'Họ tên', 'Mã HS', 'Lớp', 'Điểm cao nhất', 'Số lần làm', 'Điểm lần cuối', 'Số câu đúng', 'Số câu chấm tự động', 'Thời gian (giây)', 'Nộp lúc', 'Nộp muộn']];
+  sortedStudents().forEach((r, i) => rows.push([i + 1, r.name, r.code, r.class, r.best_score, r.attempts, r.last_score, r.right, r.auto_total, r.time_spent, r.submitted_at ? new Date(r.submitted_at).toLocaleString('vi-VN', { hour12: false }) : '', r.late ? 'có' : '']));
+  const blob = new Blob(['﻿' + rows.map(r => r.map(c).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const el = document.createElement('a'); el.href = URL.createObjectURL(blob); el.download = `bao-cao-${a.code}.csv`; document.body.appendChild(el); el.click(); el.remove();
+  setTimeout(() => URL.revokeObjectURL(el.href), 2000);
+}
+
+/* ---- Xem bài làm của 1 học sinh ---- */
+const fmtAns = (q, a) => {
+  if (a == null || a === '') return '<i class="text-slate-400">để trống</i>';
+  if (q.question_type === 'true_false') return ['a', 'b', 'c', 'd'].map(k => `${k}-${a[k] || '?'}`).join('  ');
+  return `<span class="whitespace-pre-wrap">${esc(a)}</span>`;
+};
+async function openAttempt(id) {
+  const back = `<button onclick="renderAsgReport()" class="px-3 py-1.5 rounded-lg border text-sm hover:bg-slate-50">← Quay lại báo cáo</button>`;
+  openModal('<p class="text-sm text-slate-500">Đang tải bài làm…</p>', true);
+  const { data, error } = await db.rpc('assignment_attempt_detail', { p_attempt: id });
+  if (error) return openModal(`<p class="text-sm text-red-600">${esc(error.message)}</p><div class="mt-4">${back}</div>`, true);
+  const LB = { right: ['Đúng', 'text-emerald-600'], wrong: ['Sai', 'text-rose-600'], partial: ['Một phần', 'text-amber-600'], essay: ['Tự luận', 'text-sky-600'], blank: ['Trống', 'text-slate-400'] };
+  const per = data.per || {}, ans = data.answers || {};
+  openModal(`<div class="flex flex-wrap items-center gap-2"><div><h3 class="font-bold text-lg">${esc(data.name || '(chưa có tên)')} <span class="text-sm font-normal text-slate-500">${esc(data.code || '')} ${data.class ? '· ' + esc(data.class) : ''}</span></h3>
+      <div class="text-xs text-slate-500">${esc(data.title)} · điểm <b>${scoreTxt(data.score)}</b> · nộp ${fmtDT(data.submitted_at)}</div></div><div class="ml-auto">${back}</div></div>
+    <div class="overflow-x-auto mt-3 border rounded-xl"><table class="w-full text-sm"><thead class="bg-slate-50 text-slate-500 text-left"><tr><th class="p-2.5 font-medium">Câu</th><th class="p-2.5 font-medium">Dạng</th><th class="p-2.5 font-medium">Nội dung</th><th class="p-2.5 font-medium">Học sinh chọn</th><th class="p-2.5 font-medium">Đáp án</th><th class="p-2.5 font-medium">Kết quả</th></tr></thead><tbody>
+    ${(data.questions || []).map((q, i) => { const s = (per[q.id] || {}).s || (ans[q.id] == null ? 'blank' : 'essay'), lb = LB[s] || LB.blank;
+      return `<tr class="border-t align-top"><td class="p-2.5 font-semibold">${i + 1}</td><td class="p-2.5">${TYPE_VN[q.question_type] || ''}</td>
+        <td class="p-2.5 max-w-[20rem]"><div class="line-clamp-3 break-words">${esc(String(q.content || '').slice(0, 200))}</div></td>
+        <td class="p-2.5 max-w-[18rem] break-words">${fmtAns(q, ans[q.id])}</td>
+        <td class="p-2.5">${q.question_type === 'essay' ? '<span class="text-xs text-slate-400">xem hướng dẫn chấm trong ngân hàng</span>' : esc(q.correct_answer ?? '')}</td>
+        <td class="p-2.5 font-semibold whitespace-nowrap ${lb[1]}">${lb[0]}</td></tr>`; }).join('')}</tbody></table></div>`, true);
+}
+
 /* ------------------ Cài đặt ------------------ */
-const LINK_LABELS = { bank: 'Ngân hàng câu hỏi & Nhập liệu', matrix: 'Ma trận đề kiểm tra (trang tạo đề, trộn đề)', room: 'Phòng thi trực tuyến (exam_room)', community: 'Kho học liệu cộng đồng' };
+const LINK_LABELS = { bank: 'Ngân hàng câu hỏi & Nhập liệu', matrix: 'Ma trận đề kiểm tra (trang tạo đề, trộn đề)', room: 'Phòng thi trực tuyến (exam_room)', community: 'Kho học liệu cộng đồng', exam: 'Trang làm bài của học sinh (exam.html) — dùng cho link giao bài' };
 function openSettings() {
   openModal(`<h3 class="font-bold text-lg">Cài đặt tài khoản & liên kết</h3>
     <p class="text-xs text-slate-500 mb-3">Đăng nhập: ${esc(user.email)}</p>
@@ -407,12 +670,46 @@ function saveSettings() {
   closeModal(); renderChrome(); renderExams(null); toast('Đã lưu cài đặt');
 }
 
-function openModal(html) { $('modalBody').innerHTML = html; $('modal').classList.remove('hidden'); $('modal').classList.add('flex'); }
+function openModal(html, wide) { $('modalBody').className = 'bg-white rounded-2xl shadow-xl w-full my-10 p-6 ' + (wide ? 'max-w-5xl' : 'max-w-lg'); $('modalBody').innerHTML = html; $('modal').classList.remove('hidden'); $('modal').classList.add('flex'); }
 function closeModal() { $('modal').classList.add('hidden'); $('modal').classList.remove('flex'); }
 $('modal').addEventListener('mousedown', e => { if (e.target.id === 'modal') closeModal(); });
 
 db.auth.onAuthStateChange((_e, s) => setUser(s?.user || null));
 db.auth.getSession().then(({ data }) => setUser(data.session?.user || null));
+/* ===== Khu vực GIÁO VIÊN: chặn tài khoản HỌC SINH =====
+   Giao diện chỉ là lớp chắn cho dễ hiểu; quyền thật vẫn do chính sách RLS (student_setup.sql) quyết định ở máy chủ. */
+(function guardStudent() {
+  const STUDENT_HOME = 'student_home.html';
+  let lastId = null, ov = null;
+  function overlay(on, email) {
+    if (!on) { if (ov) { ov.remove(); ov = null; document.body.style.overflow = ''; } return; }
+    if (ov) return;
+    ov = document.createElement('div');
+    ov.setAttribute('role', 'alertdialog');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:2147483000;background:rgba(30,27,75,.92);display:flex;align-items:center;justify-content:center;padding:16px;font-family:system-ui,sans-serif';
+    ov.innerHTML = '<div style="background:#fff;max-width:420px;width:100%;border-radius:20px;padding:28px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.4)">'
+      + '<div style="font-size:44px">🔒</div>'
+      + '<h2 style="margin:8px 0 6px;font-size:20px;font-weight:800;color:#1e1b4b">Khu vực dành cho giáo viên</h2>'
+      + '<p style="margin:0 0 4px;color:#475569;font-size:14px;line-height:1.5">Tài khoản <b></b> là tài khoản học sinh nên không được soạn đề hay quản lý phòng thi.</p>'
+      + '<p style="margin:0 0 18px;color:#64748b;font-size:13px">Nếu bạn là giáo viên, hãy đăng xuất rồi đăng nhập bằng tài khoản giáo viên.</p>'
+      + '<a href="' + STUDENT_HOME + '" style="display:block;background:#4f46e5;color:#fff;font-weight:700;padding:12px;border-radius:12px;text-decoration:none;margin-bottom:8px">Về trang học sinh</a>'
+      + '<button type="button" style="width:100%;background:#fff;color:#4f46e5;border:2px solid #c7d2fe;font-weight:700;padding:10px;border-radius:12px;cursor:pointer">Đăng xuất</button></div>';
+    ov.querySelector('b').textContent = email || '';
+    ov.querySelector('button').onclick = () => db.auth.signOut();
+    document.body.appendChild(ov); document.body.style.overflow = 'hidden';
+  }
+  async function check(session) {
+    const u = session?.user || null;
+    if ((u?.id || null) === lastId) return;
+    lastId = u?.id || null;
+    if (!u) return overlay(false);
+    const { data, error } = await db.rpc('is_student');          // chưa chạy student_setup.sql → lỗi → coi như không phải học sinh
+    if (lastId !== u.id) return;
+    overlay(!error && data === true, u.email);
+  }
+  db.auth.getSession().then(({ data }) => check(data.session));
+  db.auth.onAuthStateChange((_e, s) => setTimeout(() => check(s), 0));   // setTimeout: tránh gọi Supabase ngay trong callback
+})();
 </script>
 </body>
 </html>

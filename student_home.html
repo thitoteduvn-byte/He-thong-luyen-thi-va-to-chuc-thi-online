@@ -150,6 +150,23 @@ Chạy 1 lần trong Supabase → SQL Editor, THEO THỨ TỰ:  exam_room_setup.
       </div>
     </section>
 
+    <!-- Bài tập được giao -->
+    <section id="paneHomework" class="hidden space-y-4">
+      <div class="bg-white rounded-2xl shadow-sm border p-6 space-y-3">
+        <h1 class="text-xl font-bold">📚 Làm bài được giao</h1>
+        <p class="text-sm text-slate-600">Nhập <b>mã giao bài</b> (6 ký tự) giáo viên gửi, hoặc dán cả link bài giao. Bài được làm trên màn hình luyện tập, kết quả tự lưu cho giáo viên theo dõi.</p>
+        <div class="flex flex-wrap gap-2">
+          <input id="hwCode" autocomplete="off" maxlength="200" placeholder="Mã giao bài, ví dụ K7M2QX" onkeydown="if (event.key === 'Enter') goHw()" class="flex-1 basis-56 border rounded-lg p-2 font-semibold uppercase tracking-widest">
+          <button onclick="goHw()" class="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-5 py-2.5 font-semibold">Mở bài →</button>
+        </div>
+        <div id="hwMsg" class="hidden text-sm rounded-lg px-3 py-2 bg-red-100 text-red-700" role="alert"></div>
+      </div>
+      <div class="bg-white rounded-2xl shadow-sm border p-4">
+        <h2 class="font-semibold mb-1">Các bài giao bạn đã mở</h2>
+        <div id="hwList" class="divide-y"></div>
+      </div>
+    </section>
+
     <!-- Phòng thi -->
     <section id="paneRooms" class="hidden space-y-4">
       <div class="bg-white rounded-2xl shadow-sm border p-6 space-y-3">
@@ -229,8 +246,8 @@ const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
 const lsDel = k => { try { localStorage.removeItem(k); } catch (e) {} };
 
 const S = { user: null, profile: null, practice: [], rooms: [], items: [], tab: 'home', authMode: 'login', routeSeq: 0, authReady: false,
-            hist: { page: 0 }, trendTable: false };
-const TABS = [['home', '🏠 Tổng quan'], ['practice', '📝 Luyện thi'], ['rooms', '🏫 Phòng thi'], ['history', '📊 Lịch sử & kết quả']];
+            hist: { page: 0 }, trendTable: false, hw: [] };
+const TABS = [['home', '🏠 Tổng quan'], ['practice', '📝 Luyện thi'], ['homework', '📚 Bài được giao'], ['rooms', '🏫 Phòng thi'], ['history', '📊 Lịch sử & kết quả']];
 
 // ---------- Tiện ích ----------
 let toastTimer = null;
@@ -251,7 +268,7 @@ function fmtDur(sec) {
 const scoreColor = n => n == null ? 'text-slate-400' : n >= 8 ? 'text-emerald-600' : n >= 5 ? 'text-indigo-600' : 'text-rose-600';
 const examUrl = (q = '') => LINKS.exam + (q ? '?' + q : '');
 document.querySelectorAll('.examLink').forEach(a => a.href = LINKS.exam);
-const errText = e => /student_profiles|is_student|student_register|practice_attempts|my_room_results|schema cache|does not exist|Could not find the function/i.test(e?.message || '')
+const errText = e => /student_profiles|is_student|student_register|practice_attempts|my_room_results|my_assignments|schema cache|does not exist|Could not find the function/i.test(e?.message || '')
   ? 'Chưa cài đặt cơ sở dữ liệu cho học sinh: hãy chạy exam_room_setup.sql rồi student_setup.sql trong Supabase → SQL Editor. (' + e.message + ')' : (e?.message || String(e));
 
 // Tooltip dùng chung cho biểu đồ
@@ -345,6 +362,8 @@ async function route(user, force) {
   if (seq !== S.routeSeq) return;
   S.profile = p || { full_name: user.email, student_code: '', class_name: '' };
   renderHeader(); show('viewApp');
+  const hwc = new URLSearchParams(location.search).get('hw');           // link giao bài: đăng nhập xong chuyển thẳng vào bài
+  if (hwc && /^[A-Za-z0-9]{4,12}$/.test(hwc)) { location.replace(examUrl('hw=' + encodeURIComponent(hwc))); return; }
   const t = new URLSearchParams(location.search).get('tab');
   setTab(TABS.some(x => x[0] === t) ? t : (force ? 'home' : S.tab));
   await loadData();
@@ -385,10 +404,11 @@ function setTab(t) {
 // ---------- Dữ liệu ----------
 async function loadData() {
   box('loadErr');
-  const [p, r] = await Promise.all([
+  const [p, r, h] = await Promise.all([
     db.from('practice_attempts').select('id, title, grade, subject, chapters, total, auto_total, right_count, answered, score, duration_seconds, created_at').order('created_at', { ascending: false }).limit(500),
-    db.rpc('my_room_results')]);
-  const errs = [p.error, r.error].filter(Boolean);
+    db.rpc('my_room_results'), db.rpc('my_assignments')]);
+  const errs = [p.error, r.error].filter(Boolean);        // lỗi my_assignments (chưa chạy assignment_setup.sql) không chặn các phần còn lại
+  S.hw = Array.isArray(h.data) ? h.data : [];
   if (errs.length) { $('loadErr').className = 'text-sm rounded-lg px-3 py-2 bg-red-100 text-red-700'; $('loadErr').textContent = errText(errs[0]); }
   S.practice = p.data || []; S.rooms = Array.isArray(r.data) ? r.data : [];
   S.items = [
@@ -406,7 +426,7 @@ async function loadData() {
 const reloadData = async () => { await loadData(); toast('Đã cập nhật số liệu.'); };
 const doneItems = () => S.items.filter(i => i.status === 'done');
 
-function renderAll() { renderStats(); renderTrend(); renderSubjects(); renderRecent(); renderDoing(); renderPractice(); renderRooms(); fillSubjectFilter(); renderHistory(); }
+function renderAll() { renderHw(); renderStats(); renderTrend(); renderSubjects(); renderRecent(); renderDoing(); renderPractice(); renderRooms(); fillSubjectFilter(); renderHistory(); }
 
 // ---------- Hàng một bài làm (dùng ở nhiều nơi) ----------
 function rowHtml(i) {
@@ -490,6 +510,33 @@ function renderSubjects() {
 // ---------- Luyện thi / Phòng thi ----------
 function renderPractice() { const l = S.items.filter(i => i.kind === 'P').slice(0, 8); $('practiceList').innerHTML = l.length ? l.map(rowHtml).join('') : emptyBox('Chưa có bài luyện tập nào được lưu.'); }
 function renderRooms() { const l = S.items.filter(i => i.kind === 'R'); $('roomList').innerHTML = l.length ? l.map(rowHtml).join('') : emptyBox('Bạn chưa tham gia phòng thi nào.'); }
+// ---------- Bài được giao ----------
+function hwMsg(t) { const el = $('hwMsg'); el.textContent = t || ''; el.classList.toggle('hidden', !t); }
+function goHw() {
+  let v = $('hwCode').value.trim(), m = v.match(/[?&]hw=([A-Za-z0-9]+)/i);
+  if (m) v = m[1];
+  v = v.toUpperCase();
+  if (!/^[A-Z0-9]{4,12}$/.test(v)) return hwMsg('Mã giao bài gồm chữ và số, không dấu (ví dụ K7M2QX).');
+  hwMsg(''); location.href = examUrl('hw=' + encodeURIComponent(v));
+}
+function renderHw() {
+  const l = S.hw || [];
+  $('hwList').innerHTML = l.length ? l.map(a => {
+    const open = a.state === 'open';
+    const st = a.in_progress ? '<span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800">Đang làm dở</span>'
+      : open ? '<span class="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">Đang mở</span>'
+      : `<span class="px-2 py-0.5 rounded bg-slate-200 text-slate-700">${a.state === 'ended' ? 'Hết hạn' : 'Đã đóng'}</span>`;
+    const meta = [a.subject, a.grade && 'Lớp ' + a.grade, a.total + ' câu', a.deadline ? 'Hạn: ' + fmtDT(a.deadline) : 'Không giới hạn hạn nộp',
+      `Đã làm ${a.attempts}${a.max_attempts ? '/' + a.max_attempts : ''} lần`].filter(Boolean).join(' · ');
+    const redo = open || a.in_progress ? `<a class="px-3 py-1 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700" href="${esc(examUrl('hw=' + encodeURIComponent(a.code)))}">${a.in_progress ? 'Làm tiếp' : 'Mở bài'}</a>` : '';
+    const rev = a.attempts && a.show_key && a.best_attempt ? `<a class="px-3 py-1 rounded-lg bg-slate-100 hover:bg-slate-200" href="${esc(examUrl('review=H' + a.best_attempt))}">Xem lại</a>` : '';
+    return `<div class="py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div class="min-w-0 flex-1 basis-60"><div class="flex flex-wrap items-center gap-1.5 text-xs"><span class="px-2 py-0.5 rounded bg-violet-50 text-violet-700">Bài giao · ${esc(a.code)}</span>${st}</div>
+        <div class="font-medium mt-1 truncate" title="${esc(a.title)}">${esc(a.title)}</div><div class="text-xs text-slate-500">${esc(meta)}</div></div>
+      <div class="text-right min-w-[5.5rem]">${a.best == null ? '<div class="text-sm text-slate-500">Chưa nộp bài</div>' : `<div class="text-xl font-bold ${scoreColor(+a.best)}">${fmtScore(a.best)}</div><div class="text-[11px] text-slate-500">điểm cao nhất</div>`}</div>
+      <div class="flex items-center gap-1 text-sm">${redo}${rev}</div></div>`;
+  }).join('') : emptyBox('Bạn chưa mở bài giao nào. Nhập mã giao bài ở trên để bắt đầu.');
+}
 function parseJoinLink() {
   const v = $('jLink').value.trim(); if (!v) return;
   let room = '', shift = '';

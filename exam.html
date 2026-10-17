@@ -42,6 +42,19 @@
     </div>
   </section>
 
+  <!-- ============ 0b. MÀN HÌNH BÀI ĐƯỢC GIAO (exam.html?hw=MA_GIAO_BAI) ============ -->
+  <section id="screenHw" class="hidden max-w-md mx-auto mt-12 bg-white p-6 rounded-xl shadow space-y-4">
+    <div class="text-center space-y-1">
+      <div class="text-xs uppercase tracking-wide text-violet-600 font-semibold">Bài tập được giao</div>
+      <h1 id="hTitle" class="text-2xl font-bold">Đang tải...</h1>
+      <p id="hSub" class="text-sm text-slate-500"></p>
+    </div>
+    <div id="hInfo" class="hidden rounded-lg bg-slate-50 border border-slate-200 px-4 py-3 text-sm space-y-1"></div>
+    <div id="hMsg" class="hidden text-sm rounded-lg px-3 py-2"></div>
+    <button id="hBtn" onclick="startHw()" class="hidden w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg font-semibold disabled:opacity-50">Bắt đầu làm bài</button>
+    <div class="text-center text-sm"><a href="student_home.html" class="homeLink text-indigo-600 hover:underline font-medium">← Trang chủ học sinh</a></div>
+  </section>
+
   <!-- ============ 1. MÀN HÌNH CHỌN ĐỀ ============ -->
   <section id="screenStart" class="max-w-md mx-auto mt-12 bg-white p-6 rounded-xl shadow space-y-4">
     <div class="text-center space-y-1">
@@ -218,7 +231,7 @@ const partOf = i => parts.find(p => i >= p.from && i <= p.to);
 
 function screen(name) {
   if (name !== 'Result') reportOn = false;                 // báo lỗi chỉ tồn tại ở màn hình chữa bài / xem lại
-  ['Join', 'Start', 'Exam', 'Result'].forEach(n => $('screen' + n).classList.toggle('hidden', n !== name));
+  ['Join', 'Hw', 'Start', 'Exam', 'Result'].forEach(n => $('screen' + n).classList.toggle('hidden', n !== name));
   window.scrollTo(0, 0);
 }
 
@@ -524,6 +537,7 @@ const S_BORDER = { right: 'border-green-500', wrong: 'border-red-500', partial: 
 
 function submitExam(auto) {
   if (ROOM_MODE) return submitRoom(auto);          // chế độ phòng thi: nộp lên máy chủ
+  if (HW_MODE) return submitHw(auto);              // bài được giao: nộp lên máy chủ
   const res = questions.map((q, i) => gradeQ(q, answers[i]));
   const blank = res.filter(r => r.s === 'blank').length;
   if (!auto && blank > 0 && !confirm(`Bạn còn ${blank} câu chưa trả lời. Vẫn nộp bài?`)) return;
@@ -628,7 +642,10 @@ const bkKey = () => `exam_room:${ROOM}:${SHIFT}:${(sess?.student.code || '').toL
 const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
 const lsDel = k => { try { localStorage.removeItem(k); } catch (e) {} };
-function saveBackup() { if (ROOM_MODE && sess) lsSet(bkKey(), JSON.stringify({ rid: sess.result_id, a: answers })); }   // phòng khi F5 / mất mạng
+function saveBackup() {                                                                                                  // phòng khi F5 / mất mạng
+  if (ROOM_MODE && sess) lsSet(bkKey(), JSON.stringify({ rid: sess.result_id, a: answers }));
+  else if (HW_MODE && hw) lsSet(hwBk(), JSON.stringify({ rid: hw.attempt_id, a: answers }));
+}
 
 function jMsg(text, kind) {
   const el = $('jMsg'); el.textContent = text || '';
@@ -868,7 +885,7 @@ async function loadReview() {
   $('againBtn').classList.add('hidden'); $('homeBar').classList.add('hidden');
   const u = await getUser();
   if (!u) return fail('Bạn cần đăng nhập ở trang chủ học sinh để xem lại bài làm.');
-  if (!id || !'PR'.includes(kind || '-')) return fail('Đường dẫn xem lại không hợp lệ.');
+  if (!id || !'PRH'.includes(kind || '-')) return fail('Đường dẫn xem lại không hợp lệ.');
   let qs, ans, per = null, title, score, vio = 0;
   if (kind === 'P') {
     const { data: a, error } = await db.from('practice_attempts').select('title, score, question_ids, answers, duration_seconds').eq('id', id).maybeSingle();
@@ -879,7 +896,7 @@ async function loadReview() {
     ans = a.answers || {}; title = a.title; score = a.score;
     if (qs.length < a.question_ids.length) pracMissing = a.question_ids.length - qs.length;
   } else {
-    const { data, error } = await db.rpc('my_room_review', { p_result: id });
+    const { data, error } = kind === 'H' ? await db.rpc('assignment_review', { p_attempt: id }) : await db.rpc('my_room_review', { p_result: id });
     if (error) return fail(error.message);
     qs = data.questions; ans = data.answers || {}; per = data.per || {}; title = data.title; score = data.score; vio = data.violations || 0;
   }
@@ -902,9 +919,122 @@ async function loadReview() {
     (pracMissing ? `<p>${pracMissing} câu hỏi của bài này không còn trong ngân hàng nên không hiển thị.</p>` : '');
   $('resultNav').innerHTML = res.map((r, i) => `<a href="#rq${i}" class="h-8 rounded text-xs font-semibold flex items-center justify-center text-white ${S_BG[r.s]}">${i + 1}</a>`).join('');
   ['resultNav', 'review', 'wrongBtn'].forEach(x => $(x).classList.remove('hidden'));
-  window._res = res; onlyWrong = false; reportOn = true; renderReview(); screen('Result');
+  window._res = res; onlyWrong = false; reportOn = kind !== 'H'; renderReview(); screen('Result');     // báo lỗi câu hỏi chưa áp dụng cho bài giao
 }
 let pracMissing = 0;
+
+// =====================================================================
+// CHẾ ĐỘ BÀI ĐƯỢC GIAO:  exam.html?hw=MA_GIAO_BAI   (cần tài khoản học sinh, assignment_setup.sql)
+// Dùng đúng màn hình làm bài của phần luyện tập. Đề CỐ ĐỊNH (không trộn) nên mọi học sinh có cùng số thứ tự câu.
+// Máy chủ chấm điểm; đáp án + lời giải chỉ gửi sau khi nộp và khi giáo viên cho phép.
+// =====================================================================
+const HW = (QS.get('hw') || '').trim().toUpperCase();
+const HW_MODE = !!HW && !ROOM_MODE && !REVIEW;
+let hw = null, hwStarting = false, hwInfo = null;
+const hwBk = () => `hw:${HW}:${hw?.attempt_id || ''}`;
+function hMsg(text, kind) {
+  const el = $('hMsg'); el.textContent = text || '';
+  el.className = text ? 'text-sm rounded-lg px-3 py-2 ' + ({ err: 'bg-red-100 text-red-700', warn: 'bg-amber-100 text-amber-800', ok: 'bg-green-100 text-green-700' }[kind] || 'bg-slate-100') : 'hidden';
+}
+async function loadHw() {
+  screen('Hw'); $('homeBar').classList.add('hidden');
+  const fail = (t, m) => { $('hTitle').textContent = t; $('hInfo').classList.add('hidden'); $('hBtn').classList.add('hidden'); hMsg(m, 'err'); };
+  if (!/^[A-Z0-9]{4,12}$/.test(HW)) return fail('Mã giao bài không hợp lệ', 'Mã gồm chữ và số, không dấu (ví dụ K7M2QX).');
+  const u = await getUser();
+  if (!u) return fail('Cần đăng nhập', 'Hãy đăng nhập tài khoản học sinh để làm bài được giao. Bài làm sẽ được ghi nhận theo tên và mã học sinh của bạn.'),
+    $('hMsg').insertAdjacentHTML('beforeend', ` <a class="underline font-semibold" href="${escA(HOME_URL + '?hw=' + encodeURIComponent(HW))}">Đăng nhập tại trang chủ học sinh →</a>`);
+  const { data, error } = await db.rpc('assignment_info', { p_code: HW });
+  if (error) return fail('Không mở được bài', /assignment_info|schema cache|Could not find the function/i.test(error.message) ? 'Chưa cài đặt tính năng giao bài: cần chạy assignment_setup.sql trong Supabase.' : error.message);
+  hwInfo = data; clockOff = Date.parse(data.server_now) - Date.now();
+  document.title = data.title;
+  $('hTitle').textContent = data.title;
+  $('hSub').textContent = [data.subject, data.grade && 'Lớp ' + data.grade].filter(Boolean).join(' · ');
+  const left = data.max_attempts ? Math.max(0, data.max_attempts - data.my_attempts) : null;
+  $('hInfo').classList.remove('hidden');
+  $('hInfo').innerHTML = `<div>Số câu: <b>${data.total}</b> · Thời gian làm bài: <b>${data.minutes}</b> phút</div>
+    <div>Hạn nộp: <b>${data.deadline ? fmtDT(data.deadline) : 'không giới hạn'}</b></div>
+    <div>Số lần làm: <b>${data.max_attempts ? data.max_attempts : 'không giới hạn'}</b>${data.my_attempts ? ` · bạn đã làm <b>${data.my_attempts}</b> lần${data.my_best != null ? `, điểm cao nhất <b>${fmtPts(+data.my_best)}</b>` : ''}` : ''}</div>
+    <div class="text-xs text-slate-500">Đề giữ nguyên thứ tự câu hỏi cho cả lớp. Đồng hồ chạy ngay khi bạn bấm bắt đầu và vẫn chạy nếu bạn thoát ra.</div>`;
+  const btn = $('hBtn'); btn.classList.remove('hidden'); btn.disabled = false;
+  if (data.in_progress) { btn.textContent = 'Làm tiếp bài đang dở'; hMsg('Bạn có một lượt làm bài chưa nộp.', 'warn'); }
+  else if (data.state === 'closed') { btn.classList.add('hidden'); hMsg('Giáo viên đã đóng bài giao này.', 'err'); }
+  else if (data.state === 'ended') { btn.classList.add('hidden'); hMsg('Bài giao đã hết hạn.', 'err'); }
+  else if (left === 0) { btn.classList.add('hidden'); hMsg('Bạn đã dùng hết số lần làm bài cho phép.', 'warn'); }
+  else { btn.textContent = data.my_attempts ? 'Làm lại bài này' : 'Bắt đầu làm bài'; hMsg(''); }
+}
+async function startHw() {
+  if (hwStarting) return;
+  hwStarting = true; $('hBtn').disabled = true; $('hBtn').textContent = 'Đang tải đề...'; hMsg('');
+  const { data, error } = await db.rpc('assignment_start', { p_code: HW });
+  hwStarting = false; $('hBtn').disabled = false;
+  if (error) { $('hBtn').textContent = 'Thử lại'; return hMsg(error.message, 'err'); }
+  hw = data; clockOff = Date.parse(data.server_now) - Date.now();
+  questions = data.questions || []; sortParts();                 // sortParts giữ nguyên thứ tự trong từng phần: KHÔNG trộn
+  if (!questions.length) { $('hBtn').textContent = 'Thử lại'; return hMsg('Bài giao chưa có câu hỏi nào. Hãy báo giáo viên.', 'err'); }
+  answers = {}; cur = 0; onlyWrong = false; submitting = false; nextTry = 0;
+  try { const b = JSON.parse(lsGet(hwBk()) || 'null'); if (b && b.rid === data.attempt_id && b.a) answers = b.a; } catch (e) {}
+  $('examTitle').textContent = `${data.title} · lần ${data.attempt_no} · ${questions.length} câu`;
+  const end = Date.parse(data.end_at) - clockOff;
+  clearInterval(timerId); tick(end); timerId = setInterval(() => tick(end), 500);
+  screen('Exam'); showQuestion(0);
+  window.onbeforeunload = e => { e.preventDefault(); e.returnValue = ''; };
+}
+async function submitHw(auto) {
+  if (submitting || Date.now() < nextTry) return;
+  if (!auto) {
+    const blank = questions.filter((q, i) => gradeQ(q, answers[i]).s === 'blank').length;
+    if (!confirm(blank ? `Bạn còn ${blank} câu chưa trả lời. Vẫn nộp bài?` : 'Nộp bài ngay bây giờ?')) return;
+  }
+  submitting = true; $('netMsg').classList.remove('hidden'); $('netMsg').textContent = 'Đang nộp bài...';
+  const { data, error } = await db.rpc('assignment_submit', { p_attempt: hw.attempt_id, p_answers: compactAnswers() });
+  if (error) {
+    submitting = false;
+    if (/đã được nộp/i.test(error.message)) { lsDel(hwBk()); clearInterval(timerId); window.onbeforeunload = null; return showRoomDone('Bài này đã được nộp trước đó. Xem kết quả ở Trang chủ học sinh.'); }
+    nextTry = Date.now() + 3000;
+    $('netMsg').textContent = 'Chưa nộp được bài (' + error.message + '). Bài làm vẫn được giữ, đang thử lại...';
+    setTimeout(() => submitHw(true), 3000);
+    return;
+  }
+  clearInterval(timerId); window.onbeforeunload = null; lsDel(hwBk());
+  $('netMsg').classList.add('hidden');
+  showHwResult(data, auto);
+}
+function showHwResult(r, auto) {
+  $('score').textContent = r.score == null ? '—' : Number(r.score).toFixed(2).replace(/\.?0+$/, '');
+  const notes = ['Bài làm của bạn đã được ghi nhận cho giáo viên.'];
+  if (r.late) notes.push('Bài được nộp sau giờ quy định nên bị đánh dấu “nộp muộn”.');
+  if (questions.some(q => q.question_type === 'essay')) notes.push('Câu tự luận không tính vào điểm tự động; giáo viên sẽ chấm riêng.');
+  if (questions.some(q => q.question_type === 'true_false')) notes.push('Câu Đúng/Sai: đúng 1, 2, 3, 4 ý được 0,1 – 0,25 – 0,5 – 1 điểm.');
+  $('saveNote').innerHTML = '<span class="text-green-700">✔ Đã nộp và lưu vào lịch sử bài được giao của bạn.</span>';
+  $('againBtn').classList.add('hidden');
+  db.rpc('assignment_info', { p_code: HW }).then(({ data: i }) => {            // còn lượt thì cho làm lại
+    if (i && i.state === 'open' && (!i.max_attempts || i.my_attempts < i.max_attempts)) {
+      $('againBtn').textContent = 'Làm lại bài này'; $('againBtn').onclick = () => location.reload(); $('againBtn').classList.remove('hidden');
+    }
+  });
+  if (!(r.show_key && r.questions)) {
+    $('stats').innerHTML = `<span class="text-green-600">✔ Đúng hoàn toàn: ${r.right}/${r.auto_n}</span><span class="text-slate-500">Đã làm: ${r.answered}/${questions.length} câu</span>`;
+    notes.push('Giáo viên chưa mở xem đáp án và lời giải.');
+    $('scoreNote').innerHTML = notes.map(t => `<p>${t}</p>`).join('');
+    ['resultNav', 'review', 'wrongBtn'].forEach(id => $(id).classList.add('hidden'));
+    screen('Result'); if (auto) alert('Hết giờ! Bài làm đã được nộp tự động.'); return;
+  }
+  const m = Object.fromEntries(r.questions.map(x => [x.id, x])), per = r.per || {};
+  questions.forEach(q => { const x = m[q.id]; if (x) { q.correct_answer = x.correct_answer; q.explanation = x.explanation; } });
+  const res = questions.map((q, i) => { const g = gradeQ(q, answers[i]), x = per[q.id]; return x && x.s ? { ...g, s: x.s, pts: x.p ?? g.pts } : g; });
+  const cnt = s => res.filter(z => z.s === s).length;
+  $('stats').innerHTML = `
+    <span class="text-green-600">✔ Đúng: ${cnt('right')}</span>
+    ${cnt('partial') ? `<span class="text-amber-600">◐ Đúng một phần: ${cnt('partial')}</span>` : ''}
+    <span class="text-red-600">✘ Sai: ${cnt('wrong')}</span>
+    ${cnt('essay') ? `<span class="text-sky-600">✎ Tự luận đã làm: ${cnt('essay')}</span>` : ''}
+    <span class="text-slate-500">○ Chưa làm: ${cnt('blank')}</span>`;
+  $('scoreNote').innerHTML = notes.map(t => `<p>${t}</p>`).join('');
+  $('resultNav').innerHTML = res.map((z, i) => `<a href="#rq${i}" class="h-8 rounded text-xs font-semibold flex items-center justify-center text-white ${S_BG[z.s]}">${i + 1}</a>`).join('');
+  ['resultNav', 'review', 'wrongBtn'].forEach(id => $(id).classList.remove('hidden'));
+  window._res = res; reportOn = false; renderReview(); screen('Result');
+  if (auto) alert('Hết giờ! Bài làm đã được nộp tự động.');
+}
 
 
 // =====================================================================
@@ -1015,6 +1145,7 @@ $('screenStart').addEventListener('change', e => {
 
 if (REVIEW) { loadReview(); }                       // xem lại bài đã làm
 else if (ROOM_MODE) { screen('Join'); loadJoin().then(fillProfile); }     // vào bằng link phòng/ca
+else if (HW_MODE) { loadHw(); }                                          // vào bằng mã giao bài
 else { updateSummary(); loadSubjects(); getUser().then(u => $('homeBar').classList.remove('hidden')); }          // chế độ luyện tập như cũ
 </script>
 <!-- Cảnh báo vi phạm (chế độ phòng thi) -->
