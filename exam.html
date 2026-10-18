@@ -61,6 +61,7 @@
       <h1 class="text-2xl font-bold">Luyện thi online</h1>
       <p class="text-base text-slate-500">Tạo đề thi theo chương trình và tự kiểm tra kiến thức.</p>
     </div>
+    <div id="quotaBar" class="hidden text-sm rounded-lg px-3 py-2 border" role="status" aria-live="polite"></div>
     <label class="block text-sm font-medium">Lớp
       <select id="grade" onchange="loadSubjects()" class="w-full border rounded p-2 mt-1">
         <option value="10">Lớp 10</option><option value="11">Lớp 11</option><option value="12">Lớp 12</option>
@@ -338,14 +339,11 @@ function scheduleCheck() {
   checkTimer = setTimeout(checkAvailability, 250);
 }
 
-async function checkAvailability() {
-  const seq = ++checkSeq, want = Number($('count').value), types = selTypes();
-  const { data, error } = await db.from('questions').select('question_type')
-    .eq('grade', Number($('grade').value)).eq('subject', $('subject').value)
-    .in('chapter', selChapters()).in('difficulty', selLevels()).in('question_type', types).limit(1000);
+function checkAvailability() {                  // đếm từ danh mục đã tải (practice_catalog): không cần hỏi máy chủ lại
+  const seq = ++checkSeq, want = Number($('count').value), types = selTypes(), chs = selChapters(), lv = selLevels(), subj = $('subject').value;
+  const rows = CAT.filter(r => r.subject === subj && chs.includes(r.chapter) && lv.includes(r.difficulty) && types.includes(r.type));
   if (seq !== checkSeq) return;
-  if (error) return setStatus('error', 'Lỗi kết nối', esc(error.message));
-  const n = data.length, by = t => data.filter(r => r.question_type === t).length;
+  const by = t => rows.filter(r => r.type === t).reduce((a, r) => a + Number(r.n), 0), n = rows.reduce((a, r) => a + Number(r.n), 0);
   const detail = types.map(t => `${TYPE_NAME[t]}: <b>${by(t)}</b>`).join(' · ');
   if (n >= want) {
     const empty = types.filter(t => !by(t)).map(t => TYPE_NAME[t]);
@@ -358,36 +356,32 @@ async function checkAvailability() {
 let subjSeq = 0, chapSeq = 0;   // chống kết quả cũ ghi đè khi học sinh đổi lựa chọn nhanh
 let chapterList = [];
 
+let CAT = [];                                    // danh mục: {subject, chapter, difficulty, type, n} (chỉ số đếm, không có nội dung câu hỏi)
 async function loadSubjects() {
   const seq = ++subjSeq, sel = $('subject');
   sel.innerHTML = '<option>Đang tải...</option>';
   setStatus('info', 'Đang tải...');
-  const { data, error } = await db.from('questions').select('subject').eq('grade', Number($('grade').value)).limit(1000);
+  const { data, error } = await db.rpc('practice_catalog', { p_grade: Number($('grade').value) });
   if (seq !== subjSeq) return;
   if (error) {
-    sel.innerHTML = ''; chapterList = []; $('chapterBox').innerHTML = '';
-    return setStatus('error', 'Lỗi kết nối', esc(error.message));
+    sel.innerHTML = ''; chapterList = []; $('chapterBox').innerHTML = ''; CAT = [];
+    return setStatus('error', 'Lỗi kết nối', /practice_catalog|schema cache|Could not find the function/i.test(error.message)
+      ? 'Chưa cài đặt giới hạn câu hỏi: giáo viên cần chạy question_limits_setup.sql trong Supabase.' : esc(error.message));
   }
-  const subjects = [...new Set(data.map(r => r.subject))].sort((a, b) => a.localeCompare(b, 'vi'));
+  CAT = Array.isArray(data) ? data : [];
+  const subjects = [...new Set(CAT.map(r => r.subject))].sort((a, b) => a.localeCompare(b, 'vi'));
   sel.innerHTML = subjects.length
     ? subjects.map(s => `<option>${esc(s)}</option>`).join('')
     : '<option value="">Chưa có môn nào</option>';
-  await loadChapters();
+  loadChapters();
 }
 
-// Tương đương SELECT DISTINCT chapter FROM questions WHERE grade = ? AND subject = ?
-// (supabase-js không có DISTINCT nên lấy cột chapter rồi loại trùng ở trình duyệt)
-async function loadChapters() {
-  const seq = ++chapSeq, box = $('chapterBox'), subject = $('subject').value;
+// Danh sách chương của môn đang chọn (lấy từ danh mục đã tải)
+function loadChapters() {
+  const box = $('chapterBox'), subject = $('subject').value;
   chapterList = [];
   if (!subject) { box.innerHTML = '<div class="text-slate-500">Chưa chọn môn.</div>'; return scheduleCheck(); }
-  box.innerHTML = '<div class="text-slate-500">Đang tải danh sách chương...</div>';
-  setStatus('info', 'Đang tải...');
-  const { data, error } = await db.from('questions').select('chapter')
-    .eq('grade', Number($('grade').value)).eq('subject', subject).limit(1000);
-  if (seq !== chapSeq) return;
-  if (error) { box.innerHTML = ''; return setStatus('error', 'Lỗi tải chương', esc(error.message)); }
-  chapterList = [...new Set(data.map(r => r.chapter).filter(Boolean))]
+  chapterList = [...new Set(CAT.filter(r => r.subject === subject).map(r => r.chapter).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, 'vi', { numeric: true }));   // "Chương 2" đứng trước "Chương 10"
   box.innerHTML = chapterList.length
     ? chapterList.map((c, i) => `<label class="flex items-start gap-2"><input type="checkbox" class="chapChk mt-1" data-i="${i}" checked><span>${esc(c)}</span></label>`).join('')
@@ -409,18 +403,27 @@ async function startExam() {
   const chapters = selChapters(), difficulties = selLevels(), types = selTypes();
   starting = true; syncBtn(); $('startBtn').textContent = 'Đang tải đề...';
 
-  let query = db.from('questions')
-    .select('id, question_type, content, image_url, options, correct_answer, explanation')
-    .eq('grade', grade).eq('subject', subject);
-  query = query.in('chapter', chapters).in('difficulty', difficulties).in('question_type', types);
-  const { data, error } = await query.limit(1000);
+  if (!(await getUser())) {
+    starting = false; $('startBtn').textContent = 'Bắt đầu làm bài'; syncBtn();
+    setStatus('warn', 'Cần đăng nhập', `Hãy <a class="homeLink underline font-semibold" href="${HOME_URL}">đăng nhập tài khoản học sinh</a> (miễn phí) để luyện tập.`);
+    canStart = true; return syncBtn();
+  }
+  const { data, error } = await db.rpc('practice_pick', { p_grade: grade, p_subject: subject, p_chapters: chapters, p_levels: difficulties, p_types: types, p_want: want });
 
   starting = false; $('startBtn').textContent = 'Bắt đầu làm bài';
-  if (error) { setStatus('error', 'Lỗi tải đề', esc(error.message)); canStart = true; return syncBtn(); }  // cho thử lại
-  if (!data.length) return scheduleCheck();
+  if (error) {
+    refreshQuota();
+    const m = error.message || '';
+    if (/^QUOTA/.test(m)) setStatus('error', 'Hết hạn mức hôm nay', esc(m.replace(/^QUOTA:\s*/, '')));
+    else if (/practice_pick|schema cache|Could not find the function/i.test(m)) setStatus('error', 'Lỗi tải đề', 'Chưa cài đặt giới hạn câu hỏi: giáo viên cần chạy question_limits_setup.sql trong Supabase.');
+    else setStatus('error', 'Lỗi tải đề', esc(m));
+    canStart = true; return syncBtn();                                    // cho thử lại
+  }
   syncBtn();
+  const qt = data.quota; renderQuota(qt);
+  if (qt && qt.trimmed) rpToast(`Hạn mức hôm nay còn ít nên đề chỉ có ${qt.returned}/${qt.asked} câu. Làm lại câu đã làm trong ngày không bị tính thêm.`);
 
-  questions = pickQuestions(data, types, want); sortParts();
+  questions = data.questions || []; sortParts();
   answers = {}; cur = 0; onlyWrong = false;
   pracCfg = { grade, subject, chapters: chapters.length === chapterList.length ? [] : chapters, types }; pracT0 = Date.now();
   examInfo = `Lớp ${grade} · ${subject}` + (chapters.length === chapterList.length ? '' : chapters.length === 1 ? ` · ${chapters[0]}` : ` · ${chapters.length} chương`);
@@ -461,9 +464,9 @@ function showQuestion(i) {
   const q = questions[i], t = q.question_type, a = answers[i];
   let body;
   if (t === 'multiple_choice') {
-    body = LETTERS.map(L => `
+    body = optOrder(q).map((L, pos) => `
       <button onclick="choose('${L}')" class="w-full text-left border rounded-lg p-3 flex gap-3 ${a === L ? 'border-indigo-600 bg-indigo-50' : 'hover:bg-slate-50'}">
-        <span class="font-bold">${L}.</span><span class="whitespace-pre-wrap">${tex(q.options?.[L])}</span>
+        <span class="font-bold">${LETTERS[pos]}.</span><span class="whitespace-pre-wrap">${tex(q.options?.[L])}</span>
       </button>`).join('');
   } else if (t === 'true_false') {
     body = '<div class="text-sm text-slate-500">Chọn Đúng hoặc Sai cho từng ý.</div>' + TF_KEYS.map(k => `
@@ -660,7 +663,8 @@ async function loadJoin() {
   $('jSub').textContent = `Lớp ${data.room.grade} · ${data.room.subject} · ${data.shift.name}`;
   $('jInfo').classList.remove('hidden');
   $('jInfo').innerHTML = `<div>Số câu: <b>${data.room.total}</b> · Thời gian làm bài: <b>${data.room.duration_minutes}</b> phút</div>
-    <div>Ca thi mở từ <b>${fmtDT(data.shift.start_time)}</b> đến <b>${fmtDT(data.shift.end_time)}</b></div><div id="jCount" class="font-semibold text-indigo-700"></div>`;
+    <div>Ca thi mở từ <b>${fmtDT(data.shift.start_time)}</b> đến <b>${fmtDT(data.shift.end_time)}</b></div><div id="jCount" class="font-semibold text-indigo-700"></div>`
+    + (data.room.fullscreen && fsCanRequest() ? '<div class="text-amber-700">🖥️ Bài thi này yêu cầu <b>làm bài toàn màn hình</b>; thoát toàn màn hình giữa chừng bị ghi là vi phạm.</div>' : '');
   if (!$('jCode').value) { $('jCode').value = lsGet('exam_room:code') || ''; $('jName').value = lsGet('exam_room:name') || ''; $('jClass').value = lsGet('exam_room:class') || ''; }
   clearInterval(joinTimer); joinTimer = setInterval(joinTick, 1000); joinTick();
 }
@@ -706,9 +710,61 @@ function beginRoomExam(s) {
   const end = Date.parse(s.deadline) - clockOff;            // giờ hết hạn theo đồng hồ máy chủ, quy đổi về đồng hồ máy học sinh
   clearInterval(timerId); tick(end); timerId = setInterval(() => tick(end), 500);
   screen('Exam'); showQuestion(0); initVio(s.violations);
+  fsEntered = false; fsGate = false; if (fsRequired()) fsShow(false);
   window.onbeforeunload = e => { e.preventDefault(); e.returnValue = ''; };
 }
 
+
+// ---------- TOÀN MÀN HÌNH BẮT BUỘC (phòng thi bật tùy chọn "fullscreen") ----------
+// Trình duyệt chỉ cho vào toàn màn hình khi học sinh bấm nút, nên có màn chắn trước khi hiện đề (cả khi F5 vào lại).
+// Thoát toàn màn hình giữa chừng = 1 lần vi phạm (loại 'fullscreen'). Trình duyệt không hỗ trợ (iPhone Safari...) thì bỏ qua yêu cầu.
+let fsGate = false, fsEntered = false;
+const fsEl = () => document.fullscreenElement || document.webkitFullscreenElement || null;
+const fsCanRequest = () => !!(document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen);
+const fsRequired = () => !!(ROOM_MODE && sess?.room?.fullscreen && fsCanRequest());
+function fsShow(again) {
+  fsGate = true;
+  $('fsTitle').textContent = again ? 'Bạn đã thoát toàn màn hình' : 'Bài thi yêu cầu toàn màn hình';
+  $('fsText').textContent = again ? 'Việc thoát toàn màn hình được tính là 1 lần vi phạm. Hãy bấm nút bên dưới để quay lại làm bài (đồng hồ vẫn chạy).'
+    : 'Giáo viên yêu cầu làm bài ở chế độ toàn màn hình. Bấm nút bên dưới để bắt đầu; thoát toàn màn hình giữa chừng sẽ bị ghi là vi phạm.';
+  $('fsOverlay').classList.remove('hidden');
+}
+async function enterFs() {
+  const el = document.documentElement;
+  try { await (el.requestFullscreen ? el.requestFullscreen() : el.webkitRequestFullscreen()); } catch (e) {}
+  if (!fsEl()) { $('fsText').textContent = 'Trình duyệt chưa cho vào toàn màn hình. Hãy thử bấm lại (hoặc nhấn F11). Nếu vẫn không được, báo giáo viên.'; return; }
+  fsEntered = true; fsGate = false; vioIgnoreUntil = Date.now() + 2000;
+  $('fsOverlay').classList.add('hidden'); closeVio();
+}
+function onFsChange() {
+  if (!fsRequired() || !fsEntered || submitting || fsEl()) return;
+  if ($('screenExam').classList.contains('hidden')) return;
+  reportViolation('fullscreen', 'Bạn vừa thoát khỏi chế độ toàn màn hình.');   // tính trước khi bật màn chắn (màn chắn làm vioActive = false)
+  fsShow(true);
+}
+document.addEventListener('fullscreenchange', onFsChange); document.addEventListener('webkitfullscreenchange', onFsChange);
+function fsLeave() {
+  fsEntered = false; fsGate = false; $('fsOverlay').classList.add('hidden');
+  try { if (fsEl()) (document.exitFullscreen || document.webkitExitFullscreen).call(document); } catch (e) {}
+}
+
+// ---------- ĐỔI THỨ TỰ PHƯƠNG ÁN A–D theo từng học sinh (phòng thi bật "shuffle_options") ----------
+// Hoán vị cố định theo (result_id, id câu) nên F5 không đổi. Đáp án lưu và gửi đi luôn là chữ cái GỐC; chỉ nhãn A–D hiển thị là theo vị trí mới.
+const optShuffleOn = () => !!(ROOM_MODE && sess?.room?.shuffle_options);
+const optCache = {};
+function seedRng(str) {
+  let h = 1779033703 ^ str.length;
+  for (let i = 0; i < str.length; i++) { h = Math.imul(h ^ str.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); }
+  return () => { h = Math.imul(h ^ (h >>> 16), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
+}
+function optOrder(q) {
+  if (!optShuffleOn()) return LETTERS;
+  const key = sess.result_id + ':' + q.id;
+  if (optCache[key]) return optCache[key];
+  const r = seedRng(key + ':' + sess.token), a = LETTERS.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return optCache[key] = a;
+}
 
 // ---------- CHỐNG GIAN LẬN: chuyển tab / rời cửa sổ / chụp màn hình ----------
 // Quy định: 2 lần đầu chỉ cảnh báo; từ lần thứ 3 trở đi mỗi lần trừ 0,5 điểm. Số lần lưu trên máy chủ (exam_violation) nên F5 không mất.
@@ -717,7 +773,7 @@ const VIO_FREE = 2, VIO_PEN = 0.5;
 let vioCount = 0, vioLast = 0, vioQueue = [], vioIgnoreUntil = 0, vioFlushing = false, vioTimer = null;
 const vioPenalty = n => VIO_PEN * Math.max(0, n - VIO_FREE);
 const fmtPts = x => String(+x.toFixed(2)).replace('.', ',');
-const vioActive = () => ROOM_MODE && sess && !submitting && !$('screenExam').classList.contains('hidden') && Date.now() > vioIgnoreUntil;
+const vioActive = () => ROOM_MODE && sess && !submitting && !fsGate && !$('screenExam').classList.contains('hidden') && Date.now() > vioIgnoreUntil;
 
 function renderVio() {
   const bar = $('vioBar'), n = vioCount, pen = vioPenalty(n);
@@ -795,14 +851,14 @@ async function submitRoom(auto) {
   const { data, error } = await db.rpc('exam_submit', { p_result: sess.result_id, p_token: sess.token, p_answers: out });
   if (error) {
     submitting = false;
-    if (/đã được nộp/i.test(error.message)) { lsDel(bkKey()); clearInterval(timerId); window.onbeforeunload = null; return showRoomDone('Bài này đã được nộp trước đó.'); }
+    if (/đã được nộp/i.test(error.message)) { lsDel(bkKey()); clearInterval(timerId); window.onbeforeunload = null; fsLeave(); return showRoomDone('Bài này đã được nộp trước đó.'); }
     if (/không hợp lệ/i.test(error.message)) { $('netMsg').textContent = error.message; return; }
     nextTry = Date.now() + 3000;
     $('netMsg').textContent = 'Chưa nộp được bài (' + error.message + '). Bài làm vẫn được giữ, đang thử lại...';
     if (!auto) setTimeout(() => submitRoom(true), 3000);        // người dùng đã bấm nộp: tự thử lại
     return;
   }
-  clearInterval(timerId); clearInterval(vioTimer); window.onbeforeunload = null; lsDel(bkKey()); closeVio();
+  clearInterval(timerId); clearInterval(vioTimer); window.onbeforeunload = null; lsDel(bkKey()); closeVio(); fsLeave();
   $('netMsg').classList.add('hidden');
   showRoomResult(data, auto);
 }
@@ -818,6 +874,7 @@ function showRoomResult(r, auto) {
   if (r.late) notes.push('Bài được nộp sau giờ quy định nên bị đánh dấu “nộp muộn”.');
   if (r.auto_n < r.total) notes.push('Câu tự luận không tính vào điểm tự động; giáo viên sẽ chấm riêng.');
   if (questions.some(q => q.question_type === 'true_false')) notes.push('Câu Đúng/Sai: đúng 1, 2, 3, 4 ý được 0,1 – 0,25 – 0,5 – 1 điểm.');
+  if (optShuffleOn()) notes.push('Khi xem lại đáp án, các phương án được hiển thị theo thứ tự gốc của đề (không phải thứ tự bạn đã thấy lúc làm bài).');
   $('againBtn').classList.add('hidden');
   if (!(r.show_review && r.review)) {
     $('stats').innerHTML = `<span class="text-green-600">✔ Đúng hoàn toàn: ${r.right}/${r.auto_n}</span><span class="text-slate-500">Đã làm: ${r.answered}/${r.total} câu</span>`;
@@ -1127,6 +1184,26 @@ async function sendReport() {
   rpToast(MSG_THANKS);
 }
 
+// ---------- Hạn mức câu hỏi mỗi ngày (máy chủ quyết định; question_limits_setup.sql) ----------
+const FREE_STUDENT_LIMIT = 100;                      // chỉ dùng để nhắc khi chưa đăng nhập; số thật do máy chủ trả về
+function renderQuota(q) {
+  const el = $('quotaBar'); if (!el) return;
+  const show = (cls, html) => { el.className = 'text-sm rounded-lg px-3 py-2 border ' + cls; el.innerHTML = html; };
+  if (!q || q.logged_in === false) return show('bg-sky-50 border-sky-200 text-sky-900', `Đăng nhập tài khoản học sinh (miễn phí) để luyện tập. Mỗi tài khoản miễn phí lấy tối đa <b>${FREE_STUDENT_LIMIT}</b> câu hỏi khác nhau mỗi ngày. <a class="homeLink underline font-semibold" href="${HOME_URL}">Đăng nhập</a>`);
+  if (q.unlimited) return el.classList.add('hidden');
+  const out = q.remaining <= 0;
+  show(out ? 'bg-red-50 border-red-200 text-red-800' : q.remaining <= 10 ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-slate-50 border-slate-200 text-slate-700',
+    `Hôm nay bạn đã dùng <b>${q.used}/${q.limit}</b> câu hỏi khác nhau${out ? '. Hãy quay lại vào ngày mai.' : ` (còn <b>${q.remaining}</b>).`}
+     <span class="text-xs opacity-80 block">Làm lại câu đã làm trong ngày không tính thêm. Bài giáo viên giao và phòng thi không bị giới hạn.</span>`);
+}
+async function refreshQuota() {
+  const u = await getUser();
+  if (!u) return renderQuota(null);
+  const { data, error } = await db.rpc('my_question_quota');
+  if (error || !data) return $('quotaBar').classList.add('hidden');      // chưa chạy question_limits_setup.sql: không hiện gì
+  renderQuota(data);
+}
+
 // Phòng thi: điền sẵn mã HS / họ tên / lớp từ hồ sơ khi đã đăng nhập
 async function fillProfile() {
   const u = await getUser(), tag = $('jLogged');
@@ -1146,8 +1223,17 @@ $('screenStart').addEventListener('change', e => {
 if (REVIEW) { loadReview(); }                       // xem lại bài đã làm
 else if (ROOM_MODE) { screen('Join'); loadJoin().then(fillProfile); }     // vào bằng link phòng/ca
 else if (HW_MODE) { loadHw(); }                                          // vào bằng mã giao bài
-else { updateSummary(); loadSubjects(); getUser().then(u => $('homeBar').classList.remove('hidden')); }          // chế độ luyện tập như cũ
+else { updateSummary(); loadSubjects(); refreshQuota(); getUser().then(u => $('homeBar').classList.remove('hidden')); }          // chế độ luyện tập như cũ
 </script>
+<!-- Yêu cầu toàn màn hình (phòng thi bật tùy chọn) -->
+<div id="fsOverlay" class="hidden fixed inset-0 z-[60] bg-slate-900 flex items-center justify-center p-4" role="alertdialog" aria-modal="true">
+  <div class="bg-white rounded-xl shadow-xl max-w-md w-full p-6 text-center space-y-3">
+    <div class="text-4xl">🖥️</div>
+    <h2 id="fsTitle" class="text-xl font-bold text-indigo-700">Bài thi yêu cầu toàn màn hình</h2>
+    <p id="fsText" class="text-slate-700 text-sm"></p>
+    <button id="fsBtn" onclick="enterFs()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg font-semibold">Vào toàn màn hình để làm bài</button>
+  </div>
+</div>
 <!-- Cảnh báo vi phạm (chế độ phòng thi) -->
 <div id="vioOverlay" class="hidden fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" role="alertdialog" aria-modal="true">
   <div class="bg-white rounded-xl shadow-xl max-w-md w-full p-6 text-center space-y-3">
