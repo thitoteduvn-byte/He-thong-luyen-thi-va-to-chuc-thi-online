@@ -1966,27 +1966,35 @@ function matrixDocXml() {
   if (!total) return null;
   const scale = mx.scale > 0 ? mx.scale : 10, perQ = mx.perQ > 0 ? mx.perQ : MIN_PER_QUESTION;
   const rows = mrows.map((m, r) => ({ m, r })).filter(({ r }) => grid[r].some(ref => ref.n > 0));       // mỗi dòng = 1 cặp [chương, bài] có câu hỏi
-  const W = DW.h - 2 * DW.m, wStt = 640, wTot = 700, wChap = 1900, wLes = 2100, wc = Math.floor((W - wStt - wTot - wChap - wLes) / 16);
-  const widths = [wStt, wChap, wLes, ...Array(16).fill(wc), wTot];
-  const colTot = Array(16).fill(0), lvTot = [0, 0, 0, 0], H = (t, o = {}) => run(t, { b: true, sz: 22, ...o });
-  cellRefs.forEach(r => { colTot[r.col] += r.n; lvTot[r.di] += r.n; });
-  const head1 = tr(tc(cellP(H('STT')), { w: wStt, vm: 'restart', shd: 'F1F5F9' }) + tc(cellP(H('Chương / Chủ đề')), { w: wChap, vm: 'restart', shd: 'F1F5F9' }) + tc(cellP(H('Bài học')), { w: wLes, vm: 'restart', shd: 'F1F5F9' }) +
-    QTYPES.map(t => tc(cellP(H(t.t, { sz: 20 })), { w: wc * 4, span: 4, shd: TYPE_FILL[t.k] })).join('') + tc(cellP(H('Tổng')), { w: wTot, vm: 'restart', shd: 'F1F5F9' }), { header: true });
+  // Cột "Tổng" theo mẫu của Bộ (CV 7991): Biết / Hiểu / Vận dụng (Vận dụng gồm cả Vận dụng cao) + Tỷ lệ % điểm
+  const W = DW.h - 2 * DW.m, wStt = 640, wChap = 1700, wLes = 1900, wl = 560, wPct = 720, wc = Math.floor((W - wStt - wChap - wLes - 3 * wl - wPct) / 16);
+  const widths = [wStt, wChap, wLes, ...Array(16).fill(wc), wl, wl, wl, wPct];
+  const SUMLV = ['Biết', 'Hiểu', 'Vận dụng'], lvIdx = di => Math.min(di, 2);
+  const colTot = Array(16).fill(0), lvTot = [0, 0, 0, 0], sumTot = [0, 0, 0], H = (t, o = {}) => run(t, { b: true, sz: 22, ...o });
+  cellRefs.forEach(r => { colTot[r.col] += r.n; lvTot[r.di] += r.n; sumTot[lvIdx(r.di)] += r.n; });
+  const SH = 'F1F5F9';
+  const head1 = tr(tc(cellP(H('STT')), { w: wStt, vm: 'restart', shd: SH }) + tc(cellP(H('Chương / Chủ đề')), { w: wChap, vm: 'restart', shd: SH }) + tc(cellP(H('Bài học')), { w: wLes, vm: 'restart', shd: SH }) +
+    QTYPES.map(t => tc(cellP(H(t.t, { sz: 20 })), { w: wc * 4, span: 4, shd: TYPE_FILL[t.k] })).join('') + tc(cellP(H('Tổng')), { w: wl * 3, span: 3, shd: SH }) + tc(cellP(H('Tỷ lệ % điểm', { sz: 18 })), { w: wPct, vm: 'restart', shd: SH }), { header: true });
   const head2 = tr(tc('', { w: wStt, vm: 'cont' }) + tc('', { w: wChap, vm: 'cont' }) + tc('', { w: wLes, vm: 'cont' }) +
-    QTYPES.map(() => DIFFS.map(d => tc(cellP(H(d.a, { sz: 18 })), { w: wc, shd: 'F1F5F9' })).join('')).join('') + tc('', { w: wTot, vm: 'cont' }), { header: true });
+    QTYPES.map(() => DIFFS.map(d => tc(cellP(H(d.a, { sz: 18 })), { w: wc, shd: SH })).join('')).join('') + SUMLV.map(t => tc(cellP(H(t, { sz: 16 })), { w: wl, shd: SH })).join('') + tc('', { w: wPct, vm: 'cont' }), { header: true });
   let stt = 0, prev = null;
   const body = rows.map(({ m, r }) => {
     const first = m.c !== prev; prev = m.c; if (first) stt++;            // ô STT và Chương gộp theo chương (vMerge)
+    const lv = [0, 0, 0]; grid[r].forEach(ref => { lv[lvIdx(ref.di)] += ref.n; });
+    const rowN = lv[0] + lv[1] + lv[2];
     return tr(tc(first ? cellP(run(String(stt), { sz: 22 })) : '', { w: wStt, vm: first ? 'restart' : 'cont' }) +
       tc(first ? para(run(m.c, { sz: 22, b: true }), { after: 0, line: 252 }) : '', { w: wChap, vm: first ? 'restart' : 'cont' }) +
       tc(para(run(m.label, { sz: 20 }), { after: 0, line: 240 }), { w: wLes }) +
       grid[r].map(ref => tc(cellP(run(ref.n ? String(ref.n) : '', { sz: 22 })), { w: wc, shd: ref.n ? TYPE_FILL[ref.t] : undefined })).join('') +
-      tc(cellP(run(String(grid[r].reduce((a, ref) => a + ref.n, 0)), { b: true, sz: 22 })), { w: wTot, shd: 'F8FAFC' }));
+      lv.map(v => tc(cellP(run(v ? String(v) : '', { b: true, sz: 22 })), { w: wl, shd: 'F8FAFC' })).join('') +
+      tc(cellP(run(rowN ? pctTxt(rowN) : '', { b: true, sz: 20 })), { w: wPct, shd: 'F8FAFC' }));
   }).join('');
-  const foot = (label, fn, last) => tr(tc(cellP(H(label), { jc: 'left' }), { w: wStt + wChap + wLes, span: 3, shd: 'F8FAFC' }) +
-    colTot.map(v => tc(cellP(run(fn(v), { b: true, sz: 18 })), { w: wc, shd: 'F8FAFC' })).join('') + tc(cellP(run(last, { b: true, sz: 22 })), { w: wTot, shd: 'F8FAFC' }));
+  function pctTxt(v) { return (Math.round(v * 1000 / total) / 10).toString().replace('.', ',') + '%'; }
+  const foot = (label, fn, sumFn, last) => tr(tc(cellP(H(label), { jc: 'left' }), { w: wStt + wChap + wLes, span: 3, shd: 'F8FAFC' }) +
+    colTot.map(v => tc(cellP(run(fn(v), { b: true, sz: 18 })), { w: wc, shd: 'F8FAFC' })).join('') +
+    sumTot.map(v => tc(cellP(run(sumFn(v), { b: true, sz: 20 })), { w: wl, shd: 'F8FAFC' })).join('') + tc(cellP(run(last, { b: true, sz: 20 })), { w: wPct, shd: 'F8FAFC' }));
   const pct = v => v ? Math.round(v * 100 / total) + '%' : '', pts = v => v ? String(Math.round(v * scale / total * 100) / 100) : '';
-  const table = tbl(head1 + head2 + body + foot('Tổng số câu', v => v || '', String(total)) + foot('Tỉ lệ %', pct, '100%') + foot(`Số điểm (thang ${scale})`, pts, String(scale)), widths);
+  const table = tbl(head1 + head2 + body + foot('Tổng số câu', v => v || '', v => v || '', String(total)) + foot('Tỉ lệ %', pct, pct, '100%') + foot(`Số điểm (thang ${scale})`, pts, pts, String(scale)), widths);
   const dept = ($('eDept')?.value || '').trim(), school = ($('eSchool')?.value || '').trim(), kyThi = ($('eExam')?.value || '').trim();
   const c = (t, o = {}) => para(run(t, { sz: 24, ...o }), { jc: 'center', after: 20, line: 252 });
   const top = (dept ? c(dept.toUpperCase()) : '') + (school ? c(school.toUpperCase(), { b: true }) : '') + (kyThi ? c(kyThi.toUpperCase(), { b: true }) : '') +
