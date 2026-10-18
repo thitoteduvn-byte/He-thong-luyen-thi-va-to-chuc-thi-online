@@ -29,11 +29,13 @@
   <!-- Đăng nhập -->
   <section id="viewLogin" class="hidden max-w-sm mx-auto bg-white rounded-xl shadow p-6 mt-10">
     <h2 class="font-bold text-lg mb-1">Đăng nhập giáo viên</h2>
-    <p class="text-sm text-slate-500 mb-4">Dùng tài khoản Supabase giống trang quản trị.</p>
+    <p class="text-sm text-slate-500 mb-4">Đăng nhập hoặc đăng ký tài khoản giáo viên (dùng chung các trang quản lý).</p>
     <input id="lgEmail" type="email" placeholder="Email" class="w-full border rounded p-2 mb-2">
-    <input id="lgPass" type="password" placeholder="Mật khẩu" class="w-full border rounded p-2 mb-3" onkeydown="if(event.key==='Enter')login()">
-    <button onclick="login()" class="w-full bg-indigo-600 text-white rounded py-2 font-medium hover:bg-indigo-700">Đăng nhập</button>
+    <input id="lgPass" type="password" placeholder="Mật khẩu" class="w-full border rounded p-2 mb-2" onkeydown="if(event.key==='Enter')login()">
+    <input id="lgPass2" type="password" placeholder="Nhập lại mật khẩu" class="hidden w-full border rounded p-2 mb-2" onkeydown="if(event.key==='Enter')login()">
+    <button id="lgBtn" onclick="login()" class="w-full mt-1 bg-indigo-600 text-white rounded py-2 font-medium hover:bg-indigo-700">Đăng nhập</button>
     <p id="lgErr" class="text-sm text-red-600 mt-2"></p>
+    <p id="lgToggle" class="text-sm text-slate-600 mt-3 text-center">Chưa có tài khoản? <button type="button" onclick="lgSwitch('signup')" class="text-indigo-600 font-semibold underline">Đăng ký giáo viên</button></p>
   </section>
 
   <!-- Danh sách phòng -->
@@ -111,10 +113,32 @@ let results = [], resShift = 'all', resSearch = '', resSort = 'name', autoTimer 
 let cfgExam = null;   // đề đã lưu đang chọn cho phòng: { id, title, ids[], counts{}, missing }
 
 /* ======================= ĐĂNG NHẬP ======================= */
+let lgMode = 'login';
+function lgSwitch(m) {
+  lgMode = m; $('lgErr').textContent = ''; $('lgErr').className = 'text-sm text-red-600 mt-2';
+  $('lgPass2').classList.toggle('hidden', m !== 'signup');
+  $('lgBtn').textContent = m === 'signup' ? 'Tạo tài khoản giáo viên' : 'Đăng nhập';
+  $('lgPass').autocomplete = m === 'signup' ? 'new-password' : 'current-password';
+  $('lgToggle').innerHTML = m === 'signup' ? 'Đã có tài khoản? <button type="button" onclick="lgSwitch(\'login\')" class="text-indigo-600 font-semibold underline">Đăng nhập</button>'
+    : 'Chưa có tài khoản? <button type="button" onclick="lgSwitch(\'signup\')" class="text-indigo-600 font-semibold underline">Đăng ký giáo viên</button>';
+}
 async function login() {
-  $('lgErr').textContent = '';
-  const { error } = await db.auth.signInWithPassword({ email: $('lgEmail').value.trim(), password: $('lgPass').value });
-  if (error) $('lgErr').textContent = 'Đăng nhập thất bại: ' + error.message;
+  const err = $('lgErr'); err.textContent = ''; err.className = 'text-sm text-red-600 mt-2';
+  const email = $('lgEmail').value.trim(), password = $('lgPass').value;
+  if (lgMode === 'signup') {
+    if (!/^\S+@\S+\.\S+$/.test(email)) return err.textContent = 'Email chưa đúng định dạng.';
+    if (password.length < 6) return err.textContent = 'Mật khẩu tối thiểu 6 ký tự.';
+    if (password !== $('lgPass2').value) return err.textContent = 'Hai lần nhập mật khẩu chưa giống nhau.';
+    $('lgBtn').disabled = true;
+    const { data, error } = await db.auth.signUp({ email, password });
+    $('lgBtn').disabled = false;
+    if (error) return err.textContent = 'Không tạo được tài khoản: ' + error.message;
+    if (data?.user && Array.isArray(data.user.identities) && !data.user.identities.length) return err.textContent = 'Email này đã có tài khoản. Hãy đăng nhập (hoặc dùng email khác).';
+    if (!data.session) { lgSwitch('login'); err.className = 'text-sm text-green-700 mt-2'; err.textContent = 'Đã tạo tài khoản. Hãy mở email để bấm xác nhận, rồi quay lại đăng nhập.'; }
+    return;
+  }
+  const { error } = await db.auth.signInWithPassword({ email, password });
+  if (error) err.textContent = 'Đăng nhập thất bại: ' + error.message;
 }
 async function logout() { await db.auth.signOut(); }
 function setUser(u) {

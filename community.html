@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body class="bg-slate-100 text-slate-800 min-h-screen">
 
@@ -157,6 +158,7 @@ create policy "owner delete questions" on questions for delete to authenticated 
     <div class="ml-auto flex flex-wrap items-center gap-3">
       <span id="who" class="text-sm text-slate-600"></span>
       <button id="authBtn" onclick="authClick()" class="text-sm underline text-slate-600"></button>
+      <button onclick="openShare('file')" class="bg-white border border-indigo-300 text-indigo-700 hover:bg-indigo-50 px-4 py-2 rounded-lg font-semibold">Tải file lên</button>
       <button onclick="openShare()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold">Chia sẻ lên kho chung</button>
     </div>
   </header>
@@ -246,6 +248,7 @@ create policy "owner delete questions" on questions for delete to authenticated 
       <div class="flex flex-wrap gap-4 text-sm">
         <label class="flex items-center gap-2"><input type="radio" name="shKind" value="exam" checked onchange="shKindChanged()"> Một đề thi đã lưu</label>
         <label class="flex items-center gap-2"><input type="radio" name="shKind" value="chapter" onchange="shKindChanged()"> Một chương câu hỏi</label>
+        <label class="flex items-center gap-2"><input type="radio" name="shKind" value="file" onchange="shKindChanged()"> Tải file lên từ máy</label>
       </div>
     </fieldset>
 
@@ -257,6 +260,27 @@ create policy "owner delete questions" on questions for delete to authenticated 
       <label class="font-medium">Lớp <select id="shGrade" onchange="shMetaChanged('grade')" class="w-full border rounded p-2 mt-1"></select></label>
       <label class="font-medium">Môn <select id="shSubject" onchange="shMetaChanged('subject')" class="w-full border rounded p-2 mt-1"></select></label>
       <label class="font-medium">Chương <select id="shChapter" onchange="shMetaChanged('chapter')" class="w-full border rounded p-2 mt-1"></select></label>
+    </div>
+    <div id="shFileBox" class="hidden space-y-3 rounded-lg border border-dashed border-slate-300 p-3">
+      <div class="flex flex-wrap items-center gap-3">
+        <label class="bg-slate-800 text-white px-4 py-2 rounded-lg cursor-pointer font-semibold text-sm">Chọn file câu hỏi (Excel, CSV, JSON)
+          <input id="shFile" type="file" accept=".xlsx,.xls,.csv,.json" class="hidden" onchange="shPickFile(event)"></label>
+        <button type="button" onclick="downloadTemplate()" class="text-sm underline text-indigo-600">Tải file CSV mẫu (4 dạng câu)</button>
+      </div>
+      <p class="text-xs text-slate-500">Cột bắt buộc: <code>grade, subject, chapter, difficulty, content</code>. Cột khác: <code>question_type</code> (multiple_choice, true_false, short_answer, essay; bỏ trống = trắc nghiệm), <code>a, b, c, d</code>, <code>correct_answer</code>, <code>explanation</code>, <code>image_url</code>. Độ khó: nhan_biet, thong_hieu, van_dung, van_dung_cao. Mỗi file chỉ nên có một lớp và một môn.</p>
+      <label class="block text-sm font-medium">File này là
+        <select id="shFileKind" class="w-full border rounded p-2 mt-1">
+          <option value="exam">Một đề thi</option><option value="chapter">Ngân hàng câu hỏi</option></select></label>
+      <div id="shFileInfo" class="text-sm"></div>
+      <div class="space-y-2 border-t pt-3">
+        <div class="flex flex-wrap items-center gap-3">
+          <label class="bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg cursor-pointer font-semibold text-sm">Chọn ảnh minh họa (nhiều file)
+            <input id="shImgFiles" type="file" multiple accept="image/*" class="hidden" onchange="shPickImgs(event)"></label>
+          <button type="button" onclick="shClearImgs()" class="text-sm underline text-slate-500">Xóa ảnh đã chọn</button>
+        </div>
+        <p class="text-xs text-slate-500">Nếu cột <code>image_url</code> ghi <code>anh_1</code>, <code>anh_2</code>,... hãy chọn tất cả ảnh (image1.png, image2.png...) cùng lúc, không cần đổi tên. Ảnh được xếp theo số trong tên file: ảnh thứ 1 ↔ anh_1, thứ 2 ↔ anh_2... Khi chia sẻ, ảnh được đổi tên và tải lên kho ảnh tự động.</p>
+        <div id="shImgList" class="hidden max-h-48 overflow-y-auto rounded-lg border divide-y bg-white"></div>
+      </div>
     </div>
     <div id="shSrcInfo" class="text-xs text-slate-500"></div>
 
@@ -293,14 +317,16 @@ create policy "owner delete questions" on questions for delete to authenticated 
 <div id="loginModal" class="hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onclick="if (event.target === this) closeLogin()">
   <div role="dialog" aria-modal="true" aria-labelledby="lgTitle" class="w-full max-w-sm bg-white rounded-xl shadow p-5 space-y-3">
     <h2 id="lgTitle" class="text-lg font-bold">Đăng nhập</h2>
-    <p class="text-sm text-slate-500">Cần đăng nhập để chia sẻ, đánh giá và lưu học liệu về kho của bạn.</p>
+    <p class="text-sm text-slate-500">Cần đăng nhập để chia sẻ, đánh giá và lưu học liệu về kho của bạn. Chưa có tài khoản giáo viên thì đăng ký ngay bên dưới.</p>
     <input id="lgEmail" type="email" autocomplete="username" placeholder="Email" class="w-full border rounded p-2">
     <input id="lgPass" type="password" autocomplete="current-password" placeholder="Mật khẩu" onkeydown="if (event.key === 'Enter') doLogin()" class="w-full border rounded p-2">
+    <input id="lgPass2" type="password" autocomplete="new-password" placeholder="Nhập lại mật khẩu" onkeydown="if (event.key === 'Enter') doLogin()" class="hidden w-full border rounded p-2">
     <div id="lgMsg" class="text-sm text-red-600"></div>
     <div class="flex justify-end gap-3">
       <button onclick="closeLogin()" class="px-4 py-2 rounded-lg bg-slate-100 font-semibold">Hủy</button>
-      <button onclick="doLogin()" class="px-5 py-2 rounded-lg bg-indigo-600 text-white font-semibold">Đăng nhập</button>
+      <button id="lgBtn" onclick="doLogin()" class="px-5 py-2 rounded-lg bg-indigo-600 text-white font-semibold">Đăng nhập</button>
     </div>
+    <p id="lgToggle" class="text-sm text-slate-600 text-center">Chưa có tài khoản? <button type="button" onclick="lgSwitch('signup')" class="text-indigo-600 font-semibold underline">Đăng ký giáo viên</button></p>
   </div>
 </div>
 
@@ -310,7 +336,7 @@ create policy "owner delete questions" on questions for delete to authenticated 
 // ================== CẤU HÌNH (điền thông tin của bạn) ==================
 const SUPABASE_URL = 'https://xzznmfgihzjeqsmiuypi.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_dUldhQYF1ETrSCZ4jiy3Og_ygfkm9XW';
-const LINKS = { manage: 'admin.html', exams: 'matrix_exam01.html' };   // trang quản lý ngân hàng / trang trộn đề của bạn
+const LINKS = { manage: 'admin.html', exams: 'matrix_exam.html' };   // trang quản lý ngân hàng / trang trộn đề của bạn
 const PAGE = 12;                                                        // số thẻ mỗi trang
 const MAX_QUESTIONS = 500;                                              // giới hạn số câu mỗi lần chia sẻ
 // ======================================================================
@@ -520,7 +546,16 @@ const real = {
     const { data, error } = await db.from('exams').insert(row).select('id').single();
     if (error) throw error; return data.id;
   },
-  async registerDownload(id) { const { data, error } = await db.rpc('register_download', { p_bank: id }); if (error) throw error; return data; }
+  async registerDownload(id) { const { data, error } = await db.rpc('register_download', { p_bank: id }); if (error) throw error; return data; },
+  // tải ảnh minh họa của file lên kho ảnh với tên không bao giờ trùng: q_[timestamp]_[tên gốc]
+  async uploadImage(file, n) {
+    const safe = file.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/gi, 'd').replace(/[^A-Za-z0-9._-]+/g, '_');
+    const path = `q_${Date.now() + n}_${safe}`, bucket = db.storage.from('question-images');
+    const { error } = await bucket.upload(path, file, { contentType: file.type || undefined, cacheControl: '31536000', upsert: false });
+    if (error) throw new Error(`ảnh "${file.name}": ${error.message}`);
+    return { path, url: bucket.getPublicUrl(path).data.publicUrl };
+  },
+  async removeFiles(paths) { if (paths.length) await db.storage.from('question-images').remove(paths); }
 };
 
 // ----- Dữ liệu mẫu cho ?demo=1 -----
@@ -577,18 +612,42 @@ const demo = (() => {
     copyImage: async url => url,
     insertQuestions: async rows => wait(rows.map((_, i) => 1000 + i)),
     createExam: async () => wait(1),
+    uploadImage: async (file, n) => wait({ path: file.name, url: 'https://example.com/demo/' + n + '_' + encodeURIComponent(file.name) }),
+    removeFiles: async () => wait(),
     registerDownload: async id => { const b = ensure().find(x => x.id === id); if (b.owner_id !== 'me' && !b.clonedAt) { b.downloads++; b.clonedAt = new Date().toISOString(); } return wait(b.downloads); }
   };
 })();
 const api = DEMO ? demo : real;
 
 // ---------- Đăng nhập ----------
-function openLogin() { $('lgMsg').textContent = ''; $('loginModal').classList.remove('hidden'); $('lgEmail').focus(); }
+function openLogin() { lgSwitch('login'); $('lgMsg').textContent = ''; $('loginModal').classList.remove('hidden'); $('lgEmail').focus(); }
 function closeLogin() { $('loginModal').classList.add('hidden'); $('lgPass').value = ''; }
+let lgMode = 'login';
+function lgSwitch(m) {
+  lgMode = m; $('lgMsg').textContent = ''; $('lgMsg').className = 'text-sm text-red-600';
+  $('lgPass2').classList.toggle('hidden', m !== 'signup');
+  $('lgBtn').textContent = m === 'signup' ? 'Tạo tài khoản giáo viên' : 'Đăng nhập';
+  $('lgPass').autocomplete = m === 'signup' ? 'new-password' : 'current-password';
+  $('lgToggle').innerHTML = m === 'signup' ? 'Đã có tài khoản? <button type="button" onclick="lgSwitch(\'login\')" class="text-indigo-600 font-semibold underline">Đăng nhập</button>'
+    : 'Chưa có tài khoản? <button type="button" onclick="lgSwitch(\'signup\')" class="text-indigo-600 font-semibold underline">Đăng ký giáo viên</button>';
+}
 async function doLogin() {
-  const { error } = await db.auth.signInWithPassword({ email: $('lgEmail').value.trim(), password: $('lgPass').value });
-  if (error) { $('lgMsg').textContent = 'Đăng nhập thất bại: ' + error.message; return; }
-  closeLogin();
+  const err = $('lgMsg'); err.textContent = ''; err.className = 'text-sm text-red-600';
+  const email = $('lgEmail').value.trim(), password = $('lgPass').value;
+  if (lgMode === 'signup') {
+    if (!/^\S+@\S+\.\S+$/.test(email)) return err.textContent = 'Email chưa đúng định dạng.';
+    if (password.length < 6) return err.textContent = 'Mật khẩu tối thiểu 6 ký tự.';
+    if (password !== $('lgPass2').value) return err.textContent = 'Hai lần nhập mật khẩu chưa giống nhau.';
+    $('lgBtn').disabled = true;
+    const { data, error } = await db.auth.signUp({ email, password });
+    $('lgBtn').disabled = false;
+    if (error) return err.textContent = 'Không tạo được tài khoản: ' + error.message;
+    if (data?.user && Array.isArray(data.user.identities) && !data.user.identities.length) return err.textContent = 'Email này đã có tài khoản. Hãy đăng nhập (hoặc dùng email khác).';
+    if (!data.session) { lgSwitch('login'); err.className = 'text-sm text-green-700'; err.textContent = 'Đã tạo tài khoản. Hãy mở email để bấm xác nhận, rồi quay lại đăng nhập.'; }
+    return;
+  }
+  const { error } = await db.auth.signInWithPassword({ email, password });
+  if (error) err.textContent = 'Đăng nhập thất bại: ' + error.message;
 }
 async function authClick() { if (S.user) { if (!DEMO) await db.auth.signOut(); } else openLogin(); }
 function renderAuth() {
@@ -860,11 +919,12 @@ async function runClone() {
 
 // ---------- Chia sẻ lên kho chung ----------
 let shMeta = [], shExams = [], shNameTouched = false;
-async function openShare() {
+async function openShare(kind = 'exam') {
   if (!requireLogin()) return;
+  shResetFile();
   $('shMsg').innerHTML = ''; $('shOk').checked = false; $('shName').value = ''; shNameTouched = false; $('shDesc').value = ''; $('shSrcInfo').textContent = '';
   document.querySelector('input[name=shVis][value=public]').checked = true;
-  document.querySelector('input[name=shKind][value=exam]').checked = true;
+  document.querySelector(`input[name=shKind][value=${kind === 'file' ? 'file' : 'exam'}]`).checked = true;
   $('shAuthor').value = userName();
   $('shareModal').classList.remove('hidden');
   shKindChanged();
@@ -874,7 +934,8 @@ const shKind = () => document.querySelector('input[name=shKind]:checked').value;
 
 async function shKindChanged() {
   if (!$('shName').value.trim()) shNameTouched = false;
-  const k = shKind(); $('shExamBox').classList.toggle('hidden', k !== 'exam'); $('shChapterBox').classList.toggle('hidden', k !== 'chapter');
+  const k = shKind(); $('shExamBox').classList.toggle('hidden', k !== 'exam'); $('shChapterBox').classList.toggle('hidden', k !== 'chapter'); $('shFileBox').classList.toggle('hidden', k !== 'file');
+  if (k === 'file') { $('shSrcInfo').textContent = ''; $('shBtn').disabled = false; return; }
   $('shSrcInfo').textContent = 'Đang tải danh sách...'; $('shBtn').disabled = false;
   try {
     if (k === 'exam') {
@@ -900,6 +961,104 @@ function shMetaChanged(level) {
   if ($('shChapter').value && !shNameTouched) $('shName').value = `${$('shSubject').value} ${g} - ${$('shChapter').value}`;
 }
 
+// ----- Tải file lên: Excel / CSV / JSON + ảnh minh họa -----
+let shRows = [], shFileName = '', shImgs = [];
+const lowerKeys = r => { const o = {}; for (const k in r) o[String(k).trim().toLowerCase()] = r[k]; return o; };
+const normTag = v => { const m = String(v ?? '').trim().match(/^anh_?0*(\d+)$/i); return m ? 'anh_' + Number(m[1]) : String(v ?? '').trim(); };
+const slotOf = v => { const m = String(v ?? '').match(/^anh_(\d+)$/); return m ? Number(m[1]) : 0; };
+// LaTeX trong JSON: \frac, \text, \theta... bị hiểu nhầm là ký tự điều khiển; nhân đôi dấu gạch ngược cho các trường hợp đó
+function fixEsc(raw) {
+  return String(raw)
+    .replace(/(?<!\\)\\(?=(?:[bft][a-zA-Z]|neq|nabla|notin|rho|right|rangle))/g, '\\\\')
+    .replace(/(?<!\\)\\(?=u(?![0-9a-fA-F]{4}))/g, '\\\\')
+    .replace(/(?<!\\)\\(?!["\\\/bfnrtu])/g, '\\\\');
+}
+function shResetFile() {
+  shRows = []; shFileName = ''; shImgs.forEach(x => URL.revokeObjectURL(x.url)); shImgs = [];
+  $('shFileInfo').innerHTML = ''; $('shImgList').innerHTML = ''; $('shImgList').classList.add('hidden');
+}
+async function shPickFile(ev) {
+  const f = ev.target.files[0]; ev.target.value = ''; if (!f) return;
+  try {
+    let rows;
+    if (/\.json$/i.test(f.name)) {
+      let d = JSON.parse(fixEsc(await f.text())); if (!Array.isArray(d)) d = d && d.questions;
+      if (!Array.isArray(d)) throw new Error('JSON cần là một mảng câu hỏi.'); rows = d;
+    } else {
+      if (typeof XLSX === 'undefined') throw new Error('Thư viện đọc Excel chưa tải được, hãy kiểm tra kết nối mạng rồi tải lại trang.');
+      const wb = XLSX.read(new Uint8Array(await f.arrayBuffer()), { type: 'array', codepage: 65001 });   // 65001 = UTF-8, để CSV tiếng Việt không có BOM không bị lỗi font
+      rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+    }
+    if (!rows.length) throw new Error('File không có dòng dữ liệu nào.');
+    if (rows.length > MAX_QUESTIONS) throw new Error(`File có ${rows.length} câu, mỗi lần chỉ chia sẻ tối đa ${MAX_QUESTIONS} câu. Hãy tách file.`);
+    shRows = rows.map(r => lowerKeys(r && typeof r === 'object' ? r : {})); shFileName = f.name;
+    if (!shNameTouched) $('shName').value = f.name.replace(/\.[^.]+$/, '');
+  } catch (e) { shRows = []; shFileName = ''; $('shFileInfo').innerHTML = `<div class="p-3 rounded bg-red-100 text-red-800">Không đọc được file: ${esc(e.message)}</div>`; return; }
+  shRenderFileInfo();
+}
+// Kiểm tra thử ngay khi chọn file: số câu hợp lệ, lỗi từng câu, lớp/môn, số thẻ ảnh so với số ảnh đã chọn
+function shRenderFileInfo() {
+  const el = $('shFileInfo'); if (!shFileName) { el.innerHTML = ''; return; }
+  const dry = shRows.map(r => ({ ...r, image_url: slotOf(normTag(r.image_url)) ? 'https://placeholder.invalid/x.png' : r.image_url }));
+  const { rows, errs } = convert(dry, {});
+  const slots = new Set(shRows.map(r => slotOf(normTag(r.image_url))).filter(Boolean)), max = Math.max(0, ...slots);
+  const gs = [...new Set(rows.map(r => r.grade))], ss = [...new Set(rows.map(r => r.subject))];
+  const bad = [];
+  if (errs.length) bad.push(`${errs.length} câu lỗi: ${esc(errs.slice(0, 4).join('; '))}${errs.length > 4 ? '...' : ''}`);
+  if (gs.length > 1 || ss.length > 1) bad.push('File có nhiều lớp hoặc nhiều môn, hãy tách thành từng file riêng.');
+  if (max > shImgs.length) bad.push(`File dùng thẻ ảnh đến anh_${max} nhưng mới chọn ${shImgs.length} ảnh.`);
+  const cnt = {}; rows.forEach(r => cnt[TYPE_NAME[r.question_type]] = (cnt[TYPE_NAME[r.question_type]] || 0) + 1);
+  el.innerHTML = `<div class="p-3 rounded ${bad.length ? 'bg-amber-50 text-amber-900' : 'bg-green-100 text-green-800'}">
+    Đã đọc <b>${shRows.length}</b> câu từ "${esc(shFileName)}" (${rows.length} hợp lệ${rows.length ? ': ' + Object.entries(cnt).map(([k, v]) => `${k} ${v}`).join(', ') : ''}).
+    ${gs.length === 1 && ss.length === 1 ? `Lớp ${esc(gs[0])} · ${esc(ss[0])}.` : ''}
+    ${slots.size ? `Dùng ${slots.size} thẻ ảnh, đã chọn ${shImgs.length} ảnh.` : ''}
+    ${bad.length ? '<br>⚠ ' + bad.join('<br>⚠ ') : '<br>Sẵn sàng chia sẻ.'}</div>`;
+}
+function shPickImgs(ev) {
+  const files = [...ev.target.files].filter(f => f.type.startsWith('image/')).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+  ev.target.value = ''; if (!files.length) return;
+  shImgs.forEach(x => URL.revokeObjectURL(x.url)); shImgs = files.map(file => ({ file, url: URL.createObjectURL(file) }));
+  shRenderImgs(); shRenderFileInfo();
+}
+function shClearImgs() { shImgs.forEach(x => URL.revokeObjectURL(x.url)); shImgs = []; shRenderImgs(); shRenderFileInfo(); }
+function shMoveImg(i, d) { const j = i + d; if (j < 0 || j >= shImgs.length) return; [shImgs[i], shImgs[j]] = [shImgs[j], shImgs[i]]; shRenderImgs(); }
+function shDelImg(i) { URL.revokeObjectURL(shImgs[i].url); shImgs.splice(i, 1); shRenderImgs(); shRenderFileInfo(); }
+function shRenderImgs() {
+  const box = $('shImgList'); box.classList.toggle('hidden', !shImgs.length);
+  box.innerHTML = shImgs.map((x, i) => `
+    <div class="flex items-center gap-2 p-2 text-sm">
+      <b class="w-12 shrink-0">anh_${i + 1}</b>
+      <img src="${x.url}" alt="" class="h-10 w-10 object-contain rounded border bg-white shrink-0">
+      <span class="min-w-0 flex-1 truncate text-xs">${esc(x.file.name)}</span>
+      <button type="button" aria-label="Đưa lên" onclick="shMoveImg(${i}, -1)" ${i === 0 ? 'disabled' : ''} class="px-2 py-1 rounded hover:bg-slate-100 disabled:opacity-30">▲</button>
+      <button type="button" aria-label="Đưa xuống" onclick="shMoveImg(${i}, 1)" ${i === shImgs.length - 1 ? 'disabled' : ''} class="px-2 py-1 rounded hover:bg-slate-100 disabled:opacity-30">▼</button>
+      <button type="button" aria-label="Bỏ ảnh" onclick="shDelImg(${i})" class="px-2 py-1 rounded text-red-600 hover:bg-red-50">✕</button>
+    </div>`).join('');
+}
+// Tải ảnh lên, thay thẻ anh_N bằng link thật; trả về câu hỏi đã sẵn sàng + danh sách file đã tải (để dọn nếu bước sau lỗi)
+async function shPrepareFile() {
+  if (!shRows.length) throw new Error('Chưa chọn file câu hỏi.');
+  const slots = [...new Set(shRows.map(r => slotOf(normTag(r.image_url))).filter(Boolean))].sort((a, b) => a - b);
+  const max = Math.max(0, ...slots);
+  if (max > shImgs.length) throw new Error(`File dùng thẻ ảnh đến anh_${max} nhưng mới chọn ${shImgs.length} ảnh.`);
+  const paths = [], map = {};
+  try {
+    for (const [n, k] of slots.entries()) {
+      say('shMsg', true, `Đang tải ảnh lên (${n + 1}/${slots.length})...`);
+      const up = await api.uploadImage(shImgs[k - 1].file, n); paths.push(up.path); map['anh_' + k] = up.url;
+    }
+  } catch (e) { api.removeFiles(paths).catch(() => {}); throw new Error('Không tải được ảnh lên kho ảnh: ' + e.message); }
+  return { src: shRows.map(r => ({ ...r, image_url: map[normTag(r.image_url)] || r.image_url })), upPaths: paths };
+}
+function downloadTemplate() {
+  const csv = '﻿question_type,grade,subject,chapter,difficulty,content,a,b,c,d,correct_answer,explanation,image_url\n' +
+    'multiple_choice,6,Toán,Phân số,nhan_biet,"1/2 + 1/2 = ?",1,2,0,1/4,A,"Cộng hai phân số cùng mẫu.",\n' +
+    'true_false,6,Toán,Phân số,thong_hieu,"Xét các phát biểu sau:",1/2 > 1/3,2/4 = 1/2,3/5 > 1,1/4 < 1/3,"Đ,Đ,S,Đ","Giải thích từng ý.",\n' +
+    'short_answer,6,Toán,Phân số,van_dung,"3/4 của 20 là bao nhiêu?",,,,,15,"20 x 3/4 = 15",anh_1\n' +
+    'essay,6,Toán,Phân số,van_dung_cao,"Trình bày cách quy đồng mẫu số hai phân số.",,,,,,"Ý 1 (1đ): tìm MSC. Ý 2 (1đ): nhân tử phụ.",\n';
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = 'mau_cau_hoi.csv'; a.click();
+}
+
 async function submitShare() {
   if (!requireLogin()) return;
   const name = $('shName').value.trim(), author = $('shAuthor').value.trim(), vis = document.querySelector('input[name=shVis]:checked').value, k = shKind();
@@ -907,24 +1066,31 @@ async function submitShare() {
   if (!author) return say('shMsg', false, 'Hãy nhập tên hiển thị của tác giả.');
   if (!$('shOk').checked) return say('shMsg', false, 'Hãy xác nhận bạn có quyền chia sẻ nội dung này.');
   $('shBtn').disabled = true; say('shMsg', true, 'Đang chuẩn bị nội dung...');
+  let upPaths = [];
   try {
-    let src, fb, minutes = null;
+    let src, fb, minutes = null, bankKind = k;
     if (k === 'exam') {
       const id = $('shExam').value; if (!id) throw new Error('Chưa chọn đề thi.');
       const e = await api.examData(id); src = e.questions; minutes = e.minutes; fb = { grade: e.grade, subject: e.subject, chapter: '' };
+    } else if (k === 'file') {
+      ({ src, upPaths } = await shPrepareFile()); fb = {}; bankKind = $('shFileKind').value;
     } else {
       const g = $('shGrade').value, s = $('shSubject').value, c = $('shChapter').value; if (!g || !s || !c) throw new Error('Chưa chọn đủ lớp, môn, chương.');
       src = await api.chapterQuestions(g, s, c); fb = { grade: Number(g), subject: s, chapter: c };
     }
     const { rows, errs } = convert(src, fb);
     if (!rows.length) throw new Error('Không có câu hỏi hợp lệ để chia sẻ.' + (errs.length ? ' ' + errs.slice(0, 3).join('; ') : ''));
+    if (k === 'file') {   // file tải lên phải sạch: không tự bỏ câu lỗi, và chỉ một lớp / một môn để bộ lọc đúng
+      if (errs.length) throw new Error(`File có ${errs.length} câu lỗi, chưa chia sẻ câu nào: ${errs.slice(0, 5).join('; ')}${errs.length > 5 ? '...' : ''}`);
+      if (new Set(rows.map(r => r.grade)).size > 1 || new Set(rows.map(r => r.subject)).size > 1) throw new Error('File có nhiều lớp hoặc nhiều môn. Hãy tách thành từng file riêng.');
+    }
     if (rows.length > MAX_QUESTIONS) throw new Error(`Mỗi lần chỉ chia sẻ tối đa ${MAX_QUESTIONS} câu (bộ này có ${rows.length}). Hãy chọn chương nhỏ hơn.`);
     const chapters = [...new Set(rows.map(r => r.chapter))];
     localStorage.setItem('cb_author', author);
     say('shMsg', true, 'Đang chia sẻ...');
     await api.create({
-      author_name: author, title: name.slice(0, 120), description: $('shDesc').value.trim() || null, kind: k,
-      grade: rows[0].grade, subject: rows[0].subject, chapter: k === 'chapter' ? chapters[0] : (chapters.length === 1 ? chapters[0] : null),
+      author_name: author, title: name.slice(0, 120), description: $('shDesc').value.trim() || null, kind: bankKind,
+      grade: rows[0].grade, subject: rows[0].subject, chapter: chapters.length === 1 ? chapters[0] : null,
       visibility: vis, question_count: rows.length, payload: { questions: rows, minutes }
     });
     closeShare();
@@ -932,6 +1098,7 @@ async function submitShare() {
     loadMeta();
     if (S.tab === 'mine') loadMine(); else if (vis === 'public') loadList(0); else showTab('mine');
   } catch (e) {
+    if (upPaths.length) api.removeFiles(upPaths).catch(() => {});   // chia sẻ lỗi: dọn các ảnh vừa tải lên
     const missing = /shared_banks|schema cache|does not exist|permission denied/i.test(e.message || '');
     say('shMsg', false, missing ? 'Chưa cấu hình kho cộng đồng hoặc thiếu quyền: hãy chạy đoạn SQL ở đầu file này trong Supabase. Chi tiết: ' + esc(e.message) : esc(e.message));
   } finally { $('shBtn').disabled = false; }
