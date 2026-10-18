@@ -131,6 +131,13 @@
         <button type="button" onclick="clearMatrix()" class="px-3 py-1.5 rounded bg-white border font-semibold text-red-600 hover:bg-red-50">🗑 Xóa trắng</button>
       </div>
     </div>
+    <div class="flex flex-wrap items-center gap-2 text-sm bg-violet-50 border border-violet-200 rounded-lg px-3 py-2">
+      <label class="flex items-center gap-1 font-medium text-violet-800">✨ Gemini API Key <span class="text-xs font-normal text-slate-500">(cho nút viết ma trận đặc tả AI)</span>
+        <input id="gKeyM" type="password" autocomplete="off" oninput="syncKeyFromMatrix()" onchange="syncKeyFromMatrix()" placeholder="AIza..." class="border rounded px-2 py-1 w-52 font-normal text-slate-800"></label>
+      <button type="button" onclick="$('gKeyM').type = $('gKeyM').type === 'password' ? 'text' : 'password'" class="px-2 py-1 border rounded bg-white" title="Hiện/ẩn key">👁</button>
+      <button type="button" onclick="openKeyGuide()" class="text-xs text-violet-700 underline">Cách lấy key miễn phí</button>
+      <span id="gKeyMState" class="text-xs"></span>
+    </div>
     <div class="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
       <span>Phím <kbd class="px-1 border rounded">Tab</kbd>, <kbd class="px-1 border rounded">←↑→↓</kbd> hoặc <kbd class="px-1 border rounded">Enter</kbd> để chuyển ô. Ô viết tắt: NB = Nhận biết, TH = Thông hiểu, VD = Vận dụng, VDC = Vận dụng cao.</span>
       <span id="mxSaved">💾 Tự động lưu nháp</span>
@@ -1396,10 +1403,11 @@ const GEMINI_TRIES = 3, GEMINI_WAIT_MS = 2000;                          // mỗi
 const aiBusy = new Set();                              // id các câu đang chờ AI
 const findQ = id => exam.find(x => String(x.id) === String(id));
 
+const keyField = () => ($('gKeyM').offsetParent ? $('gKeyM') : $('gKey'));   // ô Key đang hiển thị (màn ma trận hoặc màn biên tập)
 function openKeyGuide() { $('keyModal').classList.remove('hidden'); }
 function closeKeyGuide() {
   $('keyModal').classList.add('hidden');
-  if (!$('gKey').value.trim()) $('gKey').focus();   // đóng popup xong, con trỏ vẫn nhấp nháy ở ô Key để dán
+  if (!$('gKey').value.trim()) keyField().focus();   // đóng popup xong, con trỏ vẫn nhấp nháy ở ô Key để dán
 }
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeKeyGuide(); });
 
@@ -1412,10 +1420,13 @@ function updateKeyUi() {
     (has ? 'bg-sky-50 border-sky-200 text-sky-800' : 'bg-amber-50 border-amber-300 text-amber-800');
   c.textContent = has ? '✓ Đã lưu Gemini API Key trên trình duyệt này. Tính năng AI viết lời giải đã sẵn sàng.'
                       : '💡 Nhập Gemini API Key để bật tính năng AI viết lời giải miễn phí.';
+  const ms = $('gKeyMState'); ms.textContent = has ? '✓ Đã lưu trên trình duyệt này' : '⚠ Chưa có key'; ms.className = 'text-xs ' + (has ? 'text-emerald-700' : 'text-amber-700');
   document.querySelectorAll('.ai-btn').forEach(b => { b.title = has ? 'AI viết lời giải ngắn gọn cho câu này' : KEY_TIP; });
 }
 
+function syncKeyFromMatrix() { $('gKey').value = $('gKeyM').value; saveGemini(); }
 function saveGemini() {
+  if ($('gKeyM').value !== $('gKey').value) $('gKeyM').value = $('gKey').value;
   updateKeyUi();
   try { localStorage.setItem('gemini_key', $('gKey').value.trim()); localStorage.setItem('gemini_model2', $('gModel').value.trim()); } catch {}
 }
@@ -2118,7 +2129,7 @@ async function exportSpecDocx() {
   if (!cellRefs.length) return toast('Chưa có ma trận để xuất.');
   const { parts, rows } = specRows();
   if (!rows.length) return toast('Ma trận đang trống: hãy nhập số câu trước khi viết ma trận đặc tả.');
-  if (!$('gKey').value.trim()) { $('gKey').scrollIntoView({ block: 'center', behavior: 'smooth' }); $('gKey').focus(); openKeyGuide(); return; }
+  if (!$('gKey').value.trim()) { keyField().scrollIntoView({ block: 'center', behavior: 'smooth' }); keyField().focus(); openKeyGuide(); return; }
   const label = btn.textContent; btn.disabled = true;
   try {
     const todo = rows.filter(x => !specCache.has(x.key)), BATCH = 8, nb = Math.ceil(todo.length / BATCH);
@@ -2147,7 +2158,7 @@ if (USE_MOCK) { last = { grade: 11, subject: 'Vật lý' }; $('mockBar').classLi
 restoreSubject = last.subject || null;
 $('grade').innerHTML = Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}"${i + 1 === (Number(last.grade) || 10) ? ' selected' : ''}>Lớp ${i + 1}</option>`).join('');
 try { $('eSchool').value = localStorage.getItem('exam_school') || ''; $('eDept').value = localStorage.getItem('exam_dept') || ''; $('eExam').value = localStorage.getItem('exam_name') || ''; } catch {}
-try { $('gKey').value = localStorage.getItem('gemini_key') || ''; { const m = localStorage.getItem('gemini_model2'); $('gModel').value = (!m || /^gemini-[12]\./.test(m)) ? GEMINI_DEFAULT_MODEL : m; } } catch {}   // model cũ (1.x / 2.x) tự chuyển sang Gemini 3.x
+try { $('gKey').value = $('gKeyM').value = localStorage.getItem('gemini_key') || ''; { const m = localStorage.getItem('gemini_model2'); $('gModel').value = (!m || /^gemini-[12]\./.test(m)) ? GEMINI_DEFAULT_MODEL : m; } } catch {}   // model cũ (1.x / 2.x) tự chuyển sang Gemini 3.x
 updateKeyUi();
 loadSubjects();
 /* ===== Khu vực GIÁO VIÊN: chặn tài khoản HỌC SINH =====
