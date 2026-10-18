@@ -2075,6 +2075,7 @@ async function curDel(a) {
 
 // ---------- Giao diện & đăng nhập ----------
 function showTab(n) {
+  if (n === 6 && !isAdmin) n = 1;      // tab duyệt kho chung chỉ dành cho quản trị web
   [1, 2, 3, 4, 5, 6].forEach(i => {
     $('panel' + i).classList.toggle('hidden', n !== i);
     $('tab' + i).className = 'px-4 py-2 rounded-lg font-semibold ' + (n === i ? 'bg-indigo-600 text-white' : 'bg-white');
