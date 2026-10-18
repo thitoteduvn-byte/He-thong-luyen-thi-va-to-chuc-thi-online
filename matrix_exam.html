@@ -127,6 +127,7 @@
         <button type="button" onclick="distributeEven()" class="px-3 py-1.5 rounded bg-white border font-semibold hover:bg-slate-100">⚖️ Phân bổ đều</button>
         <button type="button" onclick="applyTemplate()" title="Mức độ 40% NB - 30% TH - 20% VD - 10% VDC; chia theo các dạng câu có trong ngân hàng" class="px-3 py-1.5 rounded bg-white border font-semibold hover:bg-slate-100">📐 Dùng ma trận mẫu chuẩn BGD</button>
         <button type="button" onclick="exportMatrixDocx()" class="px-3 py-1.5 rounded bg-white border font-semibold text-sky-700 hover:bg-sky-50">📄 Xuất ma trận (.docx)</button>
+        <button type="button" id="specBtn" onclick="exportSpecDocx()" title="AI viết yêu cầu cần đạt cho từng bài và xuất Ma trận + Bản đặc tả ra Word (khổ ngang)" class="px-3 py-1.5 rounded bg-white border font-semibold text-violet-700 hover:bg-violet-50">✨ Viết ma trận đặc tả (AI) (.docx)</button>
         <button type="button" onclick="clearMatrix()" class="px-3 py-1.5 rounded bg-white border font-semibold text-red-600 hover:bg-red-50">🗑 Xóa trắng</button>
       </div>
     </div>
@@ -2005,6 +2006,131 @@ function exportMatrixDocx() {
   const name = `Ma_tran_${fileSafe(subject)}_${grade}.docx`;
   saveBlob(buildDocx(body, newCtx(), { landscape: true, title: 'Ma trận đề kiểm tra' }), name);
   toast('Đã xuất ' + name);
+}
+
+
+// ---------- 11. MA TRẬN + BẢN ĐẶC TẢ do AI viết "yêu cầu cần đạt" (mẫu: cột Chương | Bài và yêu cầu cần đạt | Số tiết | Phần I-III × B-H-VD | Tổng) ----------
+const SPEC_PARTS = [
+  { k: 'multiple_choice', roman: 'I',   fill: 'DDEBF7', name: 'Trắc nghiệm nhiều phương án lựa chọn' },
+  { k: 'true_false',      roman: 'II',  fill: 'F8CBAD', name: 'Trắc nghiệm đúng sai' },
+  { k: 'short_answer',    roman: 'III', fill: 'C6E0B4', name: 'Trắc nghiệm trả lời ngắn' },
+  { k: 'essay',           roman: 'IV',  fill: 'FFF2CC', name: 'Tự luận' }
+];
+const SPEC_LV = [{ k: 'nb', a: 'B', t: 'Nhận biết' }, { k: 'th', a: 'H', t: 'Thông hiểu' }, { k: 'vd', a: 'VD', t: 'Vận dụng' }];   // VD gồm cả Vận dụng cao
+const specCache = new Map();                                       // đã viết rồi thì không gọi AI lại khi bấm xuất lần nữa
+const romanToInt = r => { const v = { i: 1, v: 5, x: 10, l: 50, c: 100 }; let t = 0; r = r.toLowerCase(); for (let i = 0; i < r.length; i++) t += v[r[i + 1]] > v[r[i]] ? -v[r[i]] : v[r[i]]; return t; };
+const chapterTag = c => { const m = String(c).match(/(?:chương|chuong|chủ đề|chu de|chuyên đề)\s*([ivxlc]+|\d+)\b/i); return m ? String(/^\d+$/.test(m[1]) ? +m[1] : romanToInt(m[1])) : c; };
+
+// Gom ma trận hiện tại: mỗi dòng = 1 bài có câu hỏi, đếm theo [phần][B,H,VD]
+function specRows() {
+  recalc();
+  const parts = SPEC_PARTS.filter(p => p.k !== 'essay' || cellRefs.some(r => r.t === 'essay' && r.n > 0));
+  const rows = [];
+  mrows.forEach((m, r) => {
+    const cnt = {}; parts.forEach(p => cnt[p.k] = [0, 0, 0]);
+    grid[r].forEach(ref => { if (ref.n > 0 && cnt[ref.t]) cnt[ref.t][Math.min(ref.di, 2)] += ref.n; });
+    const lv = [0, 1, 2].map(i => parts.reduce((a, p) => a + cnt[p.k][i], 0));
+    if (lv.some(x => x > 0)) rows.push({ m, cnt, lv, key: `${m.c}|${m.label}|${lv.map(x => x > 0 ? 1 : 0).join('')}`, id: rows.length });
+  });
+  return { parts, rows };
+}
+function specPrompt(batch) {
+  const items = batch.map(x => ({ id: x.id, chuong: x.m.c, bai: x.m.label, nhan_biet: x.lv[0] > 0, thong_hieu: x.lv[1] > 0, van_dung: x.lv[2] > 0,
+    dang_cau_hoi: SPEC_PARTS.filter(p => x.cnt[p.k] && x.cnt[p.k].some(v => v > 0)).map(p => p.name) }));
+  return `Bạn là giáo viên môn ${subject} lớp ${grade} (Chương trình GDPT 2018, Việt Nam). Hãy viết cột "BÀI VÀ YÊU CẦU CẦN ĐẠT" của BẢN ĐẶC TẢ ma trận đề kiểm tra, theo mẫu của các trường THPT.
+Với mỗi bài học dưới đây, CHỈ viết cho những mức độ có giá trị true (nhan_biet = Nhận biết, thong_hieu = Thông hiểu, van_dung = Vận dụng); mức độ false thì trả mảng rỗng [].
+Trả về DUY NHẤT JSON hợp lệ (không markdown, không giải thích): {"lessons":[{"id":<số id>,"tiet":<số tiết gợi ý>,"nb":["..."],"th":["..."],"vd":["..."]}]}
+Quy tắc:
+- Mỗi mức độ có 1 đến 4 gạch đầu dòng, mỗi gạch là một câu ngắn (tối đa 30 từ), KHÔNG ghi sẵn dấu "-" ở đầu câu.
+- Nhận biết: bắt đầu bằng "Nêu được", "Phát biểu được", "Nhận biết được", "Viết được", "Biết được"...
+- Thông hiểu: bắt đầu bằng "Hiểu được", "Giải thích được", "Phân biệt được", "Mô tả được"...
+- Vận dụng: bắt đầu bằng "Vận dụng được", "Tính được", "Giải được bài tập về"... (mức độ này gộp cả vận dụng cao).
+- Bám sát đúng nội dung của bài theo tên bài và chương trình GDPT 2018; không bịa kiến thức ngoài bài. Có thể điều chỉnh nội dung cho hợp với các dạng câu hỏi đã cho.
+- Công thức viết bằng chữ và ký hiệu Unicode (ví dụ: v = s/t, a = Δv/Δt, x², ½), tuyệt đối không dùng LaTeX.
+- "tiet": số tiết dạy của bài theo phân phối chương trình thông thường (số nguyên từ 1 đến 6).
+CÁC BÀI HỌC:
+${JSON.stringify(items)}`;
+}
+function specParse(text) {
+  let t = String(text).replace(/^```[a-z]*\n?|\n?```$/g, '').trim();
+  try { return JSON.parse(t); } catch (e) { const a = t.indexOf('{'), b = t.lastIndexOf('}'); if (a >= 0 && b > a) return JSON.parse(t.slice(a, b + 1)); throw e; }
+}
+const specList = v => (Array.isArray(v) ? v : []).map(x => String(x ?? '').replace(/^[\s\-–•*]+/, '').replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 5);
+
+function specDocXml(parts, rows, spec) {
+  const total = rows.reduce((a, x) => a + x.lv.reduce((p, q) => p + q, 0), 0);
+  const scale = mx.scale > 0 ? mx.scale : 10;
+  const nC = parts.length * 3, W = DW.h - 2 * DW.m, wCh = 900, wTiet = 720, wTot = 760, wLes = 5200;
+  const wc = Math.floor((W - wCh - wLes - wTiet - wTot) / nC), widths = [wCh, wLes, wTiet, ...Array(nC).fill(wc), wTot];
+  const F = { b: true, sz: 20 }, H = (t, o = {}) => run(t, { b: true, sz: 20, ...o });
+  const head1 = tr(tc(cellP(H('Chương')), { w: wCh, vm: 'restart' }) + tc(cellP(H('BÀI VÀ YÊU CẦU CẦN ĐẠT')), { w: wLes, vm: 'restart' }) + tc(cellP(H('SỐ TIẾT')), { w: wTiet, vm: 'restart' }) +
+    tc(cellP(H('CẤP ĐỘ TƯ DUY')), { w: wc * nC, span: nC }) + tc(cellP(H('Tổng')), { w: wTot, vm: 'restart' }), { header: true });
+  const head2 = tr(tc('', { w: wCh, vm: 'cont' }) + tc('', { w: wLes, vm: 'cont' }) + tc('', { w: wTiet, vm: 'cont' }) +
+    parts.map(p => tc(cellP(H('PHẦN ' + p.roman)), { w: wc * 3, span: 3 })).join('') + tc('', { w: wTot, vm: 'cont' }), { header: true });
+  const head3 = tr(tc('', { w: wCh, vm: 'cont' }) + tc('', { w: wLes, vm: 'cont' }) + tc('', { w: wTiet, vm: 'cont' }) +
+    parts.map(p => SPEC_LV.map(l => tc(cellP(H(l.a, { sz: 18 })), { w: wc, shd: p.fill })).join('')).join('') + tc('', { w: wTot, vm: 'cont' }), { header: true });
+  const colTot = parts.flatMap(p => [0, 1, 2].map(i => rows.reduce((a, x) => a + x.cnt[p.k][i], 0)));
+  const tietTot = rows.reduce((a, x) => a + (spec[x.id]?.tiet || 0), 0);
+  const totRow = tr(tc(cellP(H('TỔNG')), { w: wCh + wLes, span: 2 }) + tc(cellP(H(tietTot ? String(tietTot) : '')), { w: wTiet }) +
+    colTot.map((v, i) => tc(cellP(H(v ? String(v) : '', { sz: 20 })), { w: wc, shd: parts[Math.floor(i / 3)].fill })).join('') + tc(cellP(H(String(total))), { w: wTot }));
+  let prev = null;
+  const body = rows.map(x => {
+    const first = x.m.c !== prev; prev = x.m.c;
+    const sp = spec[x.id] || {};
+    const lines = [para(run(String(x.m.label).toUpperCase(), { b: true, sz: 20 }), { after: 20, line: 240, keepNext: true })];
+    SPEC_LV.forEach((l, i) => {
+      if (!x.lv[i]) return;
+      lines.push(para(run(l.t + ':', { b: true, sz: 20 }), { after: 0, line: 240, keepNext: true }));
+      const items = specList(sp[l.k]);
+      (items.length ? items : ['(chưa có nội dung – hãy nhập yêu cầu cần đạt)']).forEach(t => lines.push(para(run('- ' + t, { sz: 20, ...(items.length ? {} : { i: true, color: 'C00000' }) }), { after: 0, line: 240, left: 140, hanging: 140 })));
+    });
+    return tr(tc(first ? cellP(H(chapterTag(x.m.c), { sz: 22 })) : '', { w: wCh, vm: first ? 'restart' : 'cont' }) + tc(lines.join(''), { w: wLes, va: 'top' }) +
+      tc(cellP(H(sp.tiet ? String(sp.tiet) : '')), { w: wTiet }) +
+      parts.map(p => x.cnt[p.k].map(v => tc(cellP(run(v ? String(v) : '', { sz: 20 })), { w: wc, shd: p.fill })).join('')).join('') +
+      tc(cellP(H(String(x.lv.reduce((a, b) => a + b, 0)), { sz: 22 })), { w: wTot }), { cant: false });
+  }).join('');
+  const table = tbl(head1 + head2 + head3 + totRow + body, widths);
+  const dept = ($('eDept')?.value || '').trim(), school = ($('eSchool')?.value || '').trim(), kyThi = ($('eExam')?.value || '').trim();
+  const L = (t, o = {}) => para(run(t, { sz: 24, ...o }), { after: 0, line: 252 });
+  const top = (school ? L(school) : '') + (dept ? L(dept, { b: true }) : '') +
+    para(run(`MA TRẬN VÀ ĐẶC TẢ ${kyThi ? kyThi.toUpperCase() : 'ĐỀ KIỂM TRA'} – MÔN ${String(subject).toUpperCase()} ${grade}`, { b: true, sz: 26 }), { jc: 'center', before: 60, after: 120 });
+  const cnt = k => rows.reduce((a, x) => a + (x.cnt[k] || [0, 0, 0]).reduce((p, q) => p + q, 0), 0);
+  const per = Math.round(scale / total * 100) / 100;
+  const N = (txt, o = {}) => para(run(txt, { sz: 21, ...o }), { after: 20, line: 252, left: 1100, hanging: 1100 });
+  const notes = para(run('Lưu ý', { b: true, sz: 21 }), { before: 100, after: 20, keepNext: true }) +
+    parts.map(p => N(`Phần ${p.roman}: Câu hỏi ${p.name.toLowerCase()}, gồm ${cnt(p.k)} câu.`)).join('') +
+    N(`Thang điểm ${scale}; tổng số ${total} câu, mỗi câu trả lời đúng được ${String(per).replace('.', ',')} điểm.`) +
+    (cnt('true_false') ? N('Câu đúng sai (4 ý): chọn đúng 1 ý được 10% số điểm của câu; đúng 2 ý được 25%; đúng 3 ý được 50%; đúng cả 4 ý được 100%.') : '') +
+    N('Cấp độ tư duy: B = Nhận biết; H = Thông hiểu; VD = Vận dụng (gồm cả Vận dụng cao).');
+  return top + table + notes;
+}
+
+async function exportSpecDocx() {
+  const btn = $('specBtn'); if (btn.disabled) return;
+  if (!cellRefs.length) return toast('Chưa có ma trận để xuất.');
+  const { parts, rows } = specRows();
+  if (!rows.length) return toast('Ma trận đang trống: hãy nhập số câu trước khi viết ma trận đặc tả.');
+  if (!$('gKey').value.trim()) { $('gKey').scrollIntoView({ block: 'center', behavior: 'smooth' }); $('gKey').focus(); openKeyGuide(); return; }
+  const label = btn.textContent; btn.disabled = true;
+  try {
+    const todo = rows.filter(x => !specCache.has(x.key)), BATCH = 8, nb = Math.ceil(todo.length / BATCH);
+    for (let b = 0; b < nb; b++) {
+      const batch = todo.slice(b * BATCH, (b + 1) * BATCH);
+      const setSt = t => { btn.textContent = `⏳ AI đang viết ${b + 1}/${nb}… ${t || ''}`; };
+      setSt();
+      const { text } = await callGemini(specPrompt(batch), setSt);
+      let out; try { out = specParse(text); } catch (e) { throw new Error('AI trả về dữ liệu không đọc được, hãy bấm thử lại.'); }
+      const got = new Map((out.lessons || []).map(l => [Number(l.id), l]));
+      batch.forEach(x => { const l = got.get(x.id); if (l) specCache.set(x.key, { tiet: Math.max(1, Math.min(10, Math.round(Number(l.tiet) || 0) || 2)), nb: specList(l.nb), th: specList(l.th), vd: specList(l.vd) }); });
+    }
+    const spec = {}; let missing = 0;
+    rows.forEach(x => { const c = specCache.get(x.key); if (c) spec[x.id] = c; else missing++; });
+    const body = specDocXml(parts, rows, spec);
+    const name = `Ma_tran_dac_ta_${fileSafe(subject)}_${grade}.docx`;
+    saveBlob(buildDocx(body, newCtx(), { landscape: true, title: 'Ma trận và đặc tả đề kiểm tra' }), name);
+    toast(missing ? `Đã xuất ${name}, nhưng AI chưa viết được ${missing} bài (đã đánh dấu đỏ trong file). Bấm xuất lại để AI viết bổ sung.` : `Đã xuất ${name}. Hãy đọc lại và chỉnh sửa trong Word cho đúng ý bạn.`);
+  } catch (e) { toast('Lỗi Gemini: ' + e.message); }
+  finally { btn.disabled = false; btn.textContent = label; }
 }
 
 // ---------- Khởi tạo ----------
