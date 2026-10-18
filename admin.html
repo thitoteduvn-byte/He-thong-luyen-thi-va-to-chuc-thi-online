@@ -54,7 +54,7 @@ create policy "admin delete questions" on questions for delete to authenticated
 <!-- ===== Đăng nhập ===== -->
 <div id="loginBox" class="hidden max-w-sm mx-auto mt-24 bg-white p-6 rounded-xl shadow">
   <h1 class="text-xl font-bold mb-1">Đăng nhập giáo viên</h1>
-  <p class="text-xs text-slate-500 mb-4">Mỗi giáo viên có ngân hàng câu hỏi cá nhân riêng và dùng được cả ngân hàng chung.</p>
+  <p class="text-xs text-slate-500 mb-4">Mỗi giáo viên có ngân hàng câu hỏi cá nhân riêng (chỉ xem và sửa được ở mục Quản lý); khi tạo đề vẫn dùng được cả ngân hàng chung.</p>
   <input id="email" type="email" placeholder="Email" class="w-full border rounded p-2 mb-3">
   <input id="password" type="password" placeholder="Mật khẩu" class="w-full border rounded p-2 mb-3">
   <button onclick="login()" class="w-full bg-indigo-600 text-white rounded p-2 font-semibold">Đăng nhập</button>
@@ -75,6 +75,7 @@ create policy "admin delete questions" on questions for delete to authenticated
     <label class="flex items-center gap-1.5"><input type="radio" name="scope" value="mine" checked onchange="setScope(this.value)"> 📁 Ngân hàng cá nhân <span class="text-slate-400">(chỉ mình tôi dùng)</span></label>
     <label id="scopeCommonLbl" class="hidden flex items-center gap-1.5"><input type="radio" name="scope" value="common" onchange="setScope(this.value)"> 🌐 Ngân hàng chung <span class="text-slate-400">(mọi giáo viên dùng)</span></label>
     <span id="scopeNote" class="basis-full text-xs text-slate-500"></span>
+    <span id="shareNote" class="hidden basis-full text-xs rounded-lg bg-sky-50 border border-sky-200 text-sky-900 px-3 py-2"></span>
   </div>
 
   <div class="flex flex-wrap gap-2 mb-4">
@@ -82,6 +83,7 @@ create policy "admin delete questions" on questions for delete to authenticated
     <button id="tab2" onclick="showTab(2)" class="px-4 py-2 rounded-lg font-semibold">Nạp hàng loạt</button>
     <button id="tab3" onclick="showTab(3)" class="px-4 py-2 rounded-lg font-semibold">AI nhập liệu</button>
     <button id="tab4" onclick="showTab(4)" class="px-4 py-2 rounded-lg font-semibold">Quản lý ngân hàng</button>
+    <button id="tab6" onclick="showTab(6)" class="hidden px-4 py-2 rounded-lg font-semibold">🧩 Duyệt kho chung <span id="sgBadge" class="hidden ml-1 align-middle text-xs bg-amber-500 text-white rounded-full px-1.5 py-0.5"></span></button>
     <button id="tab5" onclick="showTab(5)" class="px-4 py-2 rounded-lg font-semibold">🚩 Báo lỗi <span id="rpBadge" class="hidden ml-1 align-middle text-xs bg-rose-600 text-white rounded-full px-1.5 py-0.5"></span></button>
   </div>
 
@@ -210,6 +212,21 @@ create policy "admin delete questions" on questions for delete to authenticated
 
   <!-- AI nhập liệu -->
   <section id="panel3" class="hidden bg-white p-5 rounded-xl shadow space-y-4">
+    <!-- Bước 1: mục lục sách giáo khoa (bắt buộc) -->
+    <div id="tocBox" class="rounded-lg border-2 border-violet-300 bg-violet-50/50 p-3 space-y-2">
+      <div class="text-sm font-semibold">① Mục lục sách giáo khoa <span class="text-red-600">(bắt buộc)</span></div>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 items-end">
+        <label class="text-sm font-medium">Lớp <select id="tocGrade" onchange="tocReset()" class="w-full border rounded p-2 mt-1 bg-white"></select></label>
+        <label class="text-sm font-medium">Môn <input id="tocSubject" list="subjects" oninput="tocReset()" placeholder="Vật lí" class="w-full border rounded p-2 mt-1 bg-white"></label>
+        <label class="md:col-span-2 bg-violet-700 hover:bg-violet-800 text-white px-4 py-2 rounded-lg cursor-pointer font-semibold text-sm text-center">
+          📎 Nạp file mục lục (PDF / Word / TXT)
+          <input id="tocFile" type="file" accept=".pdf,.docx,.txt,.csv,application/pdf,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" class="hidden" onchange="loadToc(event)"></label>
+      </div>
+      <p class="text-xs text-slate-600">Tên <b>chương</b> và <b>bài</b> của mọi câu hỏi do AI tách sẽ được chọn <b>nguyên văn từ mục lục này</b> và đối chiếu với mục lục chung của hệ thống, để toàn bộ giáo viên dùng chung một cách viết. File chỉ được đọc tạm trong trình duyệt, không lưu lại; chỉ danh sách tên chương/bài được ghi vào mục lục chung.</p>
+      <div id="tocInfo" class="text-sm"></div>
+      <details id="tocView" class="hidden text-xs"><summary class="cursor-pointer text-violet-800">Xem mục lục đã đọc</summary><div id="tocList" class="mt-1 max-h-48 overflow-auto bg-white border rounded p-2"></div></details>
+    </div>
+    <div class="text-sm font-semibold">② Nội dung đề cần tách</div>
     <label class="block text-sm font-medium">Gemini API key
       <input id="geminiKey" type="password" class="w-full border rounded p-2 mt-1" placeholder="Lưu trong trình duyệt này (localStorage)" oninput="localStorage.setItem('gemini_key', this.value.trim())"></label>
     <div class="rounded-lg border border-dashed border-violet-300 bg-violet-50 p-3 space-y-1">
@@ -225,9 +242,9 @@ create policy "admin delete questions" on questions for delete to authenticated
     <label class="block text-sm font-medium">Hoặc dán đề / câu hỏi thô (một hoặc nhiều câu, mọi dạng)
       <textarea id="rawText" rows="10" class="w-full border rounded p-2 mt-1"></textarea></label>
     <div class="rounded-lg bg-amber-50 border border-amber-300 text-amber-900 text-xs px-3 py-2">⚠ <b>Lưu ý AI miễn phí:</b> mỗi lần chỉ trả về khoảng <b>30 câu</b> JSON. Với đề dài, công cụ tự chia thành từng đợt ~25 câu rồi gộp kết quả (chờ lâu hơn một chút). Nếu dùng AI bên ngoài (nút "Sao chép lệnh quy ước"), hãy gửi mỗi lần tối đa ~30 câu rồi dán lần lượt từng đoạn JSON vào tab Nạp hàng loạt.</div>
-    <p class="text-xs text-slate-500">Lớp, môn, chương, bài, độ khó đang chọn ở tab "Nhập từng câu" được dùng làm mặc định nếu đề không ghi rõ. Kết quả được đưa vào tab "Nạp hàng loạt" để bạn kiểm tra trước khi nạp.</p>
+    <p class="text-xs text-slate-500">Lớp và môn lấy theo mục lục ở bước ①; độ khó đang chọn ở tab "Nhập từng câu" được dùng làm mặc định nếu đề không ghi rõ. Chương / bài do AI chọn từ mục lục; câu nào không khớp sẽ được tô vàng để bạn chọn lại. Kết quả được đưa vào tab "Nạp hàng loạt" để bạn kiểm tra trước khi nạp.</p>
     <p class="text-xs text-slate-500">Ảnh minh họa: ghi <code>[Hình]</code> ở vị trí câu có hình trong đề dán vào. AI sẽ đánh dấu <code>anh_1, anh_2…</code>; chọn các tệp ảnh ở tab "Nạp hàng loạt" để hệ thống tự khớp và tải lên.</p>
-    <button onclick="aiParse()" class="bg-violet-600 hover:bg-violet-700 text-white px-5 py-2 rounded-lg font-semibold">AI tách câu hỏi → JSON</button>
+    <button id="aiBtn" onclick="aiParse()" class="bg-violet-600 hover:bg-violet-700 text-white px-5 py-2 rounded-lg font-semibold">AI tách câu hỏi → JSON</button>
     <div class="flex flex-wrap items-center gap-3 text-sm">
       <button onclick="aiCopyPrompt()" class="underline text-violet-700" title="Dùng cùng quy ước này với AI bên ngoài (ChatGPT, Gemini...), rồi dán JSON vào tab Nạp hàng loạt">📋 Sao chép lệnh quy ước cho AI</button>
     </div>
@@ -258,7 +275,7 @@ create policy "admin delete questions" on questions for delete to authenticated
         <option value="">Mọi dạng</option><option value="multiple_choice">Trắc nghiệm</option><option value="true_false">Đúng/Sai</option>
         <option value="short_answer">Trả lời ngắn</option><option value="essay">Tự luận</option></select>
       <input id="mKw" placeholder="Từ khóa trong nội dung" class="border rounded p-2">
-      <select id="mScope" onchange="loadManage(0)" class="border rounded p-2 col-span-2 md:col-span-1" title="Nguồn câu hỏi">
+      <select id="mScope" onchange="loadManage(0)" class="border rounded p-2 col-span-2 md:col-span-1" title="Nguồn câu hỏi (chỉ quản trị)">
         <option value="">Cá nhân + chung</option><option value="mine">Chỉ của tôi</option><option value="common">Chỉ ngân hàng chung</option></select>
     </div>
     <div class="flex flex-wrap items-center gap-3">
@@ -274,6 +291,37 @@ create policy "admin delete questions" on questions for delete to authenticated
   </section>
 
   <!-- Báo lỗi câu hỏi từ học sinh -->
+  <!-- Duyệt câu hỏi đề xuất vào kho chung (chỉ quản trị) -->
+  <section id="panel6" class="hidden bg-white p-5 rounded-xl shadow space-y-4">
+    <p class="text-xs text-slate-600">Câu hỏi mới của giáo viên <b>gói miễn phí</b> được tự đề xuất vào đây. Máy chủ đã loại các câu <b>trùng hệt</b> với kho chung / đề xuất khác. Khi bạn duyệt, câu được <b>sao chép</b> sang kho chung (tên chương/bài đổi theo mục lục chuẩn nếu có); từ đó bản chung và bản cá nhân độc lập, xóa bên nào cũng không ảnh hưởng bên kia.</p>
+    <div class="flex flex-wrap items-center gap-3 text-sm">
+      <label class="font-medium">Hiển thị
+        <select id="sgStatus" onchange="loadSuggest(0)" class="border rounded p-2 ml-1">
+          <option value="pending">Chờ duyệt</option><option value="approved">Đã duyệt</option><option value="rejected">Đã bỏ</option><option value="duplicate">Trùng (tự loại)</option></select></label>
+      <button onclick="loadSuggest(sg.page)" class="border px-3 py-2 rounded-lg hover:bg-slate-50">Làm mới</button>
+      <button onclick="sgScan()" class="border px-3 py-2 rounded-lg hover:bg-slate-50" title="Đề xuất các câu cá nhân của tài khoản miễn phí chưa được quét">Quét lại câu cá nhân</button>
+      <span id="sgInfo" class="text-slate-500"></span>
+    </div>
+    <div id="sgBulk" class="flex flex-wrap items-center gap-2 text-sm">
+      <label class="flex items-center gap-1"><input type="checkbox" id="sgAll" onchange="sgSelAll(this.checked)"> Chọn cả trang</label>
+      <button onclick="sgApprove()" class="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded-lg font-semibold">✓ Duyệt vào kho chung</button>
+      <button onclick="sgReject()" class="bg-rose-600 hover:bg-rose-700 text-white px-4 py-1.5 rounded-lg font-semibold">✕ Bỏ</button>
+      <span id="sgSel" class="text-slate-500"></span>
+    </div>
+    <div id="sgList" class="space-y-3"></div>
+    <div id="sgPager" class="flex items-center justify-center gap-3 text-sm"></div>
+    <div id="msg6" class="text-sm"></div>
+    <details id="curBox" class="rounded-lg border bg-slate-50 px-3 py-2 text-sm" ontoggle="if (this.open) loadCurriculum()">
+      <summary class="cursor-pointer font-semibold">📚 Mục lục chuẩn (tên chương / bài dùng chung toàn hệ thống)</summary>
+      <div class="mt-3 space-y-2">
+        <div class="flex flex-wrap gap-2 items-center"><select id="curGrade" onchange="loadCurriculum()" class="border rounded p-1.5"></select>
+          <input id="curSubject" list="subjects" placeholder="Môn (để trống = tất cả)" onchange="loadCurriculum()" class="border rounded p-1.5">
+          <span class="text-xs text-slate-500">Đổi tên chương/bài sẽ cập nhật cả câu ở kho chung và đề xuất đang chờ; câu cá nhân không bị đụng tới.</span></div>
+        <div id="curList" class="max-h-96 overflow-auto"></div><div id="msg7" class="text-sm"></div>
+      </div>
+    </details>
+  </section>
+
   <section id="panel5" class="hidden bg-white p-5 rounded-xl shadow space-y-4">
     <div class="flex flex-wrap items-center gap-3 text-sm">
       <label class="font-medium">Hiển thị
@@ -1179,9 +1227,7 @@ const SCHEMA_PROMPT = `Bạn là trợ lý nhập liệu ngân hàng câu hỏi 
 
 5) Hình ảnh: nếu câu có hình ảnh / đồ thị / bảng / sơ đồ đi kèm (đề ghi "Hình", "hình vẽ", "[Hình 1]", "[ảnh]", "image"... hoặc rõ ràng cần hình), đặt image_url là thẻ tạm theo thứ tự xuất hiện trong TOÀN BỘ đề: "anh_1", "anh_2", "anh_3", ... liên tục, không bỏ số, không lặp, mỗi câu tối đa 1 thẻ. Câu không có hình: image_url = null.
 
-6) Tên chương và bài:
-- chapter VIẾT HOA HOÀN TOÀN, ví dụ "CHƯƠNG VI. CHUYỂN ĐỘNG TRÒN".
-- lesson viết thường chuẩn chính tả (chỉ hoa chữ đầu và tên riêng), ví dụ "Bài 31. Động học của chuyển động tròn đều". Nếu đề không ghi rõ chương / bài thì dùng giá trị mặc định được cung cấp, hoặc lesson = "" nếu không có.
+6) Tên chương và bài: chapter và lesson PHẢI chép NGUYÊN VĂN, đúng từng ký tự, từ "MỤC LỤC CHUẨN" ở cuối lệnh này. Tuyệt đối không tự đặt tên mới, không viết lại, không đổi hoa/thường. Xác định chương/bài theo nội dung câu hỏi; nếu đề ghi số bài (vd "Bài 31") thì chọn đúng bài có số đó. Không chắc bài thì chọn bài gần nhất trong đúng chương; không chắc chương thì để chapter = "" và lesson = "". grade và subject lấy đúng giá trị mặc định được cung cấp.
 
 7) explanation là lời giải chi tiết ngắn gọn. Giữ nguyên thứ tự câu trong đề.`;
 
@@ -1198,10 +1244,129 @@ async function gemini(prompt) {
   return JSON.parse(fixEsc(text.replace(/```json|```/g, '').trim()));
 }
 
+// ---------- MỤC LỤC SÁCH GIÁO KHOA (bắt buộc cho AI nhập liệu; đồng bộ với bảng curriculum, bank_share_setup.sql) ----------
+let aiToc = null, tocBusy = false;            // { grade, subject, toc: [{ chapter, lessons: [] }] }
+const vnKey = s => String(s ?? '').replace(/[Đđ]/g, 'd').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/y/g, 'i').replace(/[^a-z0-9]+/g, '');
+const ROMAN = { i: 1, v: 5, x: 10, l: 50, c: 100 };
+const romanVal = r => { let t = 0; r = r.toLowerCase(); for (let i = 0; i < r.length; i++) { const v = ROMAN[r[i]], n = ROMAN[r[i + 1]]; t += n > v ? -v : v; } return t; };
+const chNum = s => { const m = String(s).match(/(?:chương|chuong|chủ đề|chu de|unit)\s*([ivxlc]+|\d+)\b/i); return m ? (/^\d+$/.test(m[1]) ? +m[1] : romanVal(m[1])) : null; };
+const lsNum = s => { const m = String(s).match(/^\s*(?:bài|bai|lesson)\s*(\d+)/i); return m ? +m[1] : null; };
+const sentence = t => { t = t.trim(); return t && t === t.toUpperCase() && /[A-ZÀ-Ỹ]/.test(t) ? t.charAt(0) + t.slice(1).toLowerCase() : t; };
+
+// Đọc mục lục từ văn bản: dòng "Chương/Chủ đề/Unit ..." mở chương mới, dòng "Bài N ..." (hoặc Ôn tập/Bài tập cuối/Dự án...) là bài của chương đó
+function parseTocLocal(text) {
+  const lines = String(text).split(/\r?\n/).map(l => l.replace(/\u00a0/g, ' ').replace(/\s*(?:\.{2,}|…+|·{2,}|\t+|\s{4,})\s*\d{1,4}\s*$/, '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const CH = /^(chương|chuong|chủ đề|chu de|unit)\s*([ivxlc]+|\d+)\s*[.:\-–—]?\s*(.*)$/i, LS = /^(bài|bai|lesson)\s*(\d+)\s*[.:\-–—]?\s*(.*)$/i, EXTRA = /^(ôn tập|bài tập cuối|thực hành|dự án|chuyên đề|luyện tập chung)/i;
+  const out = []; let cur = null;
+  for (let i = 0; i < lines.length; i++) {
+    let m = lines[i].match(CH);
+    if (m) {
+      let title = m[3].trim();
+      if (!title && lines[i + 1] && !CH.test(lines[i + 1]) && !LS.test(lines[i + 1])) title = lines[++i];        // tên chương nằm ở dòng kế tiếp
+      const label = /unit/i.test(m[1]) ? 'UNIT' : /chủ|chu/i.test(m[1]) ? 'CHỦ ĐỀ' : 'CHƯƠNG';
+      cur = { chapter: `${label} ${m[2].toUpperCase()}${title ? '. ' + title.toUpperCase() : ''}`, lessons: [] }; out.push(cur); continue;
+    }
+    m = lines[i].match(LS);
+    if (m && cur) { cur.lessons.push(`Bài ${m[2]}${m[3] ? '. ' + sentence(m[3]) : ''}`); continue; }
+    if (cur && EXTRA.test(lines[i]) && lines[i].length < 120) cur.lessons.push(sentence(lines[i]));
+  }
+  return out.filter(c => c.chapter);
+}
+async function aiParseToc(text) {
+  const out = await gemini(`Đây là nội dung MỤC LỤC sách giáo khoa (môn ${$('tocSubject').value}, lớp ${$('tocGrade').value}). Trả về DUY NHẤT JSON là mảng theo đúng thứ tự trong sách: [{"chapter": "...", "lessons": ["...", "..."]}].
+- chapter: VIẾT HOA HOÀN TOÀN, dạng "CHƯƠNG VI. CHUYỂN ĐỘNG TRÒN" (giữ số chương như trong sách).
+- lessons: mỗi bài dạng "Bài 31. Động học của chuyển động tròn đều" (chỉ hoa chữ đầu và tên riêng); bỏ số trang, dấu chấm dẫn, mục không phải bài học. Bài Ôn tập / Bài tập cuối chương nếu có thì giữ nguyên tên.
+- Không bịa thêm chương hay bài không có trong văn bản.
+
+VĂN BẢN:
+${text.slice(0, 60000)}`);
+  return (Array.isArray(out) ? out : (out.toc || out.chapters || [])).map(c => ({ chapter: String(c.chapter || '').trim(), lessons: (c.lessons || []).map(x => String(x).trim()).filter(Boolean) })).filter(c => c.chapter);
+}
+function tocInit() {
+  const g = $('tocGrade'); if (!g.options.length) g.innerHTML = $('grade').innerHTML;
+  if (!aiToc && !$('tocSubject').value) { g.value = $('grade').value; $('tocSubject').value = $('subject').value; }
+}
+function tocReset() {
+  if (!aiToc) return;
+  aiToc = null; $('tocView').classList.add('hidden');
+  $('tocInfo').innerHTML = '<span class="text-amber-700">Bạn vừa đổi lớp / môn: hãy nạp lại file mục lục tương ứng.</span>'; aiArr = null; $('aiOut').innerHTML = '';
+}
+function tocShow() {
+  const n = aiToc.toc.reduce((a, c) => a + c.lessons.length, 0);
+  $('tocInfo').innerHTML = `<span class="text-green-700">✓ Mục lục ${esc(aiToc.subject)} lớp ${aiToc.grade}: <b>${aiToc.toc.length}</b> chương, <b>${n}</b> bài. ${esc(aiToc.note || '')}</span>`;
+  $('tocList').innerHTML = aiToc.toc.map(c => `<div class="font-semibold mt-1">${esc(c.chapter)}</div>` + c.lessons.map(l => `<div class="pl-4 text-slate-600">${esc(l)}</div>`).join('')).join('');
+  $('tocView').classList.remove('hidden');
+}
+async function loadToc(ev) {
+  const f = ev.target.files[0]; ev.target.value = '';
+  if (!f || tocBusy) return;
+  tocInit();
+  const info = $('tocInfo'), fail = m => { info.innerHTML = `<span class="text-red-700">${esc(m)}</span>`; };
+  const grade = +$('tocGrade').value, subject = $('tocSubject').value.trim();
+  if (!subject) return fail('Hãy nhập Môn trước khi nạp mục lục.');
+  const ext = (f.name.match(/\.(\w+)$/) || [])[1]?.toLowerCase();
+  if (!['pdf', 'docx', 'txt', 'csv'].includes(ext)) return fail('Chỉ đọc file .pdf, .docx, .txt hoặc .csv.');
+  if (f.size > 40 * 1024 * 1024) return fail('File quá lớn (tối đa 40 MB).');
+  tocBusy = true; aiToc = null; $('tocView').classList.add('hidden'); info.innerHTML = `<span class="text-violet-700">Đang đọc "${esc(f.name)}"...</span>`;
+  try {
+    let text;
+    if (ext === 'pdf') { text = (await pdfToText(await f.arrayBuffer())).text; if (text.replace(/\s/g, '').length < 20) return fail('PDF này không có chữ để đọc (có thể là bản scan). Hãy dùng bản có chữ hoặc file Word.'); }
+    else if (ext === 'docx') text = (await docxToText(await f.arrayBuffer())).text;
+    else text = await f.text();
+    let toc = parseTocLocal(text), how = '';
+    if (!toc.length || !toc.some(c => c.lessons.length)) {
+      info.innerHTML = '<span class="text-violet-700">Không nhận ra cấu trúc "Chương / Bài" bằng cách đọc thường, đang nhờ AI đọc mục lục...</span>';
+      toc = await aiParseToc(text); how = '(AI đọc mục lục)';
+    }
+    if (!toc.length) return fail('Không đọc được chương nào trong file. Hãy dùng file chỉ gồm trang mục lục, có dòng "Chương ..." và "Bài ...".');
+    let note = how;
+    const { data, error } = await db.rpc('curriculum_merge', { p_grade: grade, p_subject: subject, p_toc: toc });
+    if (error) {
+      if (/curriculum_merge|schema cache|Could not find/i.test(error.message)) note = '⚠ Chưa chạy bank_share_setup.sql nên chưa đối chiếu với mục lục chung của hệ thống. ' + how;
+      else return fail('Lỗi Supabase: ' + error.message);
+    } else {
+      toc = data.toc; if (data.subject) $('tocSubject').value = data.subject;
+      note = `${data.added_chapters || data.added_lessons ? `Đã bổ sung vào mục lục chung ${data.added_chapters} chương, ${data.added_lessons} bài mới.` : 'Khớp hoàn toàn với mục lục chung.'} ${how}`;
+    }
+    aiToc = { grade, subject: error ? subject : (data.subject || subject), toc, note };
+    tocShow();
+  } catch (e) { fail('Không đọc được mục lục: ' + e.message); }
+  finally { tocBusy = false; }
+}
+const tocPrompt = () => `\n\nMỤC LỤC CHUẨN (môn ${aiToc.subject}, lớp ${aiToc.grade}). chapter và lesson PHẢI chép nguyên văn từ danh sách này:\n` + aiToc.toc.map(c => JSON.stringify({ chapter: c.chapter, lessons: c.lessons })).join('\n');
+// Đưa chương/bài AI trả về về đúng tên trong mục lục (so khớp không dấu / theo số chương, số bài); không khớp thì để trống để người dùng chọn
+function aiCanon(q) {
+  if (!q || !aiToc) return q;
+  q.grade = aiToc.grade; q.subject = aiToc.subject;
+  const T = aiToc.toc, ck = vnKey(q.chapter), lk = vnKey(q.lesson), ln = lsNum(q.lesson), cn = chNum(q.chapter);
+  let ci = T.findIndex(c => ck && vnKey(c.chapter) === ck);
+  if (ci < 0 && ck.length >= 6) ci = T.findIndex(c => vnKey(c.chapter).includes(ck) || ck.includes(vnKey(c.chapter)));
+  if (ci < 0 && cn != null) { const hit = T.map((c, i) => [i, chNum(c.chapter)]).filter(x => x[1] === cn); if (hit.length === 1) ci = hit[0][0]; }
+  let li = -1, lc = ci;
+  const scan = (idxs, fn) => { for (const i of idxs) { const j = T[i].lessons.findIndex(fn); if (j >= 0) return [i, j]; } return null; };
+  const order = [...(ci >= 0 ? [ci] : []), ...T.map((_, i) => i).filter(i => i !== ci)];
+  let hit = lk ? scan(order, l => vnKey(l) === lk) : null;
+  if (!hit && ln != null) hit = scan(order, l => lsNum(l) === ln);
+  if (!hit && lk.length >= 8) hit = scan(order, l => vnKey(l).includes(lk) || lk.includes(vnKey(l)));
+  if (hit) { lc = hit[0]; li = hit[1]; }
+  if (lc >= 0) { q.chapter = T[lc].chapter; q.lesson = li >= 0 ? T[lc].lessons[li] : (q.lesson && !T[lc].lessons.length ? q.lesson : ''); if (li < 0 && T[lc].lessons.length) q.lesson = ''; }
+  else { q.chapter = ''; q.lesson = ''; }
+  return q;
+}
+const aiMissing = q => { if (!aiToc || !q) return false; const c = aiToc.toc.find(c => c.chapter === q.chapter); return !c || (c.lessons.length > 0 && !c.lessons.includes(q.lesson)); };
+function aiFix(i, kind, v) {
+  const q = aiArr[i]; if (!q) return;
+  if (kind === 'c') { q.chapter = v === '' ? '' : aiToc.toc[+v].chapter; q.lesson = ''; }
+  else { const c = aiToc.toc.find(c => c.chapter === q.chapter); q.lesson = v === '' || !c ? '' : c.lessons[+v]; }
+  aiRender();
+}
+
 let aiArr = null;
 async function aiCopyPrompt() {
-  try { await navigator.clipboard.writeText(SCHEMA_PROMPT); toast('Đã sao chép lệnh quy ước. Dán vào AI cùng đề của bạn.'); }
-  catch (e) { prompt('Sao chép lệnh quy ước (Ctrl+C):', SCHEMA_PROMPT); }
+  if (!aiToc) return say('msg3', false, 'Hãy nạp file Mục lục sách giáo khoa ở bước ① trước: lệnh quy ước cần kèm mục lục chuẩn.');
+  const full = `${SCHEMA_PROMPT}\n\nGiá trị mặc định: ${JSON.stringify({ grade: aiToc.grade, subject: aiToc.subject })}${tocPrompt()}`;
+  try { await navigator.clipboard.writeText(full); toast('Đã sao chép lệnh quy ước (kèm mục lục). Dán vào AI cùng đề của bạn.'); }
+  catch (e) { prompt('Sao chép lệnh quy ước (Ctrl+C):', full); }
 }
 // Chia đề dài thành các đợt ~25 câu (cắt tại chỗ bắt đầu "Câu N"), vì AI miễn phí chỉ trả về khoảng 30 câu / lần
 function aiChunks(raw, per = 25) {
@@ -1215,16 +1380,17 @@ function aiChunks(raw, per = 25) {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 async function aiParse() {
   const raw = $('rawText').value.trim();
+  if (!aiToc) return say('msg3', false, 'Hãy nạp file <b>Mục lục sách giáo khoa</b> ở bước ① trước (bắt buộc, để tên chương và bài thống nhất toàn hệ thống).');
   if (!raw) return say('msg3', false, 'Hãy dán nội dung đề hoặc nạp file vào ô trên.');
   $('aiOut').innerHTML = ''; aiArr = null;
   const chunks = aiChunks(raw), arr = [];
   try {
-    const d = { grade: $('grade').value, subject: $('subject').value, chapter: $('chapter').value, lesson: $('lesson').value, difficulty: $('difficulty').value };
+    const d = { grade: aiToc.grade, subject: aiToc.subject, difficulty: $('difficulty').value };
     for (let i = 0; i < chunks.length; i++) {
       say('msg3', true, chunks.length > 1 ? `Đang gọi Gemini: đợt ${i + 1}/${chunks.length} (đã có ${arr.length} câu)...` : 'Đang gọi Gemini...');
       let out;
       for (let t = 1; ; t++) {
-        try { out = await gemini(`${SCHEMA_PROMPT}\n\nGiá trị mặc định nếu đề không ghi rõ: ${JSON.stringify(d)}\n\nĐỀ${chunks.length > 1 ? ` (phần ${i + 1}/${chunks.length}; chỉ xử lý các câu trong phần này)` : ''}:\n${chunks[i]}`); break; }
+        try { out = await gemini(`${SCHEMA_PROMPT}\n\nGiá trị mặc định nếu đề không ghi rõ: ${JSON.stringify(d)}${tocPrompt()}\n\nĐỀ${chunks.length > 1 ? ` (phần ${i + 1}/${chunks.length}; chỉ xử lý các câu trong phần này)` : ''}:\n${chunks[i]}`); break; }
         catch (e) { if (t >= 3 || !/429|quota|rate|overload|503|unavailable|JSON|Unexpected/i.test(e.message)) throw e; say('msg3', true, `Gemini bận hoặc trả dữ liệu lỗi, thử lại lần ${t + 1} (đợt ${i + 1}/${chunks.length})...`); await sleep(4000 * t); }
       }
       arr.push(...(Array.isArray(out) ? out : (out.questions || [out])));
@@ -1232,25 +1398,37 @@ async function aiParse() {
     }
     let n = 0;   // đánh số lại thẻ ảnh liên tục theo thứ tự câu: anh_1, anh_2, ...
     arr.forEach(q => { if (q && /^anh_?\d+$/i.test(String(q.image_url ?? '').trim())) q.image_url = 'anh_' + (++n); });
+    arr.forEach(aiCanon);
     aiArr = arr; aiRender();
   } catch (err) {
-    if (arr.length) { aiArr = arr; aiRender(); say('msg3', false, `Lỗi AI giữa chừng (${esc(err.message)}). Đã giữ ${arr.length} câu xử lý được; có thể nạp phần này, rồi chạy lại với phần đề còn lại.`); }
+    if (arr.length) { arr.forEach(aiCanon); aiArr = arr; aiRender(); say('msg3', false, `Lỗi AI giữa chừng (${esc(err.message)}). Đã giữ ${arr.length} câu xử lý được; có thể nạp phần này, rồi chạy lại với phần đề còn lại.`); }
     else say('msg3', false, 'Lỗi AI: ' + esc(err.message));
   }
 }
 // Bảng kết quả AI: xem nhanh từng câu, câu cần ảnh được tô nổi bật, rồi bấm Nạp để chuyển sang "Nạp hàng loạt"
 function aiRender() {
   const rows = aiArr.map(normalize), bad = rows.map((q, i) => ({ i, e: check(q) })).filter(x => x.e.length), needImg = rows.filter(q => q.image_url).length;
-  say('msg3', !bad.length, `AI tách được ${rows.length} câu` + (needImg ? `, trong đó <b>${needImg} câu cần hình ảnh</b>` : ', không có câu nào cần hình') + (bad.length ? `; ${bad.length} câu cần sửa (tô đỏ)` : '') + '.');
+  const miss = rows.map((q, i) => aiMissing(aiArr[i]) ? i : -1).filter(i => i >= 0);
+  say('msg3', !bad.length && !miss.length, `AI tách được ${rows.length} câu` + (needImg ? `, trong đó <b>${needImg} câu cần hình ảnh</b>` : ', không có câu nào cần hình') + (bad.length ? `; ${bad.length} câu cần sửa (tô đỏ)` : '') + (miss.length ? `; <b>${miss.length} câu chưa khớp mục lục</b> (tô vàng): hãy chọn chương/bài ở cột "Chương / Bài"` : '') + '.');
   const errOf = new Map(bad.map(x => [x.i, x.e.join('; ')]));
-  $('aiOut').innerHTML = `<div class="max-h-96 overflow-auto rounded-lg border"><table class="w-full text-xs"><thead class="bg-slate-100 sticky top-0"><tr class="text-left"><th class="p-2">#</th><th class="p-2">Dạng</th><th class="p-2">Độ khó</th><th class="p-2">Nội dung</th><th class="p-2">Hình ảnh</th></tr></thead><tbody>` +
-    rows.map((q, i) => `<tr class="border-t align-top ${errOf.has(i) ? 'bg-red-50' : q.image_url ? 'bg-amber-50' : ''}"><td class="p-2 font-semibold">${i + 1}</td><td class="p-2 whitespace-nowrap">${esc(TYPE_NAME[q.question_type] || q.question_type)}</td><td class="p-2 whitespace-nowrap">${esc(DIFF_NAME[q.difficulty] || q.difficulty || '?')}</td><td class="p-2">${esc(snip(q.content, 110))}${errOf.has(i) ? `<div class="text-red-600">⚠ ${esc(errOf.get(i))}</div>` : ''}</td><td class="p-2 whitespace-nowrap">${q.image_url ? `<b class="text-amber-700">🖼 ${esc(q.image_url)}</b>` : '<span class="text-slate-400">—</span>'}</td></tr>`).join('') +
+  const T = aiToc?.toc || [];
+  const chLs = i => {
+    const q = aiArr[i], c = T.find(c => c.chapter === q.chapter);
+    if (!miss.includes(i)) return `<div class="font-medium">${esc(q.chapter)}</div><div class="text-slate-500">${esc(q.lesson || '')}</div>`;
+    const ci = T.findIndex(c => c.chapter === q.chapter);
+    return `<select onchange="aiFix(${i},'c',this.value)" class="border rounded p-1 w-44 bg-white"><option value="">— chọn chương —</option>${T.map((c, k) => `<option value="${k}" ${k === ci ? 'selected' : ''}>${esc(snip(c.chapter, 40))}</option>`).join('')}</select>` +
+      (c && c.lessons.length ? `<select onchange="aiFix(${i},'l',this.value)" class="border rounded p-1 w-44 bg-white mt-1"><option value="">— chọn bài —</option>${c.lessons.map((l, k) => `<option value="${k}" ${l === q.lesson ? 'selected' : ''}>${esc(snip(l, 40))}</option>`).join('')}</select>` : '');
+  };
+  $('aiOut').innerHTML = `<div class="max-h-96 overflow-auto rounded-lg border"><table class="w-full text-xs"><thead class="bg-slate-100 sticky top-0"><tr class="text-left"><th class="p-2">#</th><th class="p-2">Dạng</th><th class="p-2">Độ khó</th><th class="p-2">Chương / Bài</th><th class="p-2">Nội dung</th><th class="p-2">Hình ảnh</th></tr></thead><tbody>` +
+    rows.map((q, i) => `<tr class="border-t align-top ${miss.includes(i) ? 'bg-yellow-100' : errOf.has(i) ? 'bg-red-50' : q.image_url ? 'bg-amber-50' : ''}"><td class="p-2 font-semibold">${i + 1}</td><td class="p-2 whitespace-nowrap">${esc(TYPE_NAME[q.question_type] || q.question_type)}</td><td class="p-2 whitespace-nowrap">${esc(DIFF_NAME[q.difficulty] || q.difficulty || '?')}</td><td class="p-2">${chLs(i)}</td><td class="p-2">${esc(snip(q.content, 110))}${errOf.has(i) && !miss.includes(i) ? `<div class="text-red-600">⚠ ${esc(errOf.get(i))}</div>` : ''}</td><td class="p-2 whitespace-nowrap">${q.image_url ? `<b class="text-amber-700">🖼 ${esc(q.image_url)}</b>` : '<span class="text-slate-400">—</span>'}</td></tr>`).join('') +
     `</tbody></table></div>
     <div class="flex flex-wrap items-center gap-3 mt-3"><button onclick="aiSend()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-semibold">Nạp ➜ sang cửa sổ Nạp hàng loạt</button>
     <span class="text-xs text-slate-500">Chưa ghi gì vào cơ sở dữ liệu; bạn sẽ kiểm tra, chọn ảnh rồi mới bấm "Nạp vào Supabase".</span></div>`;
 }
 function aiSend() {
   if (!aiArr) return;
+  const nMiss = aiArr.filter(aiMissing).length;
+  if (nMiss) return say('msg3', false, `Còn <b>${nMiss} câu chưa khớp mục lục</b> (tô vàng). Hãy chọn chương/bài cho các câu đó rồi nạp, để tên chương và bài thống nhất toàn hệ thống.`);
   const rows = aiArr.map(normalize), bad = rows.map((q, i) => ({ i, e: check(q) })).filter(x => x.e.length);
   const imgQ = rows.map((q, i) => ({ i, t: q.image_url })).filter(x => x.t);
   $('json').value = JSON.stringify(aiArr, null, 2);
@@ -1367,7 +1545,7 @@ async function loadManage(page = 0) {
   if (d) qb = qb.eq('difficulty', d);
   if (t) qb = qb.eq('question_type', t);
   if (kw) qb = qb.ilike('content', likeOf(kw));
-  const sc = $('mScope').value;
+  const sc = isAdmin ? $('mScope').value : 'mine';      // giáo viên chỉ xem/sửa ngân hàng của mình; quản trị được chọn thêm ngân hàng chung
   if (sc === 'mine') qb = qb.eq('owner_id', sess.user.id);
   if (sc === 'common') qb = qb.is('owner_id', null);
   const { data, error, count } = await qb.order('id', { ascending: false }).range(page * PAGE, page * PAGE + PAGE - 1);
@@ -1423,10 +1601,11 @@ async function loadFilterOptions() {
   const rows = [];
   let cols = mg.noLesson ? 'grade, subject, chapter' : 'grade, subject, chapter, lesson';
   for (let a = 0; ; a += 1000) {
-    let { data, error } = await db.from('questions').select(cols).order('id').range(a, a + 999);
+    const own = q => isAdmin ? q : q.eq('owner_id', sess.user.id);      // giáo viên: chỉ thống kê câu của mình
+    let { data, error } = await own(db.from('questions').select(cols)).order('id').range(a, a + 999);
     if (error && !mg.noLesson && lessonColErr(error.message)) {        // bảng chưa có cột lesson
       mg.noLesson = true; cols = 'grade, subject, chapter';
-      ({ data, error } = await db.from('questions').select(cols).order('id').range(a, a + 999));
+      ({ data, error } = await own(db.from('questions').select(cols)).order('id').range(a, a + 999));
     }
     if (error || !data) break;
     rows.push(...data);
@@ -1634,8 +1813,12 @@ async function cleanImages(urls) {
   for (const u of new Set(urls.filter(Boolean))) {
     const i = u.indexOf(marker);
     if (i < 0) continue;                                    // ảnh ngoài bucket của mình: không đụng tới
-    const { count, error } = await db.from('questions').select('id', { count: 'exact', head: true }).eq('image_url', u);
-    if (error || count) continue;                           // còn câu khác dùng (hoặc không kiểm tra được): giữ lại
+    const r = await db.rpc('question_image_in_use', { p_url: u });        // máy chủ thấy cả kho cá nhân của người khác và đề xuất đang chờ
+    if (!r.error) { if (r.data) continue; }
+    else {                                                                  // chưa chạy bank_share_setup.sql: đếm theo quyền của tài khoản này
+      const { count, error } = await db.from('questions').select('id', { count: 'exact', head: true }).eq('image_url', u);
+      if (error || count) continue;                         // còn câu khác dùng (hoặc không kiểm tra được): giữ lại
+    }
     paths.push(decodeURIComponent(u.slice(i + marker.length).split('?')[0]));
   }
   if (!paths.length) return 0;
@@ -1758,15 +1941,149 @@ function rpEdit(id) {                                   // mở cửa sổ sửa
 }
 setInterval(() => { if (sess && !document.hidden) refreshReportBadge(); }, 120000);
 
+// ---------- Duyệt câu hỏi đề xuất vào kho chung (quản trị) + ghi chú cho giáo viên miễn phí ----------
+const SG_PAGE = 20, sg = { page: 0, rows: [], total: 0, sel: new Set() };
+const sgMissing = m => /suggestion_|schema cache|Could not find the function/i.test(m || '');
+const SG_MSG = 'Chưa cài đặt: chạy file <code>bank_share_setup.sql</code> trong Supabase → SQL Editor (sau plan_limits_setup.sql).';
+async function refreshSgBadge() {
+  const b = $('sgBadge'); if (!isAdmin) return b.classList.add('hidden');
+  const { data, error } = await db.rpc('suggestion_counts');
+  const n = error ? 0 : (data?.pending || 0);
+  b.textContent = n; b.classList.toggle('hidden', !n);
+}
+async function loadShareNote() {
+  const el = $('shareNote'); el.classList.add('hidden');
+  if (!sess || isAdmin) return;
+  const { data, error } = await db.rpc('my_suggestion_stats');
+  if (error || !data?.auto) return;
+  const c = data.counts || {}, tot = (c.pending || 0) + (c.approved || 0) + (c.rejected || 0) + (c.duplicate || 0);
+  el.innerHTML = `🤝 <b>Tài khoản miễn phí:</b> câu hỏi bạn lưu vào ngân hàng cá nhân sẽ được <b>tự động đề xuất</b> vào ngân hàng chung để mọi thầy cô cùng dùng (máy chủ loại câu trùng, quản trị duyệt). Sau khi duyệt, bản chung và bản của bạn độc lập: xóa bên nào cũng không ảnh hưởng bên kia. Nâng cấp Pro để giữ riêng toàn bộ.` +
+    (tot ? ` <span class="whitespace-nowrap">Đã đề xuất ${tot} câu: ${c.approved || 0} được duyệt, ${c.pending || 0} chờ duyệt${c.duplicate ? `, ${c.duplicate} trùng` : ''}${c.rejected ? `, ${c.rejected} đã bỏ` : ''}.</span>` : '');
+  el.classList.remove('hidden');
+}
+async function loadSuggest(page = 0, keepMsg = false) {
+  if (!sess || !isAdmin) return;
+  sg.page = Math.max(0, page); sg.sel = new Set();
+  $('sgList').innerHTML = '<div class="text-sm text-slate-500">Đang tải...</div>';
+  const { data, error } = await db.rpc('suggestion_list', { p_status: $('sgStatus').value, p_limit: SG_PAGE, p_offset: sg.page * SG_PAGE });
+  if (error) { $('sgList').innerHTML = ''; return say('msg6', false, sgMissing(error.message) ? SG_MSG : 'Lỗi Supabase: ' + esc(error.message)); }
+  if (!keepMsg) $('msg6').innerHTML = '';
+  if (!(data.rows || []).length && sg.page > 0) return loadSuggest(sg.page - 1, keepMsg);
+  sg.rows = data.rows || []; sg.total = data.total || 0;
+  renderSuggest(); refreshSgBadge();
+}
+function renderSuggest() {
+  const pages = Math.max(1, Math.ceil(sg.total / SG_PAGE)), pend = $('sgStatus').value === 'pending';
+  $('sgInfo').textContent = `${sg.total} câu · trang ${sg.page + 1}/${pages}`;
+  $('sgBulk').classList.toggle('hidden', !pend); $('sgAll').checked = false;
+  $('sgList').innerHTML = sg.rows.length ? sg.rows.map(r => {
+    const o = optsOf(r), opts = Object.keys(o).length ? '<div class="text-xs text-slate-600 mt-1 grid sm:grid-cols-2 gap-x-4">' + Object.entries(o).map(([k, v]) => `<div><b>${esc(k)}.</b> ${esc(snip(v, 120))}</div>`).join('') + '</div>' : '';
+    return `<div class="border rounded-lg p-3 ${r.near_of ? 'border-amber-400 bg-amber-50/40' : ''}">
+      <div class="flex flex-wrap items-center gap-2 text-xs">
+        ${pend ? `<input type="checkbox" class="sgChk" data-id="${r.id}" onchange="sgToggle(${r.id}, this.checked)">` : ''}
+        <span class="font-semibold">#${r.id}</span>
+        <span class="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">${esc(TYPE_NAME[r.question_type] || r.question_type || '')}</span>
+        <span class="px-2 py-0.5 rounded-full bg-slate-100">${esc(DIFF_NAME[r.difficulty] || r.difficulty || '')}</span>
+        <span class="text-slate-600">Lớp ${r.grade} · ${esc(r.subject || '')} · ${esc(r.chapter || '(chưa có chương)')}${r.lesson ? ' · ' + esc(r.lesson) : ''}</span>
+        ${r.in_toc ? '' : '<span class="px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-800" title="Tên chương/bài chưa có trong mục lục chuẩn">ngoài mục lục</span>'}
+        <span class="text-slate-400 ml-auto">${esc(r.owner_email || '')}</span>
+      </div>
+      <div class="mt-2 whitespace-pre-wrap sgMath">${esc(snip(r.content, 600))}</div>${opts}
+      ${r.image_url ? `<a href="${escA(r.image_url)}" target="_blank" class="text-xs text-indigo-600 underline">🖼 xem ảnh</a>` : ''}
+      ${r.note ? `<div class="mt-2 text-xs text-slate-500">ℹ ${esc(r.note)}</div>` : ''}
+      ${r.near_of ? `<div class="mt-2 text-xs text-amber-800">⚠ Gần giống câu #${r.near_of} trong kho chung (${Math.round(r.near_sim * 100)}%). <button class="underline" onclick="sgSimilar(${r.id}, this)">Xem các câu giống</button></div>` : (pend ? `<div class="mt-1 text-xs"><button class="underline text-slate-500" onclick="sgSimilar(${r.id}, this)">Kiểm tra gần giống</button></div>` : '')}
+      <div id="sgSim${r.id}" class="text-xs"></div>
+      ${pend ? `<div class="mt-2 flex flex-wrap gap-2 text-xs"><button onclick="sgEdit(${r.id})" class="border rounded px-2 py-1 hover:bg-slate-50">Sửa chương/bài</button></div>` : ''}
+    </div>`;
+  }).join('') : '<div class="text-sm text-slate-500">Không có câu nào.</div>';
+  $('sgPager').innerHTML = pages > 1 ? `<button ${sg.page ? '' : 'disabled'} onclick="loadSuggest(${sg.page - 1})" class="border rounded px-3 py-1 disabled:opacity-40">‹ Trước</button><span>${sg.page + 1}/${pages}</span><button ${sg.page + 1 < pages ? '' : 'disabled'} onclick="loadSuggest(${sg.page + 1})" class="border rounded px-3 py-1 disabled:opacity-40">Sau ›</button>` : '';
+  sgUpdSel(); math($('sgList'));
+}
+const sgUpdSel = () => { $('sgSel').textContent = sg.sel.size ? `Đã chọn ${sg.sel.size} câu` : ''; };
+function sgToggle(id, on) { on ? sg.sel.add(id) : sg.sel.delete(id); sgUpdSel(); }
+function sgSelAll(on) { sg.sel = new Set(on ? sg.rows.map(r => r.id) : []); document.querySelectorAll('.sgChk').forEach(c => c.checked = on); sgUpdSel(); }
+async function sgSimilar(id, btn) {
+  btn.disabled = true;
+  const { data, error } = await db.rpc('suggestion_similar', { p_id: id });
+  btn.disabled = false;
+  $('sgSim' + id).innerHTML = error ? `<span class="text-red-600">${esc(error.message)}</span>` : (data || []).length
+    ? '<div class="mt-1 border rounded bg-white p-2 space-y-1">' + data.map(x => `<div><b>#${x.id}</b> (${Math.round(x.sim * 100)}%) ${esc(x.chapter || '')}${x.lesson ? ' · ' + esc(x.lesson) : ''}<div class="text-slate-600">${esc(snip(x.content, 220))}</div></div>`).join('') + '</div>'
+    : '<div class="text-green-700 mt-1">Không thấy câu nào giống trong kho chung.</div>';
+}
+async function sgEdit(id) {
+  const r = sg.rows.find(x => x.id === id); if (!r) return;
+  const c = prompt('Chương (nên chép đúng tên trong mục lục chuẩn):', r.chapter || ''); if (c === null) return;
+  const l = prompt('Bài:', r.lesson || ''); if (l === null) return;
+  const { error } = await db.rpc('suggestion_update', { p_id: id, p_chapter: c, p_lesson: l });
+  if (error) return say('msg6', false, esc(error.message));
+  loadSuggest(sg.page);
+}
+async function sgApprove() {
+  const ids = [...sg.sel]; if (!ids.length) return say('msg6', false, 'Hãy chọn ít nhất một câu.');
+  const out = sg.rows.filter(r => sg.sel.has(r.id) && !r.in_toc).length;
+  if (!confirm(`Duyệt ${ids.length} câu vào ngân hàng chung?` + (out ? `\n(${out} câu có tên chương/bài ngoài mục lục chuẩn; vẫn được duyệt, giữ nguyên tên.)` : ''))) return;
+  const { data, error } = await db.rpc('suggestion_approve', { p_ids: ids });
+  if (error) return say('msg6', false, esc(error.message));
+  say('msg6', true, `Đã duyệt ${data.approved} câu vào ngân hàng chung` + (data.duplicate ? `; ${data.duplicate} câu bị loại vì trùng hệt.` : '.'));
+  loadSuggest(sg.page, true);
+}
+async function sgReject() {
+  const ids = [...sg.sel]; if (!ids.length) return say('msg6', false, 'Hãy chọn ít nhất một câu.');
+  const note = prompt(`Bỏ ${ids.length} câu đã chọn? Ghi chú lý do (không bắt buộc):`, ''); if (note === null) return;
+  const { data, error } = await db.rpc('suggestion_reject', { p_ids: ids, p_note: note });
+  if (error) return say('msg6', false, esc(error.message));
+  say('msg6', true, `Đã bỏ ${data} câu (câu cá nhân của giáo viên vẫn giữ nguyên).`); loadSuggest(sg.page, true);
+}
+async function sgScan() {
+  let after = 0, added = 0, scanned = 0;
+  for (let k = 0; k < 500; k++) {
+    say('msg6', true, `Đang quét câu cá nhân... đã xem ${scanned} câu, thêm ${added} đề xuất.`);
+    const { data, error } = await db.rpc('suggestions_backfill', { p_after: after, p_limit: 300 });
+    if (error) return say('msg6', false, sgMissing(error.message) ? SG_MSG : esc(error.message));
+    if (!data.scanned) break;
+    after = data.last_id; scanned += data.scanned; added += data.added;
+  }
+  say('msg6', true, `Đã quét ${scanned} câu cá nhân: thêm ${added} câu vào danh sách đề xuất.`); loadSuggest(0, true);
+}
+// Mục lục chuẩn: xem, đổi tên, xóa chương/bài
+async function loadCurriculum() {
+  const g = $('curGrade'); if (!g.options.length) g.innerHTML = '<option value="">Mọi lớp</option>' + $('grade').innerHTML;
+  const { data, error } = await db.rpc('curriculum_admin_list', { p_grade: g.value ? +g.value : null, p_subject: $('curSubject').value.trim() || null });
+  if (error) return say('msg7', false, sgMissing(error.message) || /curriculum/.test(error.message) ? SG_MSG : esc(error.message));
+  $('msg7').innerHTML = '';
+  let last = '', lastC = '', html = '';
+  (data || []).forEach(r => {
+    const k = r.grade + '|' + r.subject;
+    if (k !== last) { html += `<div class="mt-3 font-bold text-indigo-700">Lớp ${r.grade} · ${esc(r.subject)}</div>`; last = k; lastC = ''; }
+    const a = `${r.grade}|${encodeURIComponent(r.subject)}|${encodeURIComponent(r.chapter)}`;
+    if (r.chapter !== lastC) { html += `<div class="mt-1 font-semibold flex gap-2 items-center">${esc(r.chapter)} <button class="text-xs underline text-slate-500" onclick="curRen('${a}')">đổi tên</button><button class="text-xs underline text-red-600" onclick="curDel('${a}')">xóa</button></div>`; lastC = r.chapter; }
+    if (r.lesson) html += `<div class="pl-5 flex gap-2 items-center">${esc(r.lesson)} <button class="text-xs underline text-slate-500" onclick="curRen('${a}|${encodeURIComponent(r.lesson)}')">đổi tên</button><button class="text-xs underline text-red-600" onclick="curDel('${a}|${encodeURIComponent(r.lesson)}')">xóa</button></div>`;
+  });
+  $('curList').innerHTML = html || '<div class="text-slate-500">Chưa có mục lục nào. Mục lục được tạo khi giáo viên nạp file ở tab "AI nhập liệu".</div>';
+}
+const curArgs = a => { const [g, s, c, l] = a.split('|'); return { p_grade: +g, p_subject: decodeURIComponent(s), p_chapter: decodeURIComponent(c), p_lesson: l ? decodeURIComponent(l) : '' }; };
+async function curRen(a) {
+  const x = curArgs(a), nv = prompt('Tên mới:', x.p_lesson || x.p_chapter); if (!nv || !nv.trim()) return;
+  const { error } = await db.rpc('curriculum_rename', { ...x, p_new: nv });
+  if (error) return say('msg7', false, esc(error.message)); loadCurriculum();
+}
+async function curDel(a) {
+  const x = curArgs(a); if (!confirm(`Xóa "${x.p_lesson || x.p_chapter}"${x.p_lesson ? '' : ' cùng mọi bài của chương'} khỏi mục lục chuẩn? Câu hỏi đã có không bị ảnh hưởng.`)) return;
+  const { error } = await db.rpc('curriculum_remove', x);
+  if (error) return say('msg7', false, esc(error.message)); loadCurriculum();
+}
+
 // ---------- Giao diện & đăng nhập ----------
 function showTab(n) {
-  [1, 2, 3, 4, 5].forEach(i => {
+  [1, 2, 3, 4, 5, 6].forEach(i => {
     $('panel' + i).classList.toggle('hidden', n !== i);
     $('tab' + i).className = 'px-4 py-2 rounded-lg font-semibold ' + (n === i ? 'bg-indigo-600 text-white' : 'bg-white');
   });
   if (n === 4 && !mg.loaded) { mg.loaded = true; loadFilterOptions(); loadManage(0); }
   if (n === 2) renderPreview();
   if (n === 5) loadReports(0);
+  if (n === 3) tocInit();
+  if (n === 6) loadSuggest(0);
 }
 
 async function login() {
@@ -1796,10 +2113,13 @@ async function loadRole() {
     else isAdmin = data === true;
   }
   $('scopeCommonLbl').classList.toggle('hidden', !isAdmin);
+  $('tab6').classList.toggle('hidden', !isAdmin); if (!isAdmin && !$('panel6').classList.contains('hidden')) showTab(1);
+  if (sess) { refreshSgBadge(); loadShareNote(); }
   let saved = null; try { saved = localStorage.getItem('bank_scope'); } catch (e) {}
   setScope(isAdmin ? (saved === 'mine' ? 'mine' : 'common') : 'mine');      // quản trị: nhớ lựa chọn lần trước, mặc định ngân hàng chung
   $('roleTag').textContent = sess ? `${sess.user.email} · ${isAdmin ? 'Quản trị (được nhập ngân hàng chung)' : 'Giáo viên'}${hint}` : '';
-  if (mg.loaded) loadManage(mg.page);
+  $('mScope').classList.toggle('hidden', !isAdmin); if (!isAdmin) $('mScope').value = '';
+  if (mg.loaded) { loadFilterOptions(); loadManage(mg.page); }
 }
 async function signup() {
   const email = $('email').value.trim(), password = $('password').value;
