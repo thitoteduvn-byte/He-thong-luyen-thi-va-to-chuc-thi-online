@@ -423,7 +423,7 @@ async function startExam() {
   const qt = data.quota; renderQuota(qt);
   if (qt && qt.trimmed) rpToast(`Hạn mức hôm nay còn ít nên đề chỉ có ${qt.returned}/${qt.asked} câu. Làm lại câu đã làm trong ngày không bị tính thêm.`);
 
-  questions = data.questions || []; sortParts();
+  questions = data.questions || []; sortParts(); PRAC_GATED = !!data.gated; pracSubmitting = false; coinInfo = null;
   answers = {}; cur = 0; onlyWrong = false;
   pracCfg = { grade, subject, chapters: chapters.length === chapterList.length ? [] : chapters, types }; pracT0 = Date.now();
   examInfo = `Lớp ${grade} · ${subject}` + (chapters.length === chapterList.length ? '' : chapters.length === 1 ? ` · ${chapters[0]}` : ` · ${chapters.length} chương`);
@@ -519,6 +519,12 @@ function gradeQ(q, a) {
   return a && a.trim() ? { s: 'essay' } : { s: 'blank' };
 }
 
+// Kết quả từng câu = trạng thái do máy chủ chấm (s, p) + chi tiết (k) nếu đã có đáp án
+function mergeRes(q, a, x) {
+  const g = q.correct_answer != null ? gradeQ(q, a) : {};
+  return x && x.s ? { ...g, s: x.s, pts: x.p ?? g.pts } : (g.s ? g : { s: 'blank' });
+}
+
 function go(d) { const n = cur + d; if (n >= 0 && n < questions.length) showQuestion(n); }
 
 function renderNav() {
@@ -538,14 +544,31 @@ function renderNav() {
 const S_BG = { right: 'bg-green-500', wrong: 'bg-red-500', partial: 'bg-amber-500', essay: 'bg-sky-500', blank: 'bg-slate-400' };
 const S_BORDER = { right: 'border-green-500', wrong: 'border-red-500', partial: 'border-amber-500', essay: 'border-sky-500', blank: 'border-slate-400' };
 
-function submitExam(auto) {
+// Học sinh miễn phí: đề tự luyện không chứa đáp án; nộp lên máy chủ để chấm, câu sai bị ẩn đáp án + lời giải (explain_gate_setup.sql)
+let PRAC_GATED = false, pracSubmitting = false;
+async function submitExam(auto) {
   if (ROOM_MODE) return submitRoom(auto);          // chế độ phòng thi: nộp lên máy chủ
   if (HW_MODE) return submitHw(auto);              // bài được giao: nộp lên máy chủ
-  const res = questions.map((q, i) => gradeQ(q, answers[i]));
+  if (pracSubmitting) return;
+  let res = questions.map((q, i) => gradeQ(q, answers[i]));
   const blank = res.filter(r => r.s === 'blank').length;
   if (!auto && blank > 0 && !confirm(`Bạn còn ${blank} câu chưa trả lời. Vẫn nộp bài?`)) return;
   if (!auto && blank === 0 && !confirm('Nộp bài ngay bây giờ?')) return;
 
+  if (PRAC_GATED) {
+    pracSubmitting = true;
+    const { data, error } = await db.rpc('practice_finish', { p_ids: questions.map(q => q.id), p_answers: compactAnswers() });
+    if (error || !data) {
+      pracSubmitting = false;
+      rpToast('Chưa nộp được bài: ' + (error?.message || 'lỗi kết nối') + (auto ? '. Đang thử lại…' : '. Hãy bấm Nộp bài lần nữa.'));
+      if (auto) setTimeout(() => submitExam(true), 3000);
+      return;
+    }
+    const m = Object.fromEntries((data.questions || []).map(x => [x.id, x]));
+    questions.forEach(q => { const x = m[q.id]; if (x) { q.correct_answer = x.correct_answer; q.explanation = x.explanation; q.locked = !!x.locked; } });
+    res = questions.map((q, i) => mergeRes(q, answers[i], (data.per || {})[q.id]));
+    pracSubmitting = false;
+  }
   clearInterval(timerId);
   window.onbeforeunload = null;
 
@@ -578,6 +601,20 @@ function submitExam(auto) {
 
 function reviewBody(q, a, r) {
   const t = q.question_type, vn = v => v === 'Đ' ? 'Đúng' : 'Sai';
+  if (q.locked) {                                   // đáp án bị ẩn: chỉ hiện bài làm của học sinh
+    if (t === 'multiple_choice') return LETTERS.map(L => {
+      const isMine = L === a;
+      return `<div class="border rounded p-2 flex gap-2 ${isMine ? 'bg-red-100 border-red-500' : 'border-transparent'}"><b>${L}.</b><span class="whitespace-pre-wrap">${tex(q.options?.[L])}</span>
+        ${isMine ? '<span class="ml-auto text-red-700 text-xs font-bold">Bạn chọn</span>' : ''}</div>`;
+    }).join('');
+    if (t === 'true_false') return TF_KEYS.map(k => {
+      const mine = a?.[k];
+      return `<div class="border rounded p-2 flex flex-col md:flex-row gap-1 md:gap-2 border-slate-200"><div class="flex gap-2"><b>${k})</b><span class="whitespace-pre-wrap">${tex(q.options?.[k])}</span></div>
+        <span class="md:ml-auto text-xs font-bold md:whitespace-nowrap">Bạn chọn: ${mine ? vn(mine) : 'chưa chọn'}</span></div>`;
+    }).join('');
+    if (t === 'short_answer') return `<div class="border rounded p-2 bg-red-100 border-red-500"><b>Bạn trả lời:</b> ${a && a.trim() ? esc(a) : '<i>chưa trả lời</i>'}</div>`;
+    return `<div class="border rounded p-2 bg-sky-50 border-sky-300"><b>Bài làm của bạn:</b><div class="whitespace-pre-wrap">${a && a.trim() ? esc(a) : '<i>chưa làm</i>'}</div></div>`;
+  }
   if (t === 'multiple_choice') return LETTERS.map(L => {
     const isRight = L === q.correct_answer, isMine = L === a;
     const cls = isRight ? 'bg-green-100 border-green-500' : (isMine ? 'bg-red-100 border-red-500' : 'border-transparent');
@@ -616,14 +653,66 @@ function renderReview() {
       <div class="whitespace-pre-wrap font-medium">${tex(q.content)}</div>
       ${q.image_url ? `<img src="${esc(q.image_url)}" alt="" class="max-h-56 my-3 rounded border">` : ''}
       <div class="mt-3 space-y-1">${reviewBody(q, answers[i], r)}</div>
-      <div class="mt-3 text-sm bg-slate-50 rounded p-3">
+      ${q.locked ? lockBox(i) : `<div class="mt-3 text-sm bg-slate-50 rounded p-3">
         <b>${q.question_type === 'essay' ? 'Hướng dẫn chấm / Dàn ý:' : 'Lời giải:'}</b>
         <div class="whitespace-pre-wrap">${q.explanation ? tex(q.explanation) : 'Chưa có lời giải cho câu này.'}</div>
-      </div>
+      </div>`}
     </div>`;
   }).join('');
+  const anyLocked = questions.some(q => q.locked);
+  if (anyLocked) $('review').innerHTML = coinBanner() + $('review').innerHTML;
+  if (anyLocked && !coinInfo && !coinLoading) loadCoins();
   math();
   syncReports();
+}
+
+// ---------- Ẩn đáp án + lời giải ở câu sai (tài khoản học sinh miễn phí) ----------
+const UPGRADE_URL = '';                              // dán đường dẫn trang nâng cấp / liên hệ (Zalo, Facebook…) nếu có; để trống sẽ hiện hướng dẫn liên hệ
+let coinInfo = null, coinLoading = false, unlocking = false;
+async function loadCoins() {
+  coinLoading = true;
+  try { const { data } = await db.rpc('my_coins'); if (data && data.gated) coinInfo = data; } catch {}
+  coinLoading = false;
+  if (coinInfo && questions.some(q => q.locked)) renderReview();
+}
+function coinBanner() {
+  const n = coinInfo ? coinInfo.balance : null;
+  return `<div class="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-900 flex flex-wrap items-center gap-x-3 gap-y-1">
+    <span>🔒 Tài khoản miễn phí: lời giải chỉ hiện ở câu <b>làm đúng</b>. Câu sai / chưa làm bị ẩn đáp án và lời giải.</span>
+    <span class="font-semibold">🪙 ${n == null ? '…' : n} xu${coinInfo ? ` <span class="font-normal text-xs">(mỗi ngày +${coinInfo.daily} xu, tối đa ${coinInfo.cap})</span>` : ''}</span>
+    <button type="button" onclick="showUpgrade()" class="ml-auto px-3 py-1 rounded bg-indigo-600 text-white text-xs font-semibold">⭐ Nâng cấp xem tất cả</button></div>`;
+}
+function lockBox(i) {
+  const n = coinInfo ? coinInfo.balance : null;
+  return `<div class="mt-3 text-sm bg-amber-50 border border-amber-200 rounded p-3">
+    <div class="font-semibold text-amber-900">🔒 Đáp án và lời giải của câu này đang bị ẩn</div>
+    <div class="flex flex-wrap gap-2 mt-2">
+      <button type="button" onclick="unlockQ(${i})" ${unlocking || n === 0 ? 'disabled' : ''} class="px-3 py-1.5 rounded bg-amber-500 text-white font-semibold text-xs disabled:opacity-50">🪙 Dùng 1 xu để xem câu này${n == null ? '' : ` (còn ${n} xu)`}</button>
+      <button type="button" onclick="showUpgrade()" class="px-3 py-1.5 rounded bg-white border border-indigo-300 text-indigo-700 font-semibold text-xs">⭐ Nâng cấp để xem tất cả</button>
+    </div>${n === 0 ? '<div class="text-xs text-amber-800 mt-1">Bạn đã hết xu hôm nay. Ngày mai sẽ được cộng thêm xu miễn phí.</div>' : ''}</div>`;
+}
+function showUpgrade() {
+  if (UPGRADE_URL) { window.open(UPGRADE_URL, '_blank', 'noopener'); return; }
+  alert('Nâng cấp tài khoản (Pro) để xem đáp án và lời giải của mọi câu, không cần dùng xu.\n\nHãy liên hệ quản trị viên hoặc giáo viên của bạn để được nâng cấp.');
+}
+async function unlockQ(i) {
+  const q = questions[i]; if (!q || unlocking) return;
+  unlocking = true; renderReview();
+  await practiceSaved;                                // bài tự luyện phải lưu xong thì máy chủ mới cho mở
+  const { data, error } = await db.rpc('explain_unlock', { p_question: q.id });
+  unlocking = false;
+  if (error) {
+    const m = error.message || '';
+    if (/NO_COINS/.test(m)) { if (coinInfo) coinInfo.balance = 0; else coinInfo = { balance: 0, daily: 3, cap: 10, gated: true }; rpToast(m.replace(/^NO_COINS:\s*/, '')); }
+    else rpToast('Chưa mở được lời giải: ' + m);
+    renderReview(); return;
+  }
+  q.correct_answer = data.correct_answer; q.explanation = data.explanation; delete q.locked;
+  if (coinInfo) coinInfo.balance = data.balance;
+  const g = q.correct_answer != null ? gradeQ(q, answers[i]) : {};
+  if (g.k !== undefined) window._res[i] = { ...window._res[i], k: g.k };
+  renderReview();
+  document.getElementById('rq' + i)?.scrollIntoView({ block: 'nearest' });
 }
 
 function toggleWrong() { onlyWrong = !onlyWrong; renderReview(); }
@@ -944,7 +1033,12 @@ async function loadReview() {
   if (!u) return fail('Bạn cần đăng nhập ở trang chủ học sinh để xem lại bài làm.');
   if (!id || !'PRH'.includes(kind || '-')) return fail('Đường dẫn xem lại không hợp lệ.');
   let qs, ans, per = null, title, score, vio = 0;
-  if (kind === 'P') {
+  const rv = kind === 'P' ? await db.rpc('practice_review', { p_attempt: id }) : null;
+  if (rv && !rv.error && rv.data) {
+    const d = rv.data; qs = d.questions || []; ans = d.answers || {}; per = d.per || {}; title = d.title; score = d.score;
+    if (qs.length < (d.ids || []).length) pracMissing = d.ids.length - qs.length;
+  } else if (kind === 'P') {
+    if (rv && rv.error && !/practice_review|schema cache|Could not find the function/i.test(rv.error.message || '')) return fail(rv.error.message);
     const { data: a, error } = await db.from('practice_attempts').select('title, score, question_ids, answers, duration_seconds').eq('id', id).maybeSingle();
     if (error || !a) return fail(error ? error.message : 'Không tìm thấy bài làm.');
     const { data: q, error: e2 } = await db.from('questions').select('id, question_type, content, image_url, options, correct_answer, explanation').in('id', a.question_ids);
@@ -960,8 +1054,7 @@ async function loadReview() {
   questions = qs; sortParts(); answers = {};
   questions.forEach((q, i) => { if (ans[q.id] !== undefined) answers[i] = ans[q.id]; });
   const res = questions.map((q, i) => {
-    const g = gradeQ(q, answers[i]), x = per && per[q.id];
-    return x && x.s ? { ...g, s: x.s, pts: x.p ?? g.pts } : g; });
+    return mergeRes(q, answers[i], per && per[q.id]); });
   const cnt = z => res.filter(r => r.s === z).length;
   document.title = 'Xem lại: ' + title;
   $('score').textContent = score == null ? '—' : Number(score).toFixed(2).replace(/\.?0+$/, '');
@@ -1077,8 +1170,8 @@ function showHwResult(r, auto) {
     screen('Result'); if (auto) alert('Hết giờ! Bài làm đã được nộp tự động.'); return;
   }
   const m = Object.fromEntries(r.questions.map(x => [x.id, x])), per = r.per || {};
-  questions.forEach(q => { const x = m[q.id]; if (x) { q.correct_answer = x.correct_answer; q.explanation = x.explanation; } });
-  const res = questions.map((q, i) => { const g = gradeQ(q, answers[i]), x = per[q.id]; return x && x.s ? { ...g, s: x.s, pts: x.p ?? g.pts } : g; });
+  questions.forEach(q => { const x = m[q.id]; if (x) { q.correct_answer = x.correct_answer; q.explanation = x.explanation; q.locked = !!x.locked; } });
+  const res = questions.map((q, i) => mergeRes(q, answers[i], per[q.id]));
   const cnt = s => res.filter(z => z.s === s).length;
   $('stats').innerHTML = `
     <span class="text-green-600">✔ Đúng: ${cnt('right')}</span>
