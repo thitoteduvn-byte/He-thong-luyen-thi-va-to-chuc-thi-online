@@ -513,7 +513,7 @@ function openAcc() {
   const rows = gb.d.rows, noCode = rows.filter(r => !String(r.code).trim()).length, done = rows.filter(r => r.acc).length;
   let dom = 'example.com'; try { dom = localStorage.getItem('stu_domain') || dom; } catch (e) {}
   openModal(`<h3 class="font-bold text-lg">🔑 Tạo tài khoản đăng nhập cho học sinh trong sổ</h3>
-    <p class="text-xs text-slate-500 mt-1">Dùng đúng danh sách của sổ này (<b>${rows.length}</b> học sinh). Tên đăng nhập tự tạo từ <b>Mã học sinh</b>, mật khẩu ngẫu nhiên 8 ký tự. Học sinh đăng nhập xong sẽ có đúng mã học sinh này nên điểm từ bài giao / ca thi khớp vào sổ tự động.</p>
+    <p class="text-xs text-slate-500 mt-1">Dùng đúng danh sách của sổ này (<b>${rows.length}</b> học sinh). Tên đăng nhập tự tạo từ <b>Mã học sinh</b>, mật khẩu ngẫu nhiên 8 ký tự. Học sinh đăng nhập xong sẽ có đúng mã học sinh này nên điểm từ bài giao / ca thi khớp vào sổ tự động. Em nào đã có tài khoản (do thầy/cô dạy môn khác tạo, cùng mã và cùng họ tên) sẽ <b>dùng chung</b>, không tạo trùng.</p>
     <div class="grid sm:grid-cols-2 gap-3 mt-3 text-sm">
       <label class="font-medium">Lớp ghi vào tài khoản <input id="accCls" value="${esc(gb.d.meta.cls || '')}" maxlength="40" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
       <label class="font-medium">Đuôi email tự tạo (@…) <input id="accDom" value="${esc(dom)}" maxlength="60" class="w-full border rounded-lg p-2 mt-1 font-normal"></label></div>
@@ -555,15 +555,15 @@ async function accCreate() {
     }
     res.data.results.forEach((x, j) => { x.row = chunk[x.i ?? j]?.i; all.push(x); });
   }
-  all.forEach(x => { if (x.status === 'created' && gb.d.rows[x.row]) gb.d.rows[x.row].acc = true; });
-  accRes = all; if (all.some(x => x.status === 'created')) { renderGrid(); saveSoon(); }
+  all.forEach(x => { if ((x.status === 'created' || x.status === 'linked') && gb.d.rows[x.row]) gb.d.rows[x.row].acc = true; });
+  accRes = all; if (all.some(x => x.status === 'created' || x.status === 'linked')) { renderGrid(); saveSoon(); }
   showAccResult();
 }
 function showAccResult() {
   const c = s => accRes.filter(r => r.status === s).length;
-  const lab = { created: ['Đã tạo', 'text-emerald-600'], exists: ['Đã có tài khoản', 'text-amber-600'], error: ['Lỗi', 'text-red-600'] };
+  const lab = { created: ['Đã tạo', 'text-emerald-600'], linked: ['Đã có sẵn (dùng chung)', 'text-sky-600'], exists: ['Đã có tài khoản', 'text-amber-600'], error: ['Lỗi', 'text-red-600'] };
   openModal(`<h3 class="font-bold text-lg">✅ Kết quả tạo tài khoản</h3>
-    <p class="text-sm mt-1">Đã tạo <b class="text-emerald-600">${c('created')}</b>${c('exists') ? ` · đã có sẵn <b class="text-amber-600">${c('exists')}</b>` : ''}${c('error') ? ` · lỗi <b class="text-red-600">${c('error')}</b>` : ''}.</p>
+    <p class="text-sm mt-1">Đã tạo <b class="text-emerald-600">${c('created')}</b>${c('linked') ? ` · đã có sẵn do giáo viên khác tạo <b class="text-sky-600">${c('linked')}</b>` : ''}${c('exists') ? ` · trùng email <b class="text-amber-600">${c('exists')}</b>` : ''}${c('error') ? ` · lỗi <b class="text-red-600">${c('error')}</b>` : ''}.</p>
     <div class="mt-2 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-2">⚠ Mật khẩu <b>chỉ hiện ở màn hình này</b>. Hãy tải file hoặc in phiếu ngay. Học sinh quên mật khẩu: vào trang giáo viên → “Tài khoản học sinh của lớp” → “Đặt lại mật khẩu”.</div>
     <div class="flex flex-wrap gap-2 mt-3 text-sm"><button onclick="accCsv()" class="border rounded-lg px-3 py-1.5 hover:bg-slate-50">⬇ Tải file CSV</button>
       <button onclick="accPrint()" class="border rounded-lg px-3 py-1.5 hover:bg-slate-50">🖨 In phiếu đăng nhập</button>
@@ -575,7 +575,7 @@ function showAccResult() {
 function accCsv() {
   const c = v => { v = String(v ?? ''); return /[",\n;]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
   const rows = [['STT', 'Họ tên', 'Mã HS', 'Lớp', 'Tên đăng nhập (email)', 'Mật khẩu', 'Trạng thái', 'Ghi chú']];
-  accRes.forEach((r, i) => rows.push([i + 1, r.name, r.code, r.class, r.email, r.password, r.status === 'created' ? 'Đã tạo' : r.status === 'exists' ? 'Đã có tài khoản' : 'Lỗi', r.message]));
+  accRes.forEach((r, i) => rows.push([i + 1, r.name, r.code, r.class, r.email, r.password, r.status === 'created' ? 'Đã tạo' : r.status === 'linked' ? 'Đã có sẵn (dùng chung)' : r.status === 'exists' ? 'Đã có tài khoản' : 'Lỗi', r.message]));
   const blob = new Blob(['﻿' + rows.map(r => r.map(c).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const el = document.createElement('a'); el.href = URL.createObjectURL(blob); el.download = 'tai-khoan-hoc-sinh.csv'; document.body.appendChild(el); el.click(); el.remove(); setTimeout(() => URL.revokeObjectURL(el.href), 2000);
 }
