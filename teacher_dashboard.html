@@ -187,7 +187,7 @@ const SUPABASE_URL = 'https://xzznmfgihzjeqsmiuypi.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_dUldhQYF1ETrSCZ4jiy3Og_ygfkm9XW';
 // Địa chỉ các trang tính năng. Mặc định là tên file nằm cùng thư mục với trang này.
 // Khi đưa lên web, có thể đổi bằng nút "Cài đặt tài khoản & liên kết" (lưu trên trình duyệt) hoặc sửa trực tiếp ở đây.
-const DEFAULT_LINKS = { bank: 'admin.html', matrix: 'matrix_exam.html', room: 'exam_room.html', community: 'community.html', exam: 'exam.html', student: 'student_home.html' };
+const DEFAULT_LINKS = { bank: 'admin.html', matrix: 'matrix_exam.html', room: 'exam_room.html', community: 'community.html', exam: 'exam.html', student: 'student_home.html', gradebook: 'gradebook.html' };
 const DEFAULT_PROFILE = { name: '', role: 'Giáo viên Bộ môn Vật lí', avatar: '' };
 // ===============================================
 
@@ -219,6 +219,7 @@ const FEATURES = [
   { key: 'matrix', icon: '📊', title: 'Ma trận đề kiểm tra', desc: 'Tạo đề theo ma trận chương × dạng × mức độ, trộn mã đề, xuất đề.', tone: 'violet', kw: 'ma trận đề kiểm tra trộn xuất' },
   { key: 'room', icon: '🏫', title: 'Phòng thi trực tuyến', desc: 'Tạo phòng và ca thi, cấp mã vào ca, theo dõi học sinh làm bài, xuất điểm.', tone: 'emerald', kw: 'phòng thi ca thi kết quả điểm học sinh' },
   { key: 'assign', icon: '📚', title: 'Giao bài tập', desc: 'Chọn đề đã lưu, tạo mã giao bài cho học sinh làm ở màn luyện tập (không trộn đề), xem báo cáo.', tone: 'rose', kw: 'giao bài tập bài tập về nhà mã giao bài báo cáo', action: 'openAssign()' },
+  { key: 'gradebook', icon: '📒', title: 'Sổ điểm lớp', desc: 'Nhập bảng điểm chi tiết của lớp (Excel), cập nhật điểm TX/GK/CK, tự tính ĐTB, lấy điểm từ bài giao / ca thi, xuất lại đúng mẫu.', tone: 'rose', kw: 'sổ điểm bảng điểm điểm tx gk ck đtb lớp excel' },
   { key: 'community', icon: '🌐', title: 'Kho học liệu cộng đồng', desc: 'Khám phá, chia sẻ và sao chép (clone) đề, bộ câu hỏi về kho của bạn.', tone: 'amber', kw: 'cộng đồng chia sẻ marketplace clone sao chép' }
 ];
 const TONE = { indigo: 'bg-indigo-50 text-indigo-700', violet: 'bg-violet-50 text-violet-700', emerald: 'bg-emerald-50 text-emerald-700', amber: 'bg-amber-50 text-amber-700', rose: 'bg-rose-50 text-rose-700' };
@@ -866,7 +867,7 @@ async function openAttempt(id) {
 }
 
 /* ------------------ Cài đặt ------------------ */
-const LINK_LABELS = { bank: 'Ngân hàng câu hỏi & Nhập liệu', matrix: 'Ma trận đề kiểm tra (trang tạo đề, trộn đề)', room: 'Phòng thi trực tuyến (exam_room)', community: 'Kho học liệu cộng đồng', exam: 'Trang làm bài của học sinh (exam.html) — dùng cho link giao bài', student: 'Trang chủ học sinh (student_home.html) — in trên phiếu đăng nhập' };
+const LINK_LABELS = { bank: 'Ngân hàng câu hỏi & Nhập liệu', matrix: 'Ma trận đề kiểm tra (trang tạo đề, trộn đề)', room: 'Phòng thi trực tuyến (exam_room)', community: 'Kho học liệu cộng đồng', exam: 'Trang làm bài của học sinh (exam.html) — dùng cho link giao bài', student: 'Trang chủ học sinh (student_home.html) — in trên phiếu đăng nhập', gradebook: 'Sổ điểm lớp (gradebook.html)' };
 function openSettings() {
   openModal(`<h3 class="font-bold text-lg">Cài đặt tài khoản & liên kết</h3>
     <p class="text-xs text-slate-500 mb-3">Đăng nhập: ${esc(user.email)}</p>

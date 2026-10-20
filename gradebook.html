@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sổ điểm lớp</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<style>
+  body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+  #gridWrap { max-height: calc(100vh - 260px); min-height: 320px; }
+  table.g { border-collapse: separate; border-spacing: 0; font-size: 13px; }
+  table.g th, table.g td { border-right: 1px solid #cbd5e1; border-bottom: 1px solid #cbd5e1; padding: 0; background: #fff; }
+  table.g thead th { position: sticky; background: #f1f5f9; z-index: 5; font-weight: 600; text-align: center; padding: 4px 6px; }
+  table.g thead tr.h1 th { top: 0; } table.g thead tr.h2 th { top: 30px; }
+  table.g td.sticky1 { position: sticky; left: 0; z-index: 3; } table.g th.sticky1 { left: 0; z-index: 8; }
+  table.g input { width: 100%; padding: 4px 6px; background: transparent; border: 0; outline: none; font-size: 13px; }
+  table.g input.sc { text-align: center; width: 3.4rem; }
+  table.g input:focus { background: #eef2ff; box-shadow: inset 0 0 0 2px #6366f1; }
+  table.g input.bad { background: #fee2e2; }
+  table.g tr:hover td { background: #f8fafc; } table.g tr:hover td.dtb { background: #f1f5f9; }
+  td.dtb { text-align: center; font-weight: 700; min-width: 3.4rem; background: #f8fafc; }
+  .lv-t { color: #047857; } .lv-k { color: #1d4ed8; } .lv-d { color: #b45309; } .lv-c { color: #b91c1c; }
+  @media print { header, #bar, #stats, .noprint { display: none !important; } #gridWrap { max-height: none; overflow: visible; } }
+</style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+
+<!-- ================= ĐĂNG NHẬP ================= -->
+<section id="viewLogin" class="hidden min-h-screen flex items-center justify-center p-4">
+  <div class="w-full max-w-sm bg-white rounded-2xl shadow p-7">
+    <div class="text-3xl mb-1">📒</div>
+    <h1 class="text-xl font-bold">Sổ điểm lớp</h1>
+    <p class="text-sm text-slate-500 mb-5">Đăng nhập hoặc đăng ký tài khoản giáo viên (dùng chung cho các trang quản lý).</p>
+    <input id="lgEmail" type="email" placeholder="Email" autocomplete="username" class="w-full border rounded-lg p-2.5 mb-2">
+    <input id="lgPass" type="password" placeholder="Mật khẩu" autocomplete="current-password" class="w-full border rounded-lg p-2.5 mb-2" onkeydown="if(event.key==='Enter')login()">
+    <input id="lgPass2" type="password" placeholder="Nhập lại mật khẩu" autocomplete="new-password" class="hidden w-full border rounded-lg p-2.5 mb-2" onkeydown="if(event.key==='Enter')login()">
+    <button id="lgBtn" onclick="login()" class="w-full mt-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg py-2.5 font-semibold">Đăng nhập</button>
+    <p id="lgErr" class="text-sm text-red-600 mt-2"></p>
+    <p id="lgToggle" class="text-sm text-slate-600 mt-3 text-center">Chưa có tài khoản? <button type="button" onclick="lgSwitch('signup')" class="text-indigo-600 font-semibold underline">Đăng ký giáo viên</button></p>
+  </div>
+</section>
+
+<!-- ================= KHUNG CHÍNH ================= -->
+<div id="viewApp" class="hidden">
+  <header class="bg-white border-b sticky top-0 z-30">
+    <div class="px-4 h-14 flex items-center gap-3 max-w-[1800px] mx-auto">
+      <a id="backLink" href="teacher_dashboard.html" class="text-sm text-indigo-600 hover:underline whitespace-nowrap">← Trang giáo viên</a>
+      <h1 class="font-bold text-lg">📒 Sổ điểm lớp</h1>
+      <span id="saveState" class="text-xs text-slate-400 ml-2"></span>
+      <button class="ml-auto px-3 py-1.5 rounded-lg border text-sm hover:bg-slate-50" onclick="logout()">Đăng xuất</button>
+    </div>
+  </header>
+
+  <!-- Danh sách sổ -->
+  <main id="viewList" class="p-4 max-w-5xl mx-auto space-y-4">
+    <div class="flex flex-wrap items-center gap-2">
+      <h2 class="font-semibold text-lg">Các sổ điểm của tôi</h2>
+      <div class="ml-auto flex flex-wrap gap-2">
+        <label class="px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium cursor-pointer">📥 Nhập từ file Excel mẫu (.xls / .xlsx)
+          <input type="file" accept=".xls,.xlsx" class="hidden" onchange="importFile(this)"></label>
+        <button onclick="openNew()" class="px-3 py-2 rounded-lg border bg-white text-sm font-medium hover:bg-slate-50">+ Tạo sổ mới (dán danh sách)</button>
+      </div>
+    </div>
+    <p class="text-sm text-slate-500">Nhập file bảng điểm chi tiết của lớp (mẫu có cột STT, Mã học sinh, Họ và tên, Ngày sinh, ĐĐGtx, ĐĐGgk, ĐĐGck, ĐTB mhk, Nhận xét). Hệ thống giữ nguyên danh sách và cho cập nhật điểm, rồi xuất lại đúng mẫu đó.</p>
+    <div id="bookList" class="grid gap-3 sm:grid-cols-2"><p class="text-slate-400 text-sm">Đang tải…</p></div>
+  </main>
+
+  <!-- Soạn sổ -->
+  <main id="viewEdit" class="hidden p-4 max-w-[1800px] mx-auto space-y-3">
+    <div id="bar" class="flex flex-wrap items-center gap-2">
+      <button onclick="closeBook()" class="px-3 py-1.5 rounded-lg border bg-white text-sm hover:bg-slate-50">← Danh sách sổ</button>
+      <h2 id="bkTitle" class="font-semibold text-lg truncate max-w-[40ch]"></h2>
+      <div class="ml-auto flex flex-wrap gap-2 text-sm">
+        <button onclick="openPull()" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium">🔄 Lấy điểm từ bài giao / ca thi</button>
+        <button onclick="openAddStu()" class="px-3 py-1.5 rounded-lg border bg-white hover:bg-slate-50">➕ Thêm học sinh</button>
+        <button onclick="exportXlsx()" class="px-3 py-1.5 rounded-lg border bg-white hover:bg-slate-50 text-emerald-700 font-medium">⬇ Xuất Excel</button>
+        <button onclick="window.print()" class="px-3 py-1.5 rounded-lg border bg-white hover:bg-slate-50">🖨 In</button>
+        <button onclick="askDelBook()" class="px-3 py-1.5 rounded-lg border bg-white hover:bg-red-50 text-red-600">🗑 Xóa sổ</button>
+      </div>
+    </div>
+
+    <details id="metaBox" class="bg-white rounded-xl border noprint">
+      <summary class="px-4 py-2 cursor-pointer text-sm font-medium">Thông tin đầu trang &amp; cấu hình cột điểm</summary>
+      <div class="p-4 pt-1 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+        <label class="font-medium">Cơ quan chủ quản <input id="mDept" data-m="dept" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+        <label class="font-medium">Tên trường / trung tâm <input id="mSchool" data-m="school" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+        <label class="font-medium">Môn <input id="mSubject" data-m="subject" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+        <label class="font-medium">Học kỳ <select id="mSem" data-m="sem" class="w-full border rounded-lg p-2 mt-1 font-normal"><option value="1">Học kỳ 1</option><option value="2">Học kỳ 2</option></select></label>
+        <label class="font-medium">Năm học <input id="mYear" data-m="year" placeholder="2026-2027" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+        <label class="font-medium">Khối <input id="mGrade" data-m="grade" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+        <label class="font-medium">Lớp <input id="mCls" data-m="cls" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+        <div class="font-medium">Số cột điểm thường xuyên (TX)
+          <div class="flex items-center gap-2 mt-1"><button onclick="txCount(-1)" class="w-9 h-9 border rounded-lg hover:bg-slate-50">−</button>
+            <span id="txN" class="w-8 text-center font-bold text-lg"></span><button onclick="txCount(1)" class="w-9 h-9 border rounded-lg hover:bg-slate-50">+</button>
+            <span class="text-xs text-slate-400 font-normal">Tùy môn: 1–12 cột</span></div></div>
+        <div class="sm:col-span-2 lg:col-span-4 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+          <span>ĐTB mhk = (Tổng ĐĐGtx + 2 × ĐĐGgk + 3 × ĐĐGck) ÷ (Số cột TX có điểm + 5), làm tròn 1 chữ số thập phân. Mức: Tốt ≥ 8,0 · Khá ≥ 6,5 · Đạt ≥ 5,0 · Chưa đạt &lt; 5,0.</span>
+          <button onclick="addExtra()" class="px-2 py-1 border rounded-lg bg-white text-slate-700 hover:bg-slate-50">+ Thêm cột ghi chú ngoài bảng (ngày, điểm danh…)</button></div>
+      </div>
+    </details>
+
+    <div id="gridWrap" class="bg-white rounded-xl border overflow-auto"><table class="g" id="grid"></table></div>
+    <div id="stats" class="bg-white rounded-xl border p-4"></div>
+    <p class="text-xs text-slate-400 noprint">Mẹo: gõ điểm 0–10 (dấu , hay . đều được, tự làm tròn 1 chữ số thập phân). Enter / ↑ ↓ để chuyển dòng. Có thể copy một cột điểm từ Excel rồi dán vào ô đầu của cột. Tự động lưu.</p>
+  </main>
+</div>
+
+<div id="modal" class="hidden fixed inset-0 z-50 bg-black/50 items-start justify-center overflow-y-auto p-4">
+  <div id="modalBody" class="bg-white rounded-2xl shadow-xl w-full max-w-lg my-10 p-6"></div>
+</div>
+<div id="toast" class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[70] bg-slate-800 text-white text-sm rounded-lg px-4 py-2 shadow-lg"></div>
+
+<script>
+// ================== CẤU HÌNH ==================
+const SUPABASE_URL = 'https://xzznmfgihzjeqsmiuypi.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_dUldhQYF1ETrSCZ4jiy3Og_ygfkm9XW';
+// ===============================================
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const noAcc = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase().replace(/\s+/g, ' ').trim();
+const isNum = v => typeof v === 'number' && isFinite(v);
+const r1 = x => Math.round((x + 1e-9) * 10) / 10;                         // làm tròn 1 chữ số thập phân (0,05 → lên)
+const fmt = v => isNum(v) ? String(v).replace('.', ',') : '';
+const fmtDate = d => d ? new Date(d).toLocaleDateString('vi-VN') : '';
+const fmtDT = d => d ? new Date(d).toLocaleString('vi-VN', { hour12: false }) : '';
+function toast(m) { const t = $('toast'); t.textContent = m; t.classList.remove('hidden'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.add('hidden'), 3200); }
+function openModal(html, wide) { $('modalBody').className = 'bg-white rounded-2xl shadow-xl w-full my-10 p-6 ' + (wide ? 'max-w-4xl' : 'max-w-lg'); $('modalBody').innerHTML = html; $('modal').classList.remove('hidden'); $('modal').classList.add('flex'); }
+function closeModal() { $('modal').classList.add('hidden'); $('modal').classList.remove('flex'); }
+$('modal').addEventListener('mousedown', e => { if (e.target.id === 'modal') closeModal(); });
+
+// ---------- Dữ liệu một sổ ----------
+let user = null, authReady = false, books = [], gb = null, saveTimer = null, dirty = false, saving = false;
+const blankData = () => ({ meta: { dept: '', school: '', subject: '', sem: '1', year: '', grade: '', cls: '' }, tx: 3, extra: [], rows: [] });
+function normData(d) {
+  const o = blankData(); d = d || {};
+  o.meta = { ...o.meta, ...(d.meta || {}) }; o.tx = Math.min(12, Math.max(1, parseInt(d.tx) || 3));
+  o.extra = (Array.isArray(d.extra) ? d.extra : []).map(x => String(x ?? ''));
+  o.rows = (Array.isArray(d.rows) ? d.rows : []).map(r => ({
+    code: String(r.code ?? ''), last: String(r.last ?? ''), first: String(r.first ?? ''), dob: String(r.dob ?? ''),
+    tx: Array.from({ length: o.tx }, (_, i) => isNum(r.tx?.[i]) ? r.tx[i] : null), gk: isNum(r.gk) ? r.gk : null, ck: isNum(r.ck) ? r.ck : null,
+    note: String(r.note ?? ''), x: o.extra.map((_, i) => String(r.x?.[i] ?? '')) }));
+  return o;
+}
+const bookTitle = d => [d.meta.subject || 'Sổ điểm', d.meta.cls, d.meta.sem ? 'HK' + d.meta.sem : '', d.meta.year].filter(Boolean).join(' · ');
+function dtb(r) {
+  if (!isNum(r.gk) || !isNum(r.ck)) return null;
+  const tx = r.tx.filter(isNum);
+  return r1((tx.reduce((a, b) => a + b, 0) + 2 * r.gk + 3 * r.ck) / (tx.length + 5));
+}
+const level = v => v >= 8 ? ['Tốt', 'lv-t'] : v >= 6.5 ? ['Khá', 'lv-k'] : v >= 5 ? ['Đạt', 'lv-d'] : ['Chưa đạt', 'lv-c'];
+
+// ---------- Đăng nhập ----------
+let lgMode = 'login';
+function lgSwitch(m) {
+  lgMode = m; $('lgErr').textContent = ''; $('lgErr').className = 'text-sm text-red-600 mt-2';
+  $('lgPass2').classList.toggle('hidden', m !== 'signup');
+  $('lgBtn').textContent = m === 'signup' ? 'Tạo tài khoản giáo viên' : 'Đăng nhập';
+  $('lgToggle').innerHTML = m === 'signup' ? 'Đã có tài khoản? <button type="button" onclick="lgSwitch(\'login\')" class="text-indigo-600 font-semibold underline">Đăng nhập</button>'
+    : 'Chưa có tài khoản? <button type="button" onclick="lgSwitch(\'signup\')" class="text-indigo-600 font-semibold underline">Đăng ký giáo viên</button>';
+}
+async function login() {
+  const err = $('lgErr'); err.textContent = ''; err.className = 'text-sm text-red-600 mt-2';
+  const email = $('lgEmail').value.trim(), password = $('lgPass').value;
+  if (lgMode === 'signup') {
+    if (!/^\S+@\S+\.\S+$/.test(email)) return err.textContent = 'Email chưa đúng định dạng.';
+    if (password.length < 6) return err.textContent = 'Mật khẩu cần ít nhất 6 ký tự.';
+    if (password !== $('lgPass2').value) return err.textContent = 'Hai mật khẩu chưa khớp.';
+    $('lgBtn').disabled = true;
+    const { data, error } = await db.auth.signUp({ email, password });
+    $('lgBtn').disabled = false;
+    if (error) return err.textContent = /already|registered/i.test(error.message) ? 'Email này đã có tài khoản. Hãy đăng nhập.' : error.message;
+    if (data.user && Array.isArray(data.user.identities) && !data.user.identities.length) return err.textContent = 'Email này đã có tài khoản. Hãy đăng nhập.';
+    if (!data.session) { err.className = 'text-sm text-emerald-700 mt-2'; err.textContent = 'Đã tạo tài khoản. Hãy mở email để xác nhận rồi đăng nhập.'; }
+    return;
+  }
+  $('lgBtn').disabled = true;
+  const { error } = await db.auth.signInWithPassword({ email, password });
+  $('lgBtn').disabled = false;
+  if (error) err.textContent = /invalid login/i.test(error.message) ? 'Sai email hoặc mật khẩu.' : error.message;
+}
+async function logout() { await flushSave(); await db.auth.signOut(); }
+function setUser(u) {
+  if (authReady && (u?.id || null) === (user?.id || null)) return;
+  authReady = true; user = u;
+  if (!u) { $('viewApp').classList.add('hidden'); $('viewLogin').classList.remove('hidden'); return; }
+  $('viewLogin').classList.add('hidden'); $('viewApp').classList.remove('hidden');
+  loadBooks();
+}
+
+// ---------- Danh sách sổ ----------
+const SETUP_MSG = 'Chưa cài đặt: hãy chạy file gradebook_setup.sql trong Supabase → SQL Editor.';
+async function loadBooks() {
+  const { data, error } = await db.from('gradebooks').select('id,title,updated_at,data').order('updated_at', { ascending: false });
+  if (error) { books = []; return $('bookList').innerHTML = `<p class="text-amber-700 text-sm sm:col-span-2">${/gradebooks|schema cache|does not exist/i.test(error.message) ? SETUP_MSG : esc(error.message)}</p>`; }
+  books = data || [];
+  if (!books.length) return $('bookList').innerHTML = '<p class="text-slate-500 text-sm sm:col-span-2 bg-white border rounded-xl p-6">Chưa có sổ nào. Bấm “Nhập từ file Excel mẫu” để đưa bảng điểm của lớp vào, hoặc “Tạo sổ mới” rồi dán danh sách học sinh.</p>';
+  $('bookList').innerHTML = books.map(b => {
+    const d = b.data || {}, n = (d.rows || []).length, filled = (d.rows || []).filter(r => (r.tx || []).some(isNum) || isNum(r.gk) || isNum(r.ck)).length;
+    return `<button onclick="openBook(${b.id})" class="text-left bg-white border rounded-xl p-4 hover:border-indigo-300 hover:shadow">
+      <div class="font-semibold">${esc(b.title)}</div>
+      <div class="text-xs text-slate-500 mt-1">${n} học sinh · ${filled} em đã có điểm · ${(d.tx || 0)} cột TX</div>
+      <div class="text-xs text-slate-400 mt-1">Cập nhật ${esc(fmtDT(b.updated_at))}</div></button>`; }).join('');
+}
+async function openBook(id) {
+  const { data, error } = await db.from('gradebooks').select('id,title,data').eq('id', id).maybeSingle();
+  if (error || !data) return toast('Không mở được sổ: ' + (error?.message || 'không tồn tại'));
+  gb = { id: data.id, title: data.title, d: normData(data.data) };
+  $('viewList').classList.add('hidden'); $('viewEdit').classList.remove('hidden');
+  fillMeta(); renderGrid(); renderStats(); setSaveState('');
+}
+async function closeBook() { await flushSave(); gb = null; $('viewEdit').classList.add('hidden'); $('viewList').classList.remove('hidden'); loadBooks(); }
+async function createBook(d) {
+  d = normData(d);
+  const { data, error } = await db.from('gradebooks').insert({ title: bookTitle(d).slice(0, 200), data: d }).select('id').single();
+  if (error) { toast(/gradebooks|schema cache|does not exist/i.test(error.message) ? SETUP_MSG : 'Không tạo được sổ: ' + error.message); return null; }
+  return data.id;
+}
+function askDelBook() {
+  openModal(`<h3 class="font-bold text-lg">Xóa sổ điểm?</h3><p class="text-sm mt-2">Sổ “<b>${esc(gb.title)}</b>” và toàn bộ điểm trong đó sẽ bị xóa vĩnh viễn. Hãy xuất Excel trước nếu cần giữ bản sao.</p>
+    <div class="flex justify-end gap-2 mt-4"><button onclick="closeModal()" class="px-4 py-2 rounded-lg border text-sm">Hủy</button><button onclick="doDelBook()" class="px-4 py-2 rounded-lg bg-red-600 text-white text-sm">Xóa sổ</button></div>`);
+}
+async function doDelBook() {
+  const { error } = await db.from('gradebooks').delete().eq('id', gb.id); closeModal();
+  if (error) return toast('Không xóa được: ' + error.message);
+  dirty = false; clearTimeout(saveTimer); gb = null; $('viewEdit').classList.add('hidden'); $('viewList').classList.remove('hidden'); toast('Đã xóa sổ'); loadBooks();
+}
+
+// ---------- Lưu tự động ----------
+function setSaveState(t, bad) { const s = $('saveState'); s.textContent = t; s.className = 'text-xs ml-2 ' + (bad ? 'text-red-600' : 'text-slate-400'); }
+function saveSoon() { if (!gb) return; dirty = true; setSaveState('Đang chỉnh sửa…'); clearTimeout(saveTimer); saveTimer = setTimeout(doSave, 900); }
+async function doSave() {
+  if (!gb || !dirty || saving) { if (dirty && saving) saveTimer = setTimeout(doSave, 600); return; }
+  saving = true; dirty = false; setSaveState('Đang lưu…');
+  gb.title = bookTitle(gb.d).slice(0, 200); $('bkTitle').textContent = gb.title;
+  const { error } = await db.from('gradebooks').update({ title: gb.title, data: gb.d }).eq('id', gb.id);
+  saving = false;
+  if (error) { dirty = true; setSaveState('Chưa lưu được: ' + error.message, true); return; }
+  setSaveState('✓ Đã lưu ' + new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }));
+  if (dirty) saveSoon();
+}
+async function flushSave() { clearTimeout(saveTimer); if (dirty) await doSave(); }
+window.addEventListener('beforeunload', e => { if (dirty || saving) { e.preventDefault(); e.returnValue = ''; } });
+
+// ---------- Thông tin đầu trang ----------
+function fillMeta() {
+  const m = gb.d.meta;
+  $('mDept').value = m.dept; $('mSchool').value = m.school; $('mSubject').value = m.subject; $('mSem').value = m.sem || '1'; $('mYear').value = m.year; $('mGrade').value = m.grade; $('mCls').value = m.cls;
+  $('txN').textContent = gb.d.tx; $('bkTitle').textContent = gb.title;
+}
+document.querySelectorAll('[data-m]').forEach(el => el.addEventListener('input', () => { gb.d.meta[el.dataset.m] = el.value; saveSoon(); }));
+function txCount(dlt) {
+  const d = gb.d, n = d.tx + dlt;
+  if (n < 1 || n > 12) return toast(n < 1 ? 'Cần ít nhất 1 cột TX' : 'Tối đa 12 cột TX');
+  if (dlt < 0 && d.rows.some(r => isNum(r.tx[n]))) { if (!confirm(`Cột TX${d.tx} đang có điểm. Xóa cột này sẽ mất các điểm đó. Tiếp tục?`)) return; }
+  d.tx = n; d.rows.forEach(r => { if (dlt > 0) r.tx.push(null); else r.tx.length = n; });
+  $('txN').textContent = n; renderGrid(); renderStats(); saveSoon();
+}
+function addExtra() { const l = prompt('Tên cột ghi chú (ví dụ ngày 17/09, Điểm danh, Điểm cộng):', ''); if (l == null) return; gb.d.extra.push(l.trim()); gb.d.rows.forEach(r => r.x.push('')); renderGrid(); saveSoon(); }
+function delExtra(i) { if (!confirm('Xóa cột ghi chú này và dữ liệu trong cột?')) return; gb.d.extra.splice(i, 1); gb.d.rows.forEach(r => r.x.splice(i, 1)); renderGrid(); saveSoon(); }
+
+// ---------- Bảng điểm ----------
+const colKeys = () => [...Array.from({ length: gb.d.tx }, (_, i) => 'tx' + i), 'gk', 'ck'];
+const getScore = (r, k) => k === 'gk' ? r.gk : k === 'ck' ? r.ck : r.tx[+k.slice(2)];
+function setScore(r, k, v) { if (k === 'gk') r.gk = v; else if (k === 'ck') r.ck = v; else r.tx[+k.slice(2)] = v; }
+function parseScore(s) {
+  s = String(s ?? '').trim().replace(',', '.'); if (s === '') return { v: null };
+  const n = Number(s); if (!isFinite(n) || n < 0 || n > 10) return { bad: true };
+  return { v: r1(n) };
+}
+function renderGrid() {
+  const d = gb.d, n = d.tx;
+  const th = (t, a = '') => `<th ${a}>${t}</th>`;
+  let h1 = th('STT', 'rowspan="2" class="sticky1" style="min-width:2.6rem"') + th('Mã học sinh', 'rowspan="2" style="min-width:7.5rem"') + th('Họ và tên', 'rowspan="2" colspan="2" style="min-width:12rem"') + th('Ngày sinh', 'rowspan="2" style="min-width:6.5rem"') +
+    th('ĐĐGtx', `colspan="${n}"`) + th('ĐĐG<br>gk', 'rowspan="2"') + th('ĐĐG<br>ck', 'rowspan="2"') + th('ĐTB<br>mhk', 'rowspan="2"') + th('Mức', 'rowspan="2"') + th('Nhận xét', 'rowspan="2" style="min-width:9rem"');
+  d.extra.forEach((l, i) => { h1 += `<th rowspan="2" style="min-width:5rem;background:#fefce8"><input value="${esc(l)}" data-xh="${i}" placeholder="Ghi chú" class="text-center font-semibold" style="width:5rem"><button class="noprint text-red-400 text-xs" onclick="delExtra(${i})" title="Xóa cột">✕</button></th>`; });
+  h1 += th('', 'rowspan="2" class="noprint" style="min-width:1.8rem"');
+  let h2 = ''; for (let i = 0; i < n; i++) h2 += th('TX' + (i + 1), 'style="min-width:3.6rem"');
+  const body = d.rows.map((r, i) => rowHtml(r, i)).join('') || `<tr><td colspan="${12 + n + d.extra.length}" class="p-8 text-center text-slate-400">Sổ chưa có học sinh. Bấm “Thêm học sinh” để dán danh sách lớp.</td></tr>`;
+  $('grid').innerHTML = `<thead><tr class="h1">${h1}</tr><tr class="h2">${h2}</tr></thead><tbody>${body}</tbody>`;
+  d.rows.forEach((_, i) => refreshRow(i));          // tính ĐTB + mức cho từng dòng
+}
+function rowHtml(r, i) {
+  const f = (k, v, st = '') => `<input data-r="${i}" data-f="${k}" value="${esc(v)}" ${st}>`;
+  const sc = colKeys().map(k => `<td><input class="sc" data-r="${i}" data-k="${k}" inputmode="decimal" value="${fmt(getScore(r, k))}"></td>`).join('');
+  return `<tr data-row="${i}"><td class="sticky1 text-center text-slate-500">${i + 1}</td><td>${f('code', r.code)}</td><td style="min-width:8rem">${f('last', r.last)}</td><td style="min-width:4.5rem">${f('first', r.first)}</td><td>${f('dob', r.dob, 'style="text-align:center"')}</td>${sc}
+    <td class="dtb" id="dtb${i}"></td><td class="text-center text-xs font-semibold" id="lv${i}"></td><td>${f('note', r.note)}</td>
+    ${r.x.map((v, j) => `<td style="background:#fefce8"><input data-r="${i}" data-x="${j}" value="${esc(v)}" style="text-align:center"></td>`).join('')}
+    <td class="noprint text-center"><button class="text-slate-300 hover:text-red-500 px-1" onclick="delRow(${i})" title="Xóa học sinh">✕</button></td></tr>`;
+}
+function refreshRow(i) {
+  const r = gb.d.rows[i], v = dtb(r), c = $('dtb' + i), l = $('lv' + i); if (!c) return;
+  c.textContent = v == null ? '' : fmt(v); const lv = v == null ? null : level(v); l.textContent = lv ? lv[0] : ''; l.className = 'text-center text-xs font-semibold ' + (lv ? lv[1] : '');
+}
+
+function renderStats() {
+  if (!gb) return;
+  const vals = gb.d.rows.map(dtb), have = vals.filter(v => v != null), tot = have.length, missing = vals.length - tot;
+  const rows = [['Tốt', 'lv-t', v => v >= 8], ['Khá', 'lv-k', v => v >= 6.5 && v < 8], ['Đạt', 'lv-d', v => v >= 5 && v < 6.5], ['Chưa đạt', 'lv-c', v => v < 5]];
+  $('stats').innerHTML = `<div class="font-semibold text-sm mb-2">THỐNG KÊ HỌC KỲ ${esc(gb.d.meta.sem || '')} <span class="font-normal text-slate-400">· theo ĐTB mhk của ${tot} học sinh đã đủ điểm GK và CK${missing ? ` (còn ${missing} em chưa đủ điểm)` : ''}</span></div>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">${rows.map(([n, c, f]) => { const k = have.filter(f).length; return `<div class="border rounded-lg p-3"><div class="text-xs text-slate-500">Số học sinh ${n}</div>
+      <div class="text-2xl font-bold ${c}">${k}</div><div class="text-xs text-slate-500">${tot ? (Math.round(k * 1000 / tot) / 10).toString().replace('.', ',') : 0}%</div></div>`; }).join('')}</div>`;
+}
+
+// Sự kiện trong bảng: nhập điểm, sửa thông tin, điều hướng bàn phím, dán từ Excel
+const gridEl = $('grid');
+gridEl.addEventListener('change', e => {
+  const el = e.target; if (!(el instanceof HTMLInputElement) || !gb) return;
+  if (el.dataset.k) {
+    const r = gb.d.rows[+el.dataset.r], p = parseScore(el.value);
+    if (p.bad) { el.classList.add('bad'); toast('Điểm phải là số từ 0 đến 10'); el.focus(); return; }
+    el.classList.remove('bad'); setScore(r, el.dataset.k, p.v); el.value = fmt(p.v); refreshRow(+el.dataset.r); renderStats(); saveSoon();
+  } else if (el.dataset.f) { gb.d.rows[+el.dataset.r][el.dataset.f] = el.value.trim(); saveSoon(); }
+  else if (el.dataset.x !== undefined) { gb.d.rows[+el.dataset.r].x[+el.dataset.x] = el.value; saveSoon(); }
+  else if (el.dataset.xh !== undefined) { gb.d.extra[+el.dataset.xh] = el.value; saveSoon(); }
+});
+gridEl.addEventListener('keydown', e => {
+  const el = e.target; if (!(el instanceof HTMLInputElement) || !el.dataset.r) return;
+  const r = +el.dataset.r, sel = k => gridEl.querySelector(`[data-r="${r + k}"]` + (el.dataset.k ? `[data-k="${el.dataset.k}"]` : el.dataset.f ? `[data-f="${el.dataset.f}"]` : `[data-x="${el.dataset.x}"]`));
+  if (e.key === 'Enter' || e.key === 'ArrowDown') { const nx = sel(1); if (nx) { e.preventDefault(); nx.focus(); nx.select(); } }
+  else if (e.key === 'ArrowUp') { const nx = sel(-1); if (nx) { e.preventDefault(); nx.focus(); nx.select(); } }
+});
+gridEl.addEventListener('paste', e => {
+  const el = e.target; if (!(el instanceof HTMLInputElement) || !el.dataset.k || !gb) return;
+  const txt = (e.clipboardData || window.clipboardData).getData('text'); if (!/[\t\n]/.test(txt.trim())) return;   // một ô → dán bình thường
+  e.preventDefault();
+  const keys = colKeys(), c0 = keys.indexOf(el.dataset.k), r0 = +el.dataset.r, lines = txt.replace(/\r/g, '').replace(/\n+$/, '').split('\n');
+  let put = 0, bad = 0;
+  lines.forEach((ln, i) => ln.split('\t').forEach((cell, j) => {
+    const row = gb.d.rows[r0 + i], k = keys[c0 + j]; if (!row || !k || cell.trim() === '') return;
+    const p = parseScore(cell); if (p.bad) { bad++; return; } setScore(row, k, p.v); put++;
+  }));
+  renderGrid(); renderStats(); saveSoon(); toast(`Đã dán ${put} ô điểm` + (bad ? `, bỏ qua ${bad} ô không hợp lệ` : ''));
+});
+function delRow(i) { const r = gb.d.rows[i]; if (!confirm(`Xóa học sinh ${[r.last, r.first].join(' ').trim() || r.code} khỏi sổ (kèm điểm)?`)) return; gb.d.rows.splice(i, 1); renderGrid(); renderStats(); saveSoon(); }
+
+// ---------- Thêm học sinh / tạo sổ mới ----------
+function parseStudents(text, hasHeaderSkip = true) {
+  const out = [];
+  String(text || '').split(/\r?\n/).filter(l => l.trim()).forEach((ln, idx) => {
+    const sep = ln.includes('\t') ? '\t' : (((ln.match(/;/g) || []).length > (ln.match(/,/g) || []).length) ? ';' : ',');
+    const c = ln.split(sep).map(x => x.trim().replace(/^"(.*)"$/, '$1'));
+    if (idx === 0 && hasHeaderSkip && /(ho\s*(va\s*)?ten|ma\s*(hs|hoc\s*sinh)|^stt\b)/.test(noAcc(c.join(' ')))) return;
+    let code = c[0] || '', name = c[1] || '', dob = c[2] || '';
+    if (/^\d{1,3}$/.test(code) && c.length >= 3 && /\d/.test(c[1] || '')) { code = c[1]; name = c[2] || ''; dob = c[3] || ''; }   // có thêm cột STT đứng đầu
+    if (!name) return;
+    const parts = name.split(/\s+/), first = parts.pop(), last = parts.join(' ');
+    out.push({ code, last, first, dob });
+  });
+  return out;
+}
+function openAddStu() {
+  openModal(`<h3 class="font-bold text-lg">➕ Thêm học sinh vào sổ</h3>
+    <p class="text-xs text-slate-500 mt-1">Dán từ Excel, mỗi học sinh một dòng, các cột: <b>Mã học sinh · Họ và tên · Ngày sinh</b> (cột ngày sinh không bắt buộc). Họ tên được tách: chữ cuối là Tên, phần còn lại là Họ đệm.</p>
+    <textarea id="addText" rows="9" spellcheck="false" placeholder="2517462661\tNguyễn Trương Thành Đạt\t13/09/2010" class="w-full border rounded-lg p-2 mt-3 text-sm font-mono"></textarea>
+    <div class="flex justify-end gap-2 mt-4"><button onclick="closeModal()" class="px-4 py-2 rounded-lg border text-sm">Hủy</button><button onclick="doAddStu()" class="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm">Thêm vào sổ</button></div>`);
+}
+function newRow(s) { return { code: s.code, last: s.last, first: s.first, dob: s.dob, tx: Array(gb.d.tx).fill(null), gk: null, ck: null, note: '', x: gb.d.extra.map(() => '') }; }
+function doAddStu() {
+  const list = parseStudents($('addText').value); if (!list.length) return toast('Chưa đọc được dòng nào. Kiểm tra lại cột Mã học sinh và Họ tên.');
+  const have = new Set(gb.d.rows.map(r => r.code.trim().toLowerCase()).filter(Boolean)); let dup = 0, added = 0;
+  list.forEach(s => { if (s.code && have.has(s.code.toLowerCase())) { dup++; return; } if (s.code) have.add(s.code.toLowerCase()); gb.d.rows.push(newRow(s)); added++; });
+  closeModal(); renderGrid(); renderStats(); saveSoon(); toast(`Đã thêm ${added} học sinh` + (dup ? `, bỏ qua ${dup} em trùng mã` : ''));
+}
+function openNew() {
+  openModal(`<h3 class="font-bold text-lg">+ Tạo sổ điểm mới</h3>
+    <div class="grid grid-cols-2 gap-3 mt-3 text-sm">
+      <label class="font-medium col-span-2">Môn <input id="nSub" placeholder="VD: Vật lí" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+      <label class="font-medium">Khối <input id="nGrade" placeholder="11" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+      <label class="font-medium">Lớp <input id="nCls" placeholder="11C1" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+      <label class="font-medium">Học kỳ <select id="nSem" class="w-full border rounded-lg p-2 mt-1 font-normal"><option value="1">Học kỳ 1</option><option value="2">Học kỳ 2</option></select></label>
+      <label class="font-medium">Năm học <input id="nYear" placeholder="2026-2027" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+      <label class="font-medium col-span-2">Số cột điểm thường xuyên (TX) <input id="nTx" type="number" min="1" max="12" value="3" class="w-24 border rounded-lg p-2 mt-1 font-normal"></label>
+    </div>
+    <div class="font-medium text-sm mt-3">Danh sách học sinh <span class="font-normal text-slate-400">(Mã học sinh · Họ và tên · Ngày sinh — dán từ Excel, có thể bổ sung sau)</span></div>
+    <textarea id="nList" rows="7" spellcheck="false" class="w-full border rounded-lg p-2 mt-1 text-sm font-mono"></textarea>
+    <div class="flex justify-end gap-2 mt-4"><button onclick="closeModal()" class="px-4 py-2 rounded-lg border text-sm">Hủy</button><button onclick="doNew()" class="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm">Tạo sổ</button></div>`);
+}
+async function doNew() {
+  const d = blankData(); d.meta = { ...d.meta, subject: $('nSub').value.trim(), grade: $('nGrade').value.trim(), cls: $('nCls').value.trim(), sem: $('nSem').value, year: $('nYear').value.trim() };
+  d.tx = Math.min(12, Math.max(1, parseInt($('nTx').value) || 3));
+  d.rows = parseStudents($('nList').value).map(s => ({ ...s, tx: Array(d.tx).fill(null), gk: null, ck: null, note: '', x: [] }));
+  const id = await createBook(d); if (id) { closeModal(); openBook(id); }
+}
+
+// ---------- Nhập từ file Excel mẫu ----------
+function cellStr(v) { return v == null ? '' : (typeof v === 'number' ? (Number.isInteger(v) ? String(v) : String(v)) : String(v)).trim(); }
+function excelDate(v) { const d = new Date(Math.round((v - 25569) * 86400 * 1000)); return `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}`; }
+function dobStr(v) { if (typeof v === 'number' && v > 20000) { const d = new Date(Math.round((v - 25569) * 86400 * 1000)); return `${String(d.getUTCDate()).padStart(2, '0')}/${String(d.getUTCMonth() + 1).padStart(2, '0')}/${d.getUTCFullYear()}`; } return cellStr(v); }
+const numOrNull = v => { if (isNum(v)) return v; const s = String(v ?? '').trim().replace(',', '.'); if (!s) return null; const n = Number(s); return isFinite(n) && n >= 0 && n <= 10 ? n : null; };
+function parseSheet(ws) {
+  const A = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+  let h0 = -1;
+  for (let r = 0; r < Math.min(A.length, 40); r++) { const n = A[r].map(noAcc); if (n.includes('stt') && n.some(x => /^ma (hoc sinh|hs|so)/.test(x))) { h0 = r; break; } }
+  if (h0 < 0) throw new Error('Không tìm thấy dòng tiêu đề (cần có cột “STT” và “Mã học sinh”).');
+  const H0 = A[h0].map(noAcc), H1 = (A[h0 + 1] || []).map(noAcc), W = Math.max(A[h0].length, (A[h0 + 1] || []).length);
+  const col = (f) => { for (let c = 0; c < W; c++) if (f(H0[c] || '', H1[c] || '')) return c; return -1; };
+  const cStt = col(a => a === 'stt'), cCode = col(a => /^ma (hoc sinh|hs|so)/.test(a)), cName = col(a => /^ho va ten|^ho ten/.test(a)), cDob = col(a => /^ngay sinh/.test(a));
+  const cDtb = col(a => /^dtb/.test(a)), cNote = col(a => /^nhan xet/.test(a));
+  const txCols = []; for (let c = 0; c < W; c++) if (/^tx\d*$/.test(H1[c] || '') || /^tx\d*$/.test(H0[c] || '')) txCols.push(c);
+  const z = t => t.replace(/\s+/g, ''), cGk = col((a, b) => /^gk/.test(b) || /^gk/.test(a) || /^ddggk/.test(z(a))), cCk = col((a, b) => /^ck/.test(b) || /^ck/.test(a) || /^ddgck/.test(z(a)));
+  if (cCode < 0 || cName < 0) throw new Error('Thiếu cột “Mã học sinh” hoặc “Họ và tên”.');
+  // học sinh: từ dòng sau tiêu đề 2 tầng
+  const start = h0 + (txCols.length || cGk >= 0 ? 2 : 1), rows = [];
+  const twoNameCols = A.slice(start, start + 3).some(r => cellStr(r[cName + 1]) !== '') && !(H0[cName + 1] || H1[cName + 1]) && cName + 1 !== cDob;
+  for (let r = start; r < A.length; r++) {
+    const code = cellStr(A[r][cCode]); if (!code) break;
+    const a = A[r], first = twoNameCols ? cellStr(a[cName + 1]) : '', last = cellStr(a[cName]);
+    let L = last, F = first; if (!twoNameCols) { const p = last.split(/\s+/); F = p.pop(); L = p.join(' '); }
+    rows.push({ code, last: L, first: F, dob: cDob >= 0 ? dobStr(a[cDob]) : '', tx: txCols.map(c => numOrNull(a[c])), gk: cGk >= 0 ? numOrNull(a[cGk]) : null, ck: cCk >= 0 ? numOrNull(a[cCk]) : null, note: cNote >= 0 ? cellStr(a[cNote]) : '', _a: a });
+  }
+  if (!rows.length) throw new Error('Không có dòng học sinh nào bên dưới tiêu đề.');
+  // cột ghi chú ngoài bảng (sau “Nhận xét”)
+  const after = (cNote >= 0 ? cNote : (cDtb >= 0 ? cDtb : Math.max(cCk, cGk))) + 1, extra = [], xcols = [];
+  for (let c = after; c < W; c++) {
+    const hv = A[h0][c] !== '' ? A[h0][c] : (A[h0 + 1] || [])[c];
+    const has = rows.some(r => cellStr(r._a[c]) !== '') || (hv !== '' && hv != null && String(hv).trim() !== '');
+    if (!has) continue;
+    xcols.push(c); extra.push(typeof hv === 'number' && hv > 30000 ? excelDate(hv) : cellStr(hv));
+  }
+  rows.forEach(r => { r.x = xcols.map(c => cellStr(r._a[c])); delete r._a; });
+  // đầu trang
+  const T = []; for (let r = 0; r < h0; r++) { const t = cellStr(A[r].find(v => cellStr(v) !== '')); if (t) T.push(t); }
+  const meta = { dept: '', school: '', subject: '', sem: '1', year: '', grade: '', cls: '' };
+  T.forEach(t => {
+    const m = t.match(/M[ÔO]N\s+(.+?)\s*-\s*H[ỌO]C\s*K[ỲY]\s*(\d)\s*-\s*N[ĂA]M\s*H[ỌO]C\s*([\d\-\/ ]+\d)/i), k = t.match(/Kh[ốo]i\s*(\d+)\s*-\s*L[ớo]p\s*(.+)/i);
+    if (m) { meta.subject = m[1].trim().replace(/^(\p{L})(.*)$/u, (_, a, b) => a + b.toLowerCase()); meta.sem = m[2]; meta.year = m[3].trim(); }
+    else if (k) { meta.grade = k[1]; meta.cls = k[2].trim(); }
+  });
+  const hdr = T.filter(t => !/M[ÔO]N\s/i.test(t) && !/Kh[ốo]i\s*\d/i.test(t) && !/B[ẢA]NG [ĐD]I[ỂE]M/i.test(t));
+  meta.dept = hdr[0] || ''; meta.school = hdr[1] || '';
+  return { meta, tx: Math.min(12, txCols.length || 3), extra, rows };
+}
+async function importFile(inp) {
+  const f = inp.files && inp.files[0]; inp.value = ''; if (!f) return;
+  try {
+    const buf = await f.arrayBuffer(), wb = XLSX.read(buf, { type: 'array' });
+    let d = null, err = null; for (const n of wb.SheetNames) { try { d = parseSheet(wb.Sheets[n]); break; } catch (e) { err = e; } }
+    if (!d) throw err || new Error('Không đọc được file.');
+    if (!d.meta.subject) d.meta.subject = '';
+    const id = await createBook(d); if (!id) return;
+    toast(`Đã nhập ${d.rows.length} học sinh, ${d.tx} cột TX` + (d.extra.length ? `, ${d.extra.length} cột ghi chú` : '')); openBook(id);
+  } catch (e) { toast('Không nhập được file: ' + (e.message || e)); }
+}
+
+// ---------- Xuất Excel đúng mẫu ----------
+async function exportXlsx() {
+  if (!gb) return; const d = gb.d, n = d.tx, rows = d.rows, m = d.meta;
+  if (!rows.length) return toast('Sổ chưa có học sinh để xuất.');
+  const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet((m.subject || 'So diem').replace(/[\\\/\?\*\[\]:]/g, ' ').slice(0, 31) || 'So diem', { pageSetup: { paperSize: 9, orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: .4, right: .4, top: .5, bottom: .5, header: .3, footer: .3 } } });
+  const C = { stt: 1, code: 2, last: 3, first: 4, dob: 5, tx0: 6 }; C.gk = 6 + n; C.ck = 7 + n; C.dtb = 8 + n; C.note = 9 + n; const lastC = C.note;
+  const L = c => ws.getColumn(c).letter, R0 = 8, R1 = 7 + rows.length;
+  const widths = [5, 14, 24, 9, 12, ...Array(n).fill(6), 7, 7, 7, 20]; widths.forEach((w, i) => ws.getColumn(i + 1).width = w);
+  d.extra.forEach((_, i) => ws.getColumn(lastC + 1 + i).width = 9);
+  const font = (o = {}) => ({ name: 'Arial', size: 10, ...o }), thin = { style: 'thin', color: { argb: 'FF000000' } }, box = { top: thin, left: thin, bottom: thin, right: thin };
+  const put = (r, c, v, st = {}) => { const cell = ws.getCell(r, c); cell.value = v; cell.font = font(st.font); cell.alignment = { horizontal: st.h || 'center', vertical: 'middle', wrapText: true }; if (st.border) cell.border = box; if (st.fmt) cell.numFmt = st.fmt; return cell; };
+  const head = [m.dept, m.school, `BẢNG ĐIỂM CHI TIẾT${m.subject ? ' - MÔN ' + m.subject.toUpperCase() : ''} - HỌC KỲ ${m.sem || ''}${m.year ? ' - NĂM HỌC ' + m.year : ''}`, `${m.grade ? 'Khối ' + m.grade + ' - ' : ''}Lớp ${m.cls || ''}`.trim()];
+  head.forEach((t, i) => { ws.mergeCells(i + 1, 1, i + 1, lastC); put(i + 1, 1, t, { font: { bold: i >= 2 } }); ws.getRow(i + 1).height = i < 2 ? 17 : 18; });
+  // tiêu đề bảng (2 tầng)
+  const hb = { font: { bold: true }, border: true };
+  const vm = (c, t, c2) => { ws.mergeCells(6, c, 7, c2 || c); put(6, c, t, hb); for (let x = c; x <= (c2 || c); x++) for (const r of [6, 7]) ws.getCell(r, x).border = box; };
+  vm(C.stt, 'STT'); vm(C.code, 'Mã học sinh'); vm(C.last, 'Họ và tên', C.first); vm(C.dob, 'Ngày sinh');
+  ws.mergeCells(6, C.tx0, 6, C.tx0 + n - 1); put(6, C.tx0, 'ĐĐGtx', hb); for (let i = 0; i < n; i++) { ws.getCell(6, C.tx0 + i).border = box; put(7, C.tx0 + i, 'TX' + (i + 1), { border: true }); }
+  vm(C.gk, 'ĐĐG\ngk'); vm(C.ck, 'ĐĐG\nck'); vm(C.dtb, 'ĐTB\nmhk'); vm(C.note, 'Nhận xét');
+  ws.getRow(6).height = 30; ws.getRow(7).height = 18;
+  // học sinh
+  rows.forEach((r, i) => {
+    const R = R0 + i, v = dtb(r);
+    put(R, C.stt, i + 1, { border: true }); put(R, C.code, /^\d+$/.test(r.code) ? Number(r.code) : r.code, { border: true, fmt: '0' });
+    put(R, C.last, r.last, { h: 'left', border: true }); put(R, C.first, r.first, { h: 'left', border: true }); put(R, C.dob, r.dob, { border: true });
+    for (let k = 0; k < n; k++) put(R, C.tx0 + k, isNum(r.tx[k]) ? r.tx[k] : null, { border: true, fmt: '0.0' });
+    put(R, C.gk, isNum(r.gk) ? r.gk : null, { border: true, fmt: '0.0' }); put(R, C.ck, isNum(r.ck) ? r.ck : null, { border: true, fmt: '0.0' });
+    const txr = `${L(C.tx0)}${R}:${L(C.tx0 + n - 1)}${R}`, gk = `${L(C.gk)}${R}`, ck = `${L(C.ck)}${R}`;
+    put(R, C.dtb, { formula: `IF(AND(ISNUMBER(${gk}),ISNUMBER(${ck})),ROUND((SUM(${txr})+2*${gk}+3*${ck})/(COUNT(${txr})+5),1),"")`, result: v == null ? '' : v }, { border: true, fmt: '0.0' });
+    put(R, C.note, r.note, { h: 'left', border: true });
+    r.x.forEach((t, j) => put(R, lastC + 1 + j, t, { h: 'left' }));
+  });
+  d.extra.forEach((t, j) => { ws.mergeCells(6, lastC + 1 + j, 7, lastC + 1 + j); put(6, lastC + 1 + j, t, { font: { bold: true } }); });
+  // thống kê
+  const S = R1 + 2; ws.mergeCells(S, 1, S + 1, 10); put(S, 1, `THỐNG KÊ HỌC KỲ ${m.sem || ''}`, { font: { bold: true } });
+  const rng = `${L(C.dtb)}${R0}:${L(C.dtb)}${R1}`, vals = rows.map(dtb).filter(v => v != null), tot = vals.length;
+  const LV = [['Tốt', `COUNTIF(${rng},">=8")`, v => v >= 8], ['Khá', `COUNTIFS(${rng},">=6.5",${rng},"<8")`, v => v >= 6.5 && v < 8], ['Đạt', `COUNTIFS(${rng},">=5",${rng},"<6.5")`, v => v >= 5 && v < 6.5], ['Chưa Đạt', `COUNTIF(${rng},"<5")`, v => v < 5]];
+  LV.forEach(([name, fx, f], i) => {
+    const R = S + 2 + i, k = vals.filter(f).length;
+    ws.mergeCells(R, 1, R, 3); put(R, 1, i === 0 ? 'Số học sinh đạt' : i === 1 ? 'Số lượng - Tỉ lệ (%)' : '', { font: { bold: true } });
+    ws.mergeCells(R, 4, R, 5); put(R, 4, name, { h: 'left' });
+    ws.mergeCells(R, 6, R, 7); put(R, 6, { formula: fx, result: k });
+    put(R, 8, '-'); ws.mergeCells(R, 9, R, 10); put(R, 9, { formula: `IF(COUNT(${rng})=0,0,F${R}/COUNT(${rng}))`, result: tot ? k / tot : 0 }, { fmt: '0.0%' });
+  });
+  const buf = await wb.xlsx.writeBuffer(), slugN = t => noAcc(t).replace(/[^a-z0-9]+/g, '') || 'x', name = `So_diem_${slugN(m.subject || 'mon')}_${slugN(m.cls || 'lop')}_HK${m.sem || ''}.xlsx`;
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 3000); toast('Đã xuất ' + name);
+}
+
+// ---------- Lấy điểm từ bài giao / ca thi ----------
+let pull = null;
+async function openPull() {
+  if (!gb.d.rows.length) return toast('Sổ chưa có học sinh. Hãy thêm danh sách trước.');
+  pull = { tab: 'asg', asg: [], shifts: [], sel: null, rows: null };
+  openModal('<p class="text-sm text-slate-500">Đang tải danh sách bài giao và ca thi…</p>', true);
+  const [a, rm] = await Promise.all([db.rpc('assignment_list'), db.from('exam_rooms').select('id,title,subject,grade').eq('teacher_id', user.id)]);
+  pull.asg = Array.isArray(a.data) ? a.data : [];
+  const rooms = rm.data || [];
+  if (rooms.length) {
+    const sh = await db.from('exam_shifts').select('id,room_id,shift_name,start_time').in('room_id', rooms.map(r => r.id)).order('start_time', { ascending: false }).limit(300);
+    const rmap = Object.fromEntries(rooms.map(r => [r.id, r])); pull.shifts = (sh.data || []).map(s => ({ ...s, room: rmap[s.room_id] }));
+  }
+  renderPull();
+}
+function pullSetTab(t) { pull.tab = t; pull.sel = null; pull.rows = null; renderPull(); }
+function pullPick(id) { pull.sel = id; pull.rows = null; renderPull(); }
+function renderPull() {
+  const d = gb.d, items = pull.tab === 'asg' ? pull.asg : pull.shifts;
+  const list = items.length ? items.map(it => {
+    const id = it.id, on = pull.sel === id;
+    const t = pull.tab === 'asg' ? `<div class="font-medium">${esc(it.title)}</div><div class="text-xs text-slate-500">Mã ${esc(it.code)} · ${it.students || 0} học sinh đã nộp · ${esc(it.subject || '')}</div>`
+      : `<div class="font-medium">${esc(it.room?.title || '')} — ${esc(it.shift_name)}</div><div class="text-xs text-slate-500">${esc(fmtDT(it.start_time))} · ${esc(it.room?.subject || '')}</div>`;
+    return `<label class="flex items-start gap-2 p-2 rounded-lg cursor-pointer ${on ? 'bg-indigo-50' : 'hover:bg-slate-50'}"><input type="radio" name="pitem" ${on ? 'checked' : ''} onchange="pullPick(${id})" class="mt-1"><div>${t}</div></label>`; }).join('')
+    : `<p class="p-4 text-sm text-slate-400">${pull.tab === 'asg' ? 'Chưa có bài giao nào.' : 'Chưa có ca thi nào.'}</p>`;
+  const cols = [...Array.from({ length: d.tx }, (_, i) => `<option value="tx${i}">TX${i + 1}</option>`), '<option value="gk">GK1 (giữa kỳ)</option>', '<option value="ck">CK1 (cuối kỳ)</option>', '<option value="newtx">+ Cột TX mới (tự thêm)</option>'].join('');
+  const keep = id => { const e = $(id); return e ? e.value : ''; };
+  const sc = keep('pCol'), ov = $('pOv')?.checked, ty = keep('pType');
+  openModal(`<h3 class="font-bold text-lg">🔄 Lấy điểm từ hệ thống vào sổ</h3>
+    <p class="text-xs text-slate-500 mt-1">Chọn một bài giao hoặc ca thi, chọn cột điểm cần ghi, hệ thống khớp học sinh theo <b>Mã học sinh</b> (nếu không có mã thì theo họ tên) rồi cho xem trước trước khi ghi.</p>
+    <div class="flex gap-2 mt-3 text-sm"><button onclick="pullSetTab('asg')" class="px-3 py-1.5 rounded-lg border ${pull.tab === 'asg' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white'}">📚 Bài giao (${pull.asg.length})</button>
+      <button onclick="pullSetTab('shift')" class="px-3 py-1.5 rounded-lg border ${pull.tab === 'shift' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white'}">🏫 Ca thi phòng thi (${pull.shifts.length})</button></div>
+    <div class="border rounded-lg mt-2 max-h-48 overflow-y-auto divide-y">${list}</div>
+    <div class="grid sm:grid-cols-3 gap-3 mt-3 text-sm">
+      <label class="font-medium">Ghi vào cột <select id="pCol" class="w-full border rounded-lg p-2 mt-1 font-normal">${cols}</select></label>
+      ${pull.tab === 'asg' ? `<label class="font-medium">Điểm lấy <select id="pType" class="w-full border rounded-lg p-2 mt-1 font-normal"><option value="best">Lần làm cao nhất</option><option value="last">Lần làm cuối cùng</option></select></label>` : '<div></div>'}
+      <label class="flex items-end gap-2 pb-2"><input id="pOv" type="checkbox" ${ov ? 'checked' : ''}> <span>Ghi đè ô đã có điểm</span></label></div>
+    <div class="mt-3"><button onclick="pullPreview()" ${pull.sel ? '' : 'disabled'} class="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm disabled:opacity-40">Xem trước</button></div>
+    <div id="pPrev" class="mt-3"></div>
+    <div class="flex justify-end gap-2 mt-4"><button onclick="closeModal()" class="px-4 py-2 rounded-lg border text-sm">Đóng</button><button id="pApply" onclick="pullApply()" disabled class="px-5 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium disabled:opacity-40">Ghi điểm vào sổ</button></div>`, true);
+  if (sc) $('pCol').value = sc; if (ty && $('pType')) $('pType').value = ty;
+  if (pull.rows) drawPullPreview();
+}
+async function pullPreview() {
+  $('pPrev').innerHTML = '<p class="text-sm text-slate-500">Đang tải điểm…</p>'; let sys = [];
+  if (pull.tab === 'asg') {
+    const { data, error } = await db.rpc('assignment_report', { p_id: pull.sel }); if (error) return $('pPrev').innerHTML = `<p class="text-sm text-red-600">${esc(error.message)}</p>`;
+    const useLast = $('pType').value === 'last';
+    sys = (data.students || []).map(s => ({ code: s.code, name: s.name, score: useLast ? s.last_score : s.best_score }));
+  } else {
+    const { data, error } = await db.from('exam_results').select('student_code,student_name,score,submitted_at').eq('shift_id', pull.sel).not('submitted_at', 'is', null);
+    if (error) return $('pPrev').innerHTML = `<p class="text-sm text-red-600">${esc(error.message)}</p>`;
+    sys = (data || []).map(s => ({ code: s.student_code, name: s.student_name, score: s.score }));
+  }
+  const nc = s => String(s || '').trim().toLowerCase().replace(/\s+/g, ''), nn = s => noAcc(s).replace(/[^a-z0-9]/g, '');
+  const byCode = new Map(), byName = new Map();
+  gb.d.rows.forEach((r, i) => { if (r.code) byCode.set(nc(r.code), i); const k = nn(r.last + r.first); byName.set(k, byName.has(k) ? -1 : i); });
+  const map = new Map(), unmatched = [];
+  sys.forEach(s => {
+    if (!isNum(Number(s.score)) || s.score == null) { unmatched.push({ ...s, why: 'chưa có điểm (bài tự luận)' }); return; }
+    let i = byCode.get(nc(s.code)), via = 'mã';
+    if (i == null) { const k = byName.get(nn(s.name)); if (k != null && k >= 0) { i = k; via = 'tên'; } }
+    if (i == null) return unmatched.push({ ...s, why: 'không có trong sổ' });
+    const prev = map.get(i); if (!prev || Number(s.score) > prev.score) map.set(i, { score: r1(Number(s.score)), raw: Number(s.score), via, sysName: s.name });
+  });
+  pull.rows = { map, unmatched, total: sys.length }; drawPullPreview();
+}
+function drawPullPreview() {
+  const { map, unmatched, total } = pull.rows, key = $('pCol').value, ov = $('pOv').checked, rows = gb.d.rows;
+  let willPut = 0, skip = 0;
+  const trs = rows.map((r, i) => {
+    const m = map.get(i), cur = key === 'newtx' ? null : getScore(r, key);
+    if (!m) return `<tr class="border-t text-slate-400"><td class="p-1.5">${i + 1}</td><td class="p-1.5">${esc(r.code)}</td><td class="p-1.5">${esc((r.last + ' ' + r.first).trim())}</td><td class="p-1.5 text-center">—</td><td class="p-1.5 text-center">${fmt(cur)}</td><td class="p-1.5">chưa nộp bài</td></tr>`;
+    const block = isNum(cur) && !ov; block ? skip++ : willPut++;
+    return `<tr class="border-t ${block ? 'bg-amber-50' : ''}"><td class="p-1.5">${i + 1}</td><td class="p-1.5">${esc(r.code)}</td><td class="p-1.5">${esc((r.last + ' ' + r.first).trim())}</td>
+      <td class="p-1.5 text-center font-medium">${fmt(m.raw)}${m.raw !== m.score ? ` <span class="text-slate-400">→ ${fmt(m.score)}</span>` : ''}</td><td class="p-1.5 text-center">${fmt(cur)}</td>
+      <td class="p-1.5 ${block ? 'text-amber-700' : 'text-emerald-700'}">${block ? 'giữ điểm cũ (không ghi đè)' : 'sẽ ghi ' + fmt(m.score)}${m.via === 'tên' ? ' · khớp theo tên' : ''}</td></tr>`; }).join('');
+  $('pPrev').innerHTML = `<div class="text-sm mb-1">Hệ thống có <b>${total}</b> học sinh nộp bài · khớp vào sổ <b>${map.size}</b> · sẽ ghi <b class="text-emerald-700">${willPut}</b> ô${skip ? ` · giữ nguyên ${skip} ô đã có điểm` : ''}. Điểm được làm tròn 1 chữ số thập phân.</div>
+    <div class="overflow-auto max-h-64 border rounded-lg"><table class="w-full text-xs"><thead class="bg-slate-50 text-slate-500 text-left sticky top-0"><tr><th class="p-1.5">#</th><th class="p-1.5">Mã HS</th><th class="p-1.5">Họ và tên</th><th class="p-1.5 text-center">Điểm hệ thống</th><th class="p-1.5 text-center">Đang có trong sổ</th><th class="p-1.5">Kết quả</th></tr></thead><tbody>${trs}</tbody></table></div>
+    ${unmatched.length ? `<details class="mt-2 text-xs text-amber-800"><summary class="cursor-pointer">${unmatched.length} học sinh trong hệ thống không ghi được (xem danh sách)</summary><ul class="list-disc pl-5 mt-1">${unmatched.map(u => `<li>${esc(u.name)} (${esc(u.code)}) — ${u.why}</li>`).join('')}</ul></details>` : ''}`;
+  $('pApply').disabled = !willPut; $('pApply').dataset.n = willPut;
+  $('pCol').onchange = $('pOv').onchange = () => drawPullPreview();
+}
+function pullApply() {
+  const { map } = pull.rows; let key = $('pCol').value; const ov = $('pOv').checked, d = gb.d;
+  if (key === 'newtx') { if (d.tx >= 12) return toast('Đã đủ 12 cột TX'); d.tx++; d.rows.forEach(r => r.tx.push(null)); key = 'tx' + (d.tx - 1); $('txN') && ($('txN').textContent = d.tx); }
+  let put = 0; map.forEach((m, i) => { const r = d.rows[i]; if (isNum(getScore(r, key)) && !ov) return; setScore(r, key, m.score); put++; });
+  closeModal(); renderGrid(); renderStats(); saveSoon();
+  const lbl = key === 'gk' ? 'GK1' : key === 'ck' ? 'CK1' : 'TX' + (+key.slice(2) + 1); toast(`Đã ghi ${put} điểm vào cột ${lbl}`);
+}
+
+db.auth.onAuthStateChange((_e, s) => setUser(s?.user || null));
+db.auth.getSession().then(({ data }) => setUser(data.session?.user || null));
+/* Chặn tài khoản HỌC SINH (quyền thật do chính sách RLS của bảng gradebooks quyết định) */
+(function guardStudent() {
+  let lastId = null;
+  async function check(session) {
+    const u = session?.user || null; if ((u?.id || null) === lastId) return; lastId = u?.id || null; if (!u) return;
+    const { data, error } = await db.rpc('is_student');
+    if (!error && data === true) { document.body.innerHTML = '<div style="padding:40px;text-align:center;font-family:system-ui"><h2>Khu vực dành cho giáo viên</h2><p>Tài khoản này là tài khoản học sinh.</p><p><a href="student_home.html">Về trang học sinh</a></p></div>'; }
+  }
+  db.auth.getSession().then(({ data }) => check(data.session));
+  db.auth.onAuthStateChange((_e, s) => setTimeout(() => check(s), 0));
+})();
+</script>
+</body>
+</html>
