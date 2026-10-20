@@ -76,6 +76,7 @@
       <div class="ml-auto flex flex-wrap gap-2 text-sm">
         <button onclick="openPull()" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium">🔄 Lấy điểm từ bài giao / ca thi</button>
         <button onclick="openAddStu()" class="px-3 py-1.5 rounded-lg border bg-white hover:bg-slate-50">➕ Thêm học sinh</button>
+        <button onclick="openAcc()" class="px-3 py-1.5 rounded-lg border bg-white hover:bg-slate-50 text-indigo-700 font-medium">🔑 Tạo tài khoản đăng nhập</button>
         <button onclick="exportXlsx()" class="px-3 py-1.5 rounded-lg border bg-white hover:bg-slate-50 text-emerald-700 font-medium">⬇ Xuất Excel</button>
         <button onclick="window.print()" class="px-3 py-1.5 rounded-lg border bg-white hover:bg-slate-50">🖨 In</button>
         <button onclick="askDelBook()" class="px-3 py-1.5 rounded-lg border bg-white hover:bg-red-50 text-red-600">🗑 Xóa sổ</button>
@@ -142,7 +143,7 @@ function normData(d) {
   o.rows = (Array.isArray(d.rows) ? d.rows : []).map(r => ({
     code: String(r.code ?? ''), last: String(r.last ?? ''), first: String(r.first ?? ''), dob: String(r.dob ?? ''),
     tx: Array.from({ length: o.tx }, (_, i) => isNum(r.tx?.[i]) ? r.tx[i] : null), gk: isNum(r.gk) ? r.gk : null, ck: isNum(r.ck) ? r.ck : null,
-    note: String(r.note ?? ''), x: o.extra.map((_, i) => String(r.x?.[i] ?? '')) }));
+    acc: !!r.acc, note: String(r.note ?? ''), x: o.extra.map((_, i) => String(r.x?.[i] ?? '')) }));
   return o;
 }
 const bookTitle = d => [d.meta.subject || 'Sổ điểm', d.meta.cls, d.meta.sem ? 'HK' + d.meta.sem : '', d.meta.year].filter(Boolean).join(' · ');
@@ -286,7 +287,7 @@ function renderGrid() {
 function rowHtml(r, i) {
   const f = (k, v, st = '') => `<input data-r="${i}" data-f="${k}" value="${esc(v)}" ${st}>`;
   const sc = colKeys().map(k => `<td><input class="sc" data-r="${i}" data-k="${k}" inputmode="decimal" value="${fmt(getScore(r, k))}"></td>`).join('');
-  return `<tr data-row="${i}"><td class="sticky1 text-center text-slate-500">${i + 1}</td><td>${f('code', r.code)}</td><td style="min-width:8rem">${f('last', r.last)}</td><td style="min-width:4.5rem">${f('first', r.first)}</td><td>${f('dob', r.dob, 'style="text-align:center"')}</td>${sc}
+  return `<tr data-row="${i}"><td class="sticky1 text-center text-slate-500">${i + 1}${r.acc ? '<span class="noprint text-emerald-600" title="Đã tạo tài khoản đăng nhập"> 🔑</span>' : ''}</td><td>${f('code', r.code)}</td><td style="min-width:8rem">${f('last', r.last)}</td><td style="min-width:4.5rem">${f('first', r.first)}</td><td>${f('dob', r.dob, 'style="text-align:center"')}</td>${sc}
     <td class="dtb" id="dtb${i}"></td><td class="text-center text-xs font-semibold" id="lv${i}"></td><td>${f('note', r.note)}</td>
     ${r.x.map((v, j) => `<td style="background:#fefce8"><input data-r="${i}" data-x="${j}" value="${esc(v)}" style="text-align:center"></td>`).join('')}
     <td class="noprint text-center"><button class="text-slate-300 hover:text-red-500 px-1" onclick="delRow(${i})" title="Xóa học sinh">✕</button></td></tr>`;
@@ -358,7 +359,7 @@ function openAddStu() {
     <textarea id="addText" rows="9" spellcheck="false" placeholder="2517462661\tNguyễn Trương Thành Đạt\t13/09/2010" class="w-full border rounded-lg p-2 mt-3 text-sm font-mono"></textarea>
     <div class="flex justify-end gap-2 mt-4"><button onclick="closeModal()" class="px-4 py-2 rounded-lg border text-sm">Hủy</button><button onclick="doAddStu()" class="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm">Thêm vào sổ</button></div>`);
 }
-function newRow(s) { return { code: s.code, last: s.last, first: s.first, dob: s.dob, tx: Array(gb.d.tx).fill(null), gk: null, ck: null, note: '', x: gb.d.extra.map(() => '') }; }
+function newRow(s) { return { code: s.code, last: s.last, first: s.first, dob: s.dob, tx: Array(gb.d.tx).fill(null), gk: null, ck: null, acc: false, note: '', x: gb.d.extra.map(() => '') }; }
 function doAddStu() {
   const list = parseStudents($('addText').value); if (!list.length) return toast('Chưa đọc được dòng nào. Kiểm tra lại cột Mã học sinh và Họ tên.');
   const have = new Set(gb.d.rows.map(r => r.code.trim().toLowerCase()).filter(Boolean)); let dup = 0, added = 0;
@@ -497,6 +498,104 @@ async function exportXlsx() {
 
 // ---------- Lấy điểm từ bài giao / ca thi ----------
 let pull = null;
+/* ------------------ Tạo tài khoản đăng nhập từ danh sách sổ (Edge Function create-students + class_accounts_setup.sql) ------------------ */
+let accRows = [], accRes = [];
+const rowName = r => [r.last, r.first].map(x => String(x || '').trim()).filter(Boolean).join(' ');
+async function fnError(error) {
+  let msg = error?.message || 'Lỗi không rõ';
+  try { const r = error?.context; if (r && typeof r.json === 'function') { const j = await r.json(); if (j && j.error) msg = j.error; } } catch (e) {}
+  const st = error?.context?.status;
+  if (st === 404 || /Failed to send a request|NOT_FOUND|Function not found/i.test(msg)) msg = 'Chưa triển khai Edge Function “create-students” trên Supabase. Xem edge_function_create_students/HUONG_DAN.md.';
+  return msg;
+}
+function openAcc() {
+  if (!gb) return;
+  const rows = gb.d.rows, noCode = rows.filter(r => !String(r.code).trim()).length, done = rows.filter(r => r.acc).length;
+  let dom = 'example.com'; try { dom = localStorage.getItem('stu_domain') || dom; } catch (e) {}
+  openModal(`<h3 class="font-bold text-lg">🔑 Tạo tài khoản đăng nhập cho học sinh trong sổ</h3>
+    <p class="text-xs text-slate-500 mt-1">Dùng đúng danh sách của sổ này (<b>${rows.length}</b> học sinh). Tên đăng nhập tự tạo từ <b>Mã học sinh</b>, mật khẩu ngẫu nhiên 8 ký tự. Học sinh đăng nhập xong sẽ có đúng mã học sinh này nên điểm từ bài giao / ca thi khớp vào sổ tự động.</p>
+    <div class="grid sm:grid-cols-2 gap-3 mt-3 text-sm">
+      <label class="font-medium">Lớp ghi vào tài khoản <input id="accCls" value="${esc(gb.d.meta.cls || '')}" maxlength="40" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+      <label class="font-medium">Đuôi email tự tạo (@…) <input id="accDom" value="${esc(dom)}" maxlength="60" class="w-full border rounded-lg p-2 mt-1 font-normal"></label></div>
+    <label class="flex items-center gap-2 text-sm mt-3"><input type="checkbox" id="accOnlyNew" ${done ? 'checked' : ''} onchange="accPreview()"> Chỉ học sinh chưa tạo tài khoản qua sổ này ${done ? `<span class="text-slate-400">(${done} em đã tạo)</span>` : ''}</label>
+    ${noCode ? `<div class="text-xs text-amber-700 mt-2">⚠ ${noCode} học sinh chưa có Mã học sinh sẽ bị bỏ qua. Hãy điền mã vào sổ trước.</div>` : ''}
+    <div id="accPrev" class="mt-3"></div><div id="accErr" class="hidden text-sm text-red-600 mt-3"></div>
+    <div class="flex justify-end gap-2 mt-4"><button onclick="closeModal()" class="px-4 py-2 rounded-lg border text-sm">Đóng</button>
+      <button id="accBtn" onclick="accCreate()" disabled class="px-5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium disabled:opacity-40">Tạo tài khoản</button></div>`, true);
+  accPreview();
+}
+function accPreview() {
+  const only = $('accOnlyNew').checked, seen = {};
+  accRows = gb.d.rows.map((r, i) => ({ i, name: rowName(r), code: String(r.code || '').trim(), acc: r.acc })).filter(o => !(only && o.acc));
+  accRows.forEach(o => { o.problems = []; if (!o.code) o.problems.push('thiếu mã học sinh'); if (!o.name) o.problems.push('thiếu họ tên'); if (o.code.length > 40) o.problems.push('mã quá dài (tối đa 40)'); if (o.name.length > 100) o.problems.push('họ tên quá dài');
+    const k = noAcc(o.code); if (k) (seen[k] = seen[k] || []).push(o); });
+  Object.values(seen).forEach(a => { if (a.length > 1) a.forEach(o => o.problems.push('trùng mã học sinh')); });
+  const good = accRows.filter(o => !o.problems.length), bad = accRows.length - good.length;
+  $('accBtn').disabled = !good.length; $('accBtn').textContent = good.length ? `Tạo ${good.length} tài khoản` : 'Tạo tài khoản';
+  $('accPrev').innerHTML = !accRows.length ? '<p class="text-sm text-slate-400">Không có học sinh nào cần tạo.</p>' :
+    `<div class="text-sm mb-1"><b>${good.length}</b> học sinh hợp lệ${bad ? ` · <span class="text-red-600 font-medium">${bad} dòng lỗi sẽ bị bỏ qua</span>` : ''}</div>
+    <div class="overflow-auto max-h-60 border rounded-lg"><table class="w-full text-xs"><thead class="bg-slate-50 text-slate-500 text-left sticky top-0"><tr><th class="p-2">#</th><th class="p-2">Họ tên</th><th class="p-2">Mã HS</th><th class="p-2">Kiểm tra</th></tr></thead><tbody>
+    ${accRows.map(o => `<tr class="border-t ${o.problems.length ? 'bg-red-50' : ''}"><td class="p-2">${o.i + 1}</td><td class="p-2">${esc(o.name)}</td><td class="p-2">${esc(o.code)}</td><td class="p-2 ${o.problems.length ? 'text-red-600' : 'text-emerald-600'}">${o.problems.length ? esc(o.problems.join('; ')) : '✓'}</td></tr>`).join('')}</tbody></table></div>`;
+}
+async function accCreate() {
+  const good = accRows.filter(o => !o.problems.length); if (!good.length) return;
+  const cls = $('accCls').value.trim(), domain = ($('accDom').value || 'example.com').trim().replace(/^@/, '').toLowerCase();
+  try { localStorage.setItem('stu_domain', domain); } catch (e) {}
+  $('accBtn').disabled = true; $('accErr').classList.add('hidden');
+  const all = [], BATCH = 25;
+  for (let i = 0; i < good.length; i += BATCH) {
+    $('accBtn').textContent = `Đang tạo… ${Math.min(i + BATCH, good.length)}/${good.length}`;
+    const chunk = good.slice(i, i + BATCH), part = chunk.map(o => ({ name: o.name, code: o.code, class: cls }));
+    let res; try { res = await db.functions.invoke('create-students', { body: { action: 'create', rows: part, domain } }); } catch (e) { res = { error: e }; }
+    if (res.error || !res.data || !Array.isArray(res.data.results)) {
+      const msg = res.error ? await fnError(res.error) : ((res.data && res.data.error) || 'Không nhận được kết quả từ máy chủ');
+      if (!all.length) { $('accErr').textContent = msg; $('accErr').classList.remove('hidden'); $('accBtn').disabled = false; $('accBtn').textContent = `Tạo ${good.length} tài khoản`; return; }
+      chunk.forEach(o => all.push({ name: o.name, code: o.code, class: cls, email: '', password: '', status: 'error', message: msg }));
+      continue;
+    }
+    res.data.results.forEach((x, j) => { x.row = chunk[x.i ?? j]?.i; all.push(x); });
+  }
+  all.forEach(x => { if (x.status === 'created' && gb.d.rows[x.row]) gb.d.rows[x.row].acc = true; });
+  accRes = all; if (all.some(x => x.status === 'created')) { renderGrid(); saveSoon(); }
+  showAccResult();
+}
+function showAccResult() {
+  const c = s => accRes.filter(r => r.status === s).length;
+  const lab = { created: ['Đã tạo', 'text-emerald-600'], exists: ['Đã có tài khoản', 'text-amber-600'], error: ['Lỗi', 'text-red-600'] };
+  openModal(`<h3 class="font-bold text-lg">✅ Kết quả tạo tài khoản</h3>
+    <p class="text-sm mt-1">Đã tạo <b class="text-emerald-600">${c('created')}</b>${c('exists') ? ` · đã có sẵn <b class="text-amber-600">${c('exists')}</b>` : ''}${c('error') ? ` · lỗi <b class="text-red-600">${c('error')}</b>` : ''}.</p>
+    <div class="mt-2 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-2">⚠ Mật khẩu <b>chỉ hiện ở màn hình này</b>. Hãy tải file hoặc in phiếu ngay. Học sinh quên mật khẩu: vào trang giáo viên → “Tài khoản học sinh của lớp” → “Đặt lại mật khẩu”.</div>
+    <div class="flex flex-wrap gap-2 mt-3 text-sm"><button onclick="accCsv()" class="border rounded-lg px-3 py-1.5 hover:bg-slate-50">⬇ Tải file CSV</button>
+      <button onclick="accPrint()" class="border rounded-lg px-3 py-1.5 hover:bg-slate-50">🖨 In phiếu đăng nhập</button>
+      <button onclick="accCopy()" class="border rounded-lg px-3 py-1.5 hover:bg-slate-50">📋 Sao chép bảng</button></div>
+    <div class="overflow-auto max-h-80 border rounded-lg mt-3"><table class="w-full text-xs"><thead class="bg-slate-50 text-slate-500 text-left sticky top-0"><tr><th class="p-2">Họ tên</th><th class="p-2">Mã HS</th><th class="p-2">Tên đăng nhập (email)</th><th class="p-2">Mật khẩu</th><th class="p-2">Trạng thái</th></tr></thead><tbody>
+    ${accRes.map(r => { const l = lab[r.status] || lab.error; return `<tr class="border-t"><td class="p-2 font-medium">${esc(r.name)}</td><td class="p-2">${esc(r.code)}</td><td class="p-2 font-mono">${esc(r.email)}</td><td class="p-2 font-mono font-bold">${esc(r.password)}</td><td class="p-2 ${l[1]}">${l[0]}${r.message ? ' — ' + esc(r.message) : ''}</td></tr>`; }).join('')}</tbody></table></div>
+    <div class="text-right mt-4"><button onclick="closeModal()" class="px-4 py-2 rounded-lg border text-sm">Đóng</button></div>`, true);
+}
+function accCsv() {
+  const c = v => { v = String(v ?? ''); return /[",\n;]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  const rows = [['STT', 'Họ tên', 'Mã HS', 'Lớp', 'Tên đăng nhập (email)', 'Mật khẩu', 'Trạng thái', 'Ghi chú']];
+  accRes.forEach((r, i) => rows.push([i + 1, r.name, r.code, r.class, r.email, r.password, r.status === 'created' ? 'Đã tạo' : r.status === 'exists' ? 'Đã có tài khoản' : 'Lỗi', r.message]));
+  const blob = new Blob(['﻿' + rows.map(r => r.map(c).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const el = document.createElement('a'); el.href = URL.createObjectURL(blob); el.download = 'tai-khoan-hoc-sinh.csv'; document.body.appendChild(el); el.click(); el.remove(); setTimeout(() => URL.revokeObjectURL(el.href), 2000);
+}
+async function accCopy() {
+  const t = accRes.filter(r => r.status === 'created').map(r => [r.name, r.code, r.class, r.email, r.password].join('\t')).join('\n');
+  try { await navigator.clipboard.writeText(t); toast('Đã sao chép (dán được vào Excel / Google Sheets)'); } catch (e) { toast('Không sao chép được, hãy tải file CSV'); }
+}
+function accPrint() {
+  const made = accRes.filter(r => r.status === 'created'); if (!made.length) return toast('Chưa có tài khoản mới để in');
+  const w = window.open('', '_blank'); if (!w) return toast('Trình duyệt đã chặn cửa sổ in. Hãy cho phép cửa sổ bật lên rồi thử lại.');
+  let url = 'student_home.html'; try { url = new URL('student_home.html', location.href).href; } catch (e) {}
+  w.document.write(`<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Phiếu đăng nhập</title><style>
+    body{font-family:system-ui,Arial,sans-serif;margin:12mm;color:#111}.g{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .c{border:1px dashed #666;border-radius:6px;padding:8px 10px;break-inside:avoid;font-size:12px;line-height:1.5}.c b.n{font-size:14px}
+    .m{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;font-weight:700}.u{color:#444;word-break:break-all}@media print{body{margin:8mm}}</style></head><body><div class="g">` +
+    made.map(r => `<div class="c"><b class="n">${esc(r.name)}</b>${r.class ? ' · ' + esc(r.class) : ''} · Mã ${esc(r.code)}<br>Trang đăng nhập: <span class="u">${esc(url)}</span><br>Tên đăng nhập: <span class="m">${esc(r.email)}</span><br>Mật khẩu: <span class="m">${esc(r.password)}</span></div>`).join('') +
+    `</div><script>setTimeout(function(){window.print()},300)<\/script></body></html>`);
+  w.document.close();
+}
+
 async function openPull() {
   if (!gb.d.rows.length) return toast('Sổ chưa có học sinh. Hãy thêm danh sách trước.');
   pull = { tab: 'asg', asg: [], shifts: [], sel: null, rows: null };
