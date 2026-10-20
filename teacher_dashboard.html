@@ -128,6 +128,22 @@
         </table></div>
       </section>
 
+      <!-- Tài khoản học sinh của lớp -->
+      <section id="stuSection" class="bg-white rounded-2xl border" aria-label="Tài khoản học sinh">
+        <div class="p-4 flex flex-wrap items-center gap-2 border-b">
+          <h2 class="font-semibold">🧑‍🎓 Tài khoản học sinh của lớp</h2>
+          <span class="text-xs text-slate-400">Tạo sẵn cả lớp bằng danh sách · học sinh chỉ việc đăng nhập</span>
+          <input id="stuSearch" oninput="renderStudents()" placeholder="Tìm tên, mã, lớp…" class="ml-auto border rounded-lg px-3 py-1.5 text-sm w-44">
+          <button onclick="openStuCreate()" class="text-sm rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 font-medium">+ Tạo tài khoản cho lớp</button>
+        </div>
+        <div class="overflow-x-auto max-h-96"><table class="w-full text-sm">
+          <thead class="bg-slate-50 text-slate-500 text-left sticky top-0"><tr>
+            <th class="p-3 font-medium">Họ tên</th><th class="p-3 font-medium">Mã HS</th><th class="p-3 font-medium">Lớp</th><th class="p-3 font-medium">Tên đăng nhập (email)</th>
+            <th class="p-3 font-medium">Đăng nhập gần nhất</th><th class="p-3 font-medium text-right">Thao tác</th></tr></thead>
+          <tbody id="stuRows"><tr><td colspan="6" class="p-6 text-center text-slate-400">Đang tải…</td></tr></tbody>
+        </table></div>
+      </section>
+
       <!-- Đề gần đây + Ca thi -->
       <section class="grid gap-6 xl:grid-cols-3">
         <div class="xl:col-span-2 bg-white rounded-2xl border">
@@ -171,7 +187,7 @@ const SUPABASE_URL = 'https://xzznmfgihzjeqsmiuypi.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_dUldhQYF1ETrSCZ4jiy3Og_ygfkm9XW';
 // Địa chỉ các trang tính năng. Mặc định là tên file nằm cùng thư mục với trang này.
 // Khi đưa lên web, có thể đổi bằng nút "Cài đặt tài khoản & liên kết" (lưu trên trình duyệt) hoặc sửa trực tiếp ở đây.
-const DEFAULT_LINKS = { bank: 'admin.html', matrix: 'matrix_exam.html', room: 'exam_room.html', community: 'community.html', exam: 'exam.html' };
+const DEFAULT_LINKS = { bank: 'admin.html', matrix: 'matrix_exam.html', room: 'exam_room.html', community: 'community.html', exam: 'exam.html', student: 'student_home.html' };
 const DEFAULT_PROFILE = { name: '', role: 'Giáo viên Bộ môn Vật lí', avatar: '' };
 // ===============================================
 
@@ -317,7 +333,7 @@ async function loadAll() {
   }
   renderShifts(live, next, stats);
   buildNotes(live, next, stats);
-  loadAsg();
+  loadAsg(); loadStudents();
   if (!loadAll.deep && new URLSearchParams(location.search).get('assign') === 'new') { loadAll.deep = true; openAssign(); }   // vào từ nút "Giao bài tập" ở trang chủ
 }
 
@@ -643,6 +659,188 @@ function exportAsgCsv() {
   setTimeout(() => URL.revokeObjectURL(el.href), 2000);
 }
 
+/* ------------------ Tài khoản học sinh của lớp (Edge Function create-students + class_accounts_setup.sql) ------------------ */
+let stuList = [], stuRows = [], stuRes = [];
+async function fnError(error) {
+  let msg = error?.message || 'Lỗi không rõ';
+  try { const r = error?.context; if (r && typeof r.json === 'function') { const j = await r.json(); if (j && j.error) msg = j.error; } } catch (e) {}
+  const st = error?.context?.status;
+  if (st === 404 || /Failed to send a request|NOT_FOUND|Function not found/i.test(msg)) msg = 'Chưa triển khai Edge Function “create-students” trên Supabase. Xem edge_function_create_students/HUONG_DAN.md.';
+  return msg;
+}
+async function loadStudents() {
+  const { data, error } = await db.rpc('my_created_students');
+  if (error) {
+    stuList = [];
+    const m = /my_created_students|schema cache|Could not find the function/i.test(error.message || '') ? 'Chưa cài đặt: hãy chạy file class_accounts_setup.sql trong Supabase → SQL Editor.' : error.message;
+    return $('stuRows').innerHTML = `<tr><td colspan="6" class="p-6 text-center text-amber-700">${esc(m)}</td></tr>`;
+  }
+  stuList = Array.isArray(data) ? data : []; renderStudents();
+}
+function renderStudents() {
+  const q = ($('stuSearch').value || '').trim().toLowerCase();
+  const rows = stuList.filter(r => !q || [r.name, r.code, r.class, r.email].some(v => String(v || '').toLowerCase().includes(q)));
+  if (!stuList.length) return $('stuRows').innerHTML = '<tr><td colspan="6" class="p-8 text-center text-slate-400">Chưa tạo tài khoản nào. Bấm “+ Tạo tài khoản cho lớp”, dán danh sách học sinh từ Excel là xong.</td></tr>';
+  if (!rows.length) return $('stuRows').innerHTML = '<tr><td colspan="6" class="p-6 text-center text-slate-400">Không có học sinh khớp.</td></tr>';
+  $('stuRows').innerHTML = rows.map(r => `<tr class="border-t">
+    <td class="p-3 font-medium">${esc(r.name)}</td><td class="p-3">${esc(r.code)}</td><td class="p-3">${esc(r.class || '')}</td>
+    <td class="p-3 font-mono text-xs">${esc(r.email)}</td>
+    <td class="p-3 text-xs ${r.last_sign_in ? 'text-slate-600' : 'text-amber-600'}">${r.last_sign_in ? esc(fmtDT(r.last_sign_in)) : 'Chưa đăng nhập'}</td>
+    <td class="p-3 text-right"><button onclick="stuReset('${esc(r.user_id)}')" class="text-xs border rounded-lg px-2 py-1 hover:bg-slate-50">Đặt lại mật khẩu</button></td></tr>`).join('');
+}
+
+const STU_ORDERS = {
+  a: ['name', 'code', 'class', 'email', 'password'],
+  b: ['stt', 'name', 'code', 'class', 'email', 'password'],
+  c: ['code', 'name', 'class', 'email', 'password'],
+};
+function openStuCreate() {
+  stuRows = []; stuRes = [];
+  openModal(`<h3 class="font-bold text-lg">🧑‍🎓 Tạo tài khoản cho cả lớp</h3>
+    <p class="text-xs text-slate-500 mt-1">Dán danh sách từ Excel / Google Sheets (mỗi học sinh một dòng). Cột email và mật khẩu <b>không bắt buộc</b>: để trống thì hệ thống tự tạo tên đăng nhập và mật khẩu ngẫu nhiên 8 ký tự.</p>
+    <div class="grid sm:grid-cols-3 gap-3 mt-3 text-sm">
+      <label class="font-medium">Thứ tự cột
+        <select id="stuOrder" onchange="stuPreview()" class="w-full border rounded-lg p-2 mt-1 font-normal">
+          <option value="a">Họ tên · Mã HS · Lớp · Email · Mật khẩu</option>
+          <option value="b">STT · Họ tên · Mã HS · Lớp · Email · Mật khẩu</option>
+          <option value="c">Mã HS · Họ tên · Lớp · Email · Mật khẩu</option></select></label>
+      <label class="font-medium">Lớp mặc định <span class="font-normal text-slate-400">(nếu dòng không ghi lớp)</span>
+        <input id="stuClass" oninput="stuPreview()" maxlength="40" placeholder="VD: 10A1" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+      <label class="font-medium">Đuôi email tự tạo <span class="font-normal text-slate-400">(@…)</span>
+        <input id="stuDomain" maxlength="60" value="${esc(lsGet('stu_domain') || 'example.com')}" class="w-full border rounded-lg p-2 mt-1 font-normal"></label>
+    </div>
+    <textarea id="stuText" oninput="stuPreview()" rows="7" spellcheck="false" placeholder="Nguyễn Văn An\tHS001\t10A1\nLê Thị Bình\tHS002\t10A1\nTrần Văn Cường\tHS003\t10A1" class="w-full border rounded-lg p-2 mt-3 text-sm font-mono"></textarea>
+    <div class="flex flex-wrap items-center gap-2 mt-2 text-sm">
+      <label class="border rounded-lg px-3 py-1.5 cursor-pointer hover:bg-slate-50">📎 Chọn file CSV / TXT<input type="file" accept=".csv,.txt,.tsv" class="hidden" onchange="stuFile(this)"></label>
+      <span class="text-xs text-slate-400">Tối đa 500 học sinh mỗi lần.</span>
+    </div>
+    <div id="stuPrev" class="mt-3"></div>
+    <div id="stuErr" class="hidden text-sm text-red-600 mt-3"></div>
+    <div class="flex justify-end gap-2 mt-4"><button onclick="closeModal()" class="px-4 py-2 rounded-lg border text-sm">Đóng</button>
+      <button id="stuBtn" onclick="stuCreate()" disabled class="px-5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium disabled:opacity-40">Tạo tài khoản</button></div>`, true);
+}
+function stuFile(inp) {
+  const f = inp.files && inp.files[0]; if (!f) return;
+  const rd = new FileReader(); rd.onload = () => { $('stuText').value = String(rd.result || '').replace(/^﻿/, ''); stuPreview(); }; rd.readAsText(f, 'utf-8');
+}
+const noAcc = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase();
+function stuParse() {
+  const order = STU_ORDERS[$('stuOrder').value] || STU_ORDERS.a, defCls = $('stuClass').value.trim();
+  const lines = ($('stuText').value || '').split(/\r?\n/).filter(l => l.trim());   // giữ nguyên dấu Tab đầu dòng (ô trống khi dán từ Excel)
+  const out = [];
+  lines.forEach((ln, idx) => {
+    const sep = ln.includes('\t') ? '\t' : ((ln.match(/;/g) || []).length > (ln.match(/,/g) || []).length ? ';' : ',');
+    const cells = ln.split(sep).map(c => c.trim().replace(/^"(.*)"$/, '$1'));
+    const o = {}; order.forEach((k, i) => { o[k] = cells[i] || ''; });
+    if (idx === 0 && /(ho\s*(va\s*)?ten|ma\s*(hs|hoc\s*sinh)|^stt\b|^name\b|student\s*code)/.test(noAcc(cells.join(' ')))) return;   // bỏ dòng tiêu đề (Họ và tên, Mã HS, STT…)
+    out.push(o);
+  });
+  const clsSlug = noAcc(defCls).replace(/[^a-z0-9]/g, '').toUpperCase();
+  out.forEach((o, i) => {
+    o.class = o.class || defCls; o.n = i + 1; o.problems = [];
+    if (!o.name) o.problems.push('thiếu họ tên');
+    if (!o.code) { o.code = `${clsSlug || 'HS'}${String(i + 1).padStart(2, '0')}`; o.autoCode = true; }
+    if (o.name.length > 100) o.problems.push('họ tên quá dài');
+    if (o.code.length > 40) o.problems.push('mã quá dài (tối đa 40)');
+    if (o.class.length > 40) o.problems.push('lớp quá dài (tối đa 40)');
+    if (o.email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(o.email)) o.problems.push('email không hợp lệ');
+    if (o.password && o.password.length < 6) o.problems.push('mật khẩu < 6 ký tự');
+  });
+  const codes = {}; out.forEach(o => { const k = noAcc(o.code); (codes[k] = codes[k] || []).push(o); });
+  Object.values(codes).forEach(a => { if (a.length > 1) a.forEach(o => o.problems.push('trùng mã HS trong danh sách')); });
+  return out;
+}
+function stuPreview() {
+  stuRows = stuParse().slice(0, 500);
+  const good = stuRows.filter(r => !r.problems.length), bad = stuRows.length - good.length;
+  $('stuBtn').disabled = !good.length; $('stuBtn').textContent = good.length ? `Tạo ${good.length} tài khoản` : 'Tạo tài khoản';
+  if (!stuRows.length) return $('stuPrev').innerHTML = '';
+  $('stuPrev').innerHTML = `<div class="text-sm mb-1"><b>${good.length}</b> dòng hợp lệ${bad ? ` · <span class="text-red-600 font-medium">${bad} dòng lỗi sẽ bị bỏ qua</span>` : ''}</div>
+    <div class="overflow-auto max-h-60 border rounded-lg"><table class="w-full text-xs"><thead class="bg-slate-50 text-slate-500 text-left sticky top-0"><tr>
+      <th class="p-2">#</th><th class="p-2">Họ tên</th><th class="p-2">Mã HS</th><th class="p-2">Lớp</th><th class="p-2">Email</th><th class="p-2">Mật khẩu</th><th class="p-2">Kiểm tra</th></tr></thead><tbody>
+      ${stuRows.map(r => `<tr class="border-t ${r.problems.length ? 'bg-red-50' : ''}"><td class="p-2">${r.n}</td><td class="p-2">${esc(r.name)}</td><td class="p-2">${esc(r.code)}${r.autoCode ? ' <span class="text-slate-400">(tự đặt)</span>' : ''}</td>
+        <td class="p-2">${esc(r.class)}</td><td class="p-2">${r.email ? esc(r.email) : '<span class="text-slate-400">tự tạo</span>'}</td><td class="p-2">${r.password ? '••••••' : '<span class="text-slate-400">ngẫu nhiên</span>'}</td>
+        <td class="p-2 ${r.problems.length ? 'text-red-600' : 'text-emerald-600'}">${r.problems.length ? esc(r.problems.join('; ')) : '✓'}</td></tr>`).join('')}</tbody></table></div>`;
+}
+async function stuCreate() {
+  const good = stuRows.filter(r => !r.problems.length); if (!good.length) return;
+  const domain = ($('stuDomain').value || 'example.com').trim().replace(/^@/, '').toLowerCase();
+  lsSet('stu_domain', domain);
+  $('stuBtn').disabled = true; $('stuErr').classList.add('hidden');
+  const all = [], BATCH = 25;
+  for (let i = 0; i < good.length; i += BATCH) {
+    $('stuBtn').textContent = `Đang tạo… ${Math.min(i + BATCH, good.length)}/${good.length}`;
+    const part = good.slice(i, i + BATCH).map(r => ({ name: r.name, code: r.code, class: r.class, email: r.email, password: r.password }));
+    let res;
+    try { res = await db.functions.invoke('create-students', { body: { action: 'create', rows: part, domain } }); }
+    catch (e) { res = { error: e }; }
+    if (res.error || !res.data || !Array.isArray(res.data.results)) {
+      const msg = res.error ? await fnError(res.error) : ((res.data && res.data.error) || 'Không nhận được kết quả từ máy chủ');
+      if (!all.length) { $('stuErr').textContent = msg; $('stuErr').classList.remove('hidden'); $('stuBtn').disabled = false; $('stuBtn').textContent = `Tạo ${good.length} tài khoản`; return; }
+      part.forEach(r => all.push({ name: r.name, code: r.code, class: r.class, email: r.email || '', password: '', status: 'error', message: msg }));
+      continue;
+    }
+    res.data.results.forEach(x => all.push(x));
+  }
+  stuRes = all; showStuResult(); loadStudents();
+}
+function showStuResult() {
+  const c = s => stuRes.filter(r => r.status === s).length;
+  const lab = { created: ['Đã tạo', 'text-emerald-600'], exists: ['Đã có tài khoản', 'text-amber-600'], error: ['Lỗi', 'text-red-600'] };
+  openModal(`<h3 class="font-bold text-lg">✅ Kết quả tạo tài khoản</h3>
+    <p class="text-sm mt-1">Đã tạo <b class="text-emerald-600">${c('created')}</b>${c('exists') ? ` · đã có sẵn <b class="text-amber-600">${c('exists')}</b>` : ''}${c('error') ? ` · lỗi <b class="text-red-600">${c('error')}</b>` : ''}.</p>
+    <div class="mt-2 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-2">⚠ Mật khẩu <b>chỉ hiện ở màn hình này</b>. Hãy tải file hoặc in phiếu ngay. Nếu học sinh quên, bấm “Đặt lại mật khẩu” ở danh sách (không xem lại được mật khẩu cũ).</div>
+    <div class="flex flex-wrap gap-2 mt-3 text-sm">
+      <button onclick="stuCsv()" class="border rounded-lg px-3 py-1.5 hover:bg-slate-50">⬇ Tải file CSV</button>
+      <button onclick="stuPrint()" class="border rounded-lg px-3 py-1.5 hover:bg-slate-50">🖨 In phiếu đăng nhập</button>
+      <button onclick="stuCopy()" class="border rounded-lg px-3 py-1.5 hover:bg-slate-50">📋 Sao chép bảng</button></div>
+    <div class="overflow-auto max-h-80 border rounded-lg mt-3"><table class="w-full text-xs"><thead class="bg-slate-50 text-slate-500 text-left sticky top-0"><tr>
+      <th class="p-2">Họ tên</th><th class="p-2">Mã HS</th><th class="p-2">Lớp</th><th class="p-2">Tên đăng nhập (email)</th><th class="p-2">Mật khẩu</th><th class="p-2">Trạng thái</th></tr></thead><tbody>
+      ${stuRes.map(r => { const l = lab[r.status] || lab.error; return `<tr class="border-t"><td class="p-2 font-medium">${esc(r.name)}</td><td class="p-2">${esc(r.code)}</td><td class="p-2">${esc(r.class || '')}</td>
+        <td class="p-2 font-mono">${esc(r.email)}</td><td class="p-2 font-mono font-bold">${esc(r.password)}</td><td class="p-2 ${l[1]}">${l[0]}${r.message ? ' — ' + esc(r.message) : ''}</td></tr>`; }).join('')}</tbody></table></div>
+    <div class="text-right mt-4"><button onclick="closeModal()" class="px-4 py-2 rounded-lg border text-sm">Đóng</button></div>`, true);
+}
+const stuLoginUrl = () => { try { return new URL(L('student'), location.href).href; } catch (e) { return L('student'); } };
+function stuCsv() {
+  const c = v => { v = String(v ?? ''); return /[",\n;]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  const rows = [['STT', 'Họ tên', 'Mã HS', 'Lớp', 'Tên đăng nhập (email)', 'Mật khẩu', 'Trạng thái', 'Ghi chú']];
+  stuRes.forEach((r, i) => rows.push([i + 1, r.name, r.code, r.class, r.email, r.password, r.status === 'created' ? 'Đã tạo' : r.status === 'exists' ? 'Đã có tài khoản' : 'Lỗi', r.message]));
+  const blob = new Blob(['﻿' + rows.map(r => r.map(c).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const el = document.createElement('a'); el.href = URL.createObjectURL(blob); el.download = 'tai-khoan-hoc-sinh.csv'; document.body.appendChild(el); el.click(); el.remove();
+  setTimeout(() => URL.revokeObjectURL(el.href), 2000);
+}
+async function stuCopy() {
+  const t = stuRes.filter(r => r.status === 'created').map(r => [r.name, r.code, r.class, r.email, r.password].join('\t')).join('\n');
+  toast(t && await copyText(t) ? 'Đã sao chép (dán được vào Excel / Google Sheets)' : 'Không sao chép được, hãy tải file CSV');
+}
+function stuPrint() {
+  const made = stuRes.filter(r => r.status === 'created'); if (!made.length) return toast('Chưa có tài khoản mới để in');
+  const w = window.open('', '_blank'); if (!w) return toast('Trình duyệt đã chặn cửa sổ in. Hãy cho phép cửa sổ bật lên rồi thử lại.');
+  const url = stuLoginUrl();
+  w.document.write(`<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Phiếu đăng nhập</title><style>
+    body{font-family:system-ui,Arial,sans-serif;margin:12mm;color:#111}.g{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .c{border:1px dashed #666;border-radius:6px;padding:8px 10px;break-inside:avoid;font-size:12px;line-height:1.5}.c b.n{font-size:14px}
+    .m{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;font-weight:700}.u{color:#444;word-break:break-all}
+    @media print{body{margin:8mm}}</style></head><body><div class="g">` +
+    made.map(r => `<div class="c"><b class="n">${esc(r.name)}</b>${r.class ? ' · ' + esc(r.class) : ''} · Mã ${esc(r.code)}<br>
+      Trang đăng nhập: <span class="u">${esc(url)}</span><br>Tên đăng nhập: <span class="m">${esc(r.email)}</span><br>Mật khẩu: <span class="m">${esc(r.password)}</span></div>`).join('') +
+    `</div><script>setTimeout(function(){window.print()},300)<\/script></body></html>`);
+  w.document.close();
+}
+async function stuReset(id) {
+  const r = stuList.find(x => x.user_id === id); if (!r) return;
+  if (!confirm(`Đặt lại mật khẩu cho ${r.name} (${r.code})?\nMật khẩu cũ sẽ không dùng được nữa; hệ thống tạo mật khẩu mới để bạn đưa cho học sinh.`)) return;
+  let res; try { res = await db.functions.invoke('create-students', { body: { action: 'reset', user_id: id } }); } catch (e) { res = { error: e }; }
+  if (res.error || !res.data || !res.data.password) return toast(res.error ? await fnError(res.error) : ((res.data && res.data.error) || 'Không đặt lại được'));
+  openModal(`<h3 class="font-bold text-lg">🔑 Mật khẩu mới</h3>
+    <p class="text-sm mt-2"><b>${esc(r.name)}</b> · ${esc(r.code)}</p>
+    <div class="mt-3 border rounded-lg p-3 text-sm bg-slate-50 space-y-1"><div>Tên đăng nhập: <span class="font-mono font-bold">${esc(res.data.email || r.email)}</span></div>
+      <div>Mật khẩu mới: <span class="font-mono font-bold text-lg">${esc(res.data.password)}</span></div></div>
+    <p class="text-xs text-amber-700 mt-2">Mật khẩu chỉ hiện một lần. Hãy ghi lại và đưa cho học sinh.</p>
+    <div class="flex justify-end gap-2 mt-4"><button onclick="copyText('${esc(res.data.email || r.email)}\\t${esc(res.data.password)}').then(()=>toast('Đã sao chép'))" class="px-4 py-2 rounded-lg border text-sm">Sao chép</button>
+      <button onclick="closeModal()" class="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm">Đóng</button></div>`);
+}
+
 /* ---- Xem bài làm của 1 học sinh ---- */
 const fmtAns = (q, a) => {
   if (a == null || a === '') return '<i class="text-slate-400">để trống</i>';
@@ -668,7 +866,7 @@ async function openAttempt(id) {
 }
 
 /* ------------------ Cài đặt ------------------ */
-const LINK_LABELS = { bank: 'Ngân hàng câu hỏi & Nhập liệu', matrix: 'Ma trận đề kiểm tra (trang tạo đề, trộn đề)', room: 'Phòng thi trực tuyến (exam_room)', community: 'Kho học liệu cộng đồng', exam: 'Trang làm bài của học sinh (exam.html) — dùng cho link giao bài' };
+const LINK_LABELS = { bank: 'Ngân hàng câu hỏi & Nhập liệu', matrix: 'Ma trận đề kiểm tra (trang tạo đề, trộn đề)', room: 'Phòng thi trực tuyến (exam_room)', community: 'Kho học liệu cộng đồng', exam: 'Trang làm bài của học sinh (exam.html) — dùng cho link giao bài', student: 'Trang chủ học sinh (student_home.html) — in trên phiếu đăng nhập' };
 function openSettings() {
   openModal(`<h3 class="font-bold text-lg">Cài đặt tài khoản & liên kết</h3>
     <p class="text-xs text-slate-500 mb-3">Đăng nhập: ${esc(user.email)}</p>
