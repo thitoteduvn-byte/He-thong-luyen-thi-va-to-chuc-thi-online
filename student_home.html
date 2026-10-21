@@ -70,6 +70,7 @@ Chạy 1 lần trong Supabase → SQL Editor, THEO THỨ TỰ:  exam_room_setup.
       <div class="font-bold text-indigo-700 whitespace-nowrap">🎓 Góc học tập</div>
       <nav class="hidden md:flex items-center gap-1 ml-4 text-sm font-medium" id="navDesk"></nav>
       <div class="ml-auto flex items-center gap-3">
+        <span id="coinSlot"></span>
         <button onclick="openProfile()" class="flex items-center gap-2 rounded-full pl-1 pr-3 py-1 hover:bg-slate-100" title="Sửa hồ sơ">
           <span id="avatar" class="w-8 h-8 rounded-full bg-indigo-600 text-white grid place-items-center text-sm font-bold"></span>
           <span class="text-sm text-left leading-tight hidden sm:block"><b id="hName" class="block"></b><span id="hSub" class="text-xs text-slate-500"></span></span>
@@ -231,6 +232,141 @@ Chạy 1 lần trong Supabase → SQL Editor, THEO THỨ TỰ:  exam_room_setup.
 <div id="toast" role="status" class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] bg-slate-800 text-white text-sm px-4 py-2 rounded-lg shadow-lg max-w-[90vw]"></div>
 
 <script>
+/*COINS_UI_START*/
+/* ---------- Ô xu 🪙 + âm thanh + bảng chuỗi ngày (dùng chung student_home.html và exam.html; cần coins_rewards_setup.sql) ---------- */
+const CoinsUI = (() => {
+  const REASON = { daily: '🎁 Quà đăng nhập hằng ngày', streak: '🔥 Chuỗi liên tục', perfect: '💯 Bài đạt 10 điểm', report: '🛠️ Báo lỗi được duyệt', unlock: '🔓 Mở lời giải', admin: '🎁 Được tặng xu' };
+  const ls = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} } };
+  let db = null, slot = null, info = null, ac = null, muted = ls.get('coin_mute') === '1', pending = [], busy = false, started = false;
+
+  // ---- Âm thanh (tạo bằng trình duyệt, không cần file) ----
+  function ctx() {
+    if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { ac = false; } }
+    return ac || null;
+  }
+  function note(c, f, t0, dur, type, vol) {
+    const o = c.createOscillator(), g = c.createGain(); o.type = type; o.frequency.value = f;
+    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(vol, t0 + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(c.destination); o.start(t0); o.stop(t0 + dur + 0.02);
+  }
+  const SOUNDS = {
+    coin: c => { const t = c.currentTime; note(c, 988, t, 0.14, 'triangle', 0.09); note(c, 1319, t + 0.09, 0.32, 'triangle', 0.09); },                       // ting-ting: nhận xu
+    big: c => { const t = c.currentTime; [523, 659, 784, 1047, 1319].forEach((f, i) => note(c, f, t + i * 0.08, 0.28, 'triangle', 0.09)); note(c, 2093, t + 0.42, 0.5, 'sine', 0.05); },  // fanfare: thưởng lớn
+    spend: c => { const t = c.currentTime; note(c, 660, t, 0.1, 'sine', 0.08); note(c, 440, t + 0.08, 0.18, 'sine', 0.08); },                                  // tiêu xu
+  };
+  function play(kind) {
+    if (muted) return;
+    const c = ctx(); if (!c) return;
+    const go = () => { try { SOUNDS[kind](c); } catch (e) {} };
+    if (c.state === 'running') return go();
+    pending.push(kind);                                                  // trình duyệt chặn âm thanh khi chưa có thao tác: chờ lần chạm đầu tiên
+    c.resume().then(flush).catch(() => {});
+  }
+  function flush() { const c = ctx(); if (!c || c.state !== 'running' || muted) { pending = []; return; } const k = pending.splice(0).slice(-2); k.forEach((x, i) => setTimeout(() => { try { SOUNDS[x](c); } catch (e) {} }, i * 450)); }
+  ['pointerdown', 'keydown', 'touchstart'].forEach(ev => document.addEventListener(ev, () => { if (pending.length) { const c = ctx(); if (c) c.resume().then(flush).catch(() => {}); } }, { passive: true }));
+
+  // ---- Giao diện ----
+  function css() {
+    if (document.getElementById('coinCss')) return;
+    const s = document.createElement('style'); s.id = 'coinCss';
+    s.textContent = `.cn-chip{display:inline-flex;align-items:center;gap:.35rem;border:1px solid #fcd34d;background:#fffbeb;color:#92400e;border-radius:9999px;padding:.2rem .65rem;font-size:.8rem;font-weight:700;cursor:pointer;white-space:nowrap}
+.cn-chip:hover{background:#fef3c7}.cn-chip small{font-weight:600;color:#c2410c}.cn-bump{animation:cnBump .6s ease}
+@keyframes cnBump{0%{transform:scale(1)}30%{transform:scale(1.25)}100%{transform:scale(1)}}
+.cn-toast{position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:100;background:#1e293b;color:#fff;border-radius:9999px;padding:.5rem 1.1rem;font-size:.9rem;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);animation:cnIn .35s ease;max-width:92vw;text-align:center}
+.cn-toast.big{background:linear-gradient(90deg,#f59e0b,#ef4444);font-size:1rem}
+@keyframes cnIn{from{opacity:0;transform:translate(-50%,-14px)}to{opacity:1;transform:translate(-50%,0)}}
+.cn-ov{position:fixed;inset:0;z-index:90;background:rgba(15,23,42,.45);display:flex;align-items:flex-start;justify-content:center;padding:4rem 1rem 1rem;overflow:auto}
+.cn-box{background:#fff;border-radius:1rem;box-shadow:0 20px 50px rgba(0,0,0,.25);width:100%;max-width:26rem;padding:1.25rem;color:#1e293b;font-size:.9rem}
+.cn-dot{width:1.6rem;height:1.6rem;border-radius:9999px;display:grid;place-items:center;font-size:.7rem;font-weight:700;background:#e2e8f0;color:#64748b}.cn-dot.on{background:#f97316;color:#fff}`;
+    document.head.appendChild(s);
+  }
+  function toast(msg, big) {
+    const old = document.getElementById('cnToast'); if (old) old.remove();
+    const t = document.createElement('div'); t.id = 'cnToast'; t.className = 'cn-toast' + (big ? ' big' : ''); t.textContent = msg; document.body.appendChild(t);
+    clearTimeout(toast.t); toast.t = setTimeout(() => t.remove(), big ? 4200 : 3000);
+  }
+  function chipHtml() {
+    const s = info.streak || {};
+    return `🪙 <b id="cnBal">${info.balance}</b> xu${s.target ? ` <small title="Chuỗi ngày làm bài liên tục">🔥 ${s.n}/${s.target}</small>` : ''}`;
+  }
+  function render(bump) {
+    if (!slot) return;
+    if (!info || !info.gated) { slot.innerHTML = ''; return; }
+    let b = slot.querySelector('button.cn-chip');
+    if (!b) { b = document.createElement('button'); b.type = 'button'; b.className = 'cn-chip'; b.title = 'Xu của tôi: bấm để xem cách kiếm xu và lịch sử'; b.onclick = openPanel; slot.innerHTML = ''; slot.appendChild(b); }
+    b.innerHTML = chipHtml();
+    if (bump) { b.classList.remove('cn-bump'); void b.offsetWidth; b.classList.add('cn-bump'); }
+  }
+  function say(f) {                                                      // một khoản thưởng mới → thông báo + âm thanh
+    const d = f.delta, r = f.reason;
+    if (r === 'daily') { toast(`🎁 +${d} xu quà đăng nhập hôm nay!`); play('coin'); }
+    else if (r === 'streak') { toast(`🔥 Đủ ${info.streak.target} ngày liên tục! +${d} xu`, true); play('big'); }
+    else if (r === 'perfect') { toast(`💯 Bài 10 điểm! +${d} xu`, true); play('big'); }
+    else if (r === 'report') { toast(`🛠️ Báo lỗi của bạn được duyệt! +${d} xu`, true); play('big'); }
+    else if (d > 0) { toast(`🎁 Bạn được tặng +${d} xu`, true); play('big'); }
+  }
+  async function refresh() {
+    if (!db || busy) return info;
+    busy = true;
+    try {
+      const { data, error } = await db.rpc('my_coins');
+      if (error || !data) return info;
+      const before = info && info.gated ? info.balance : null;
+      info = data;
+      if (info.gated) {
+        const fresh = (info.fresh || []).filter(f => f.delta > 0);
+        let i = 0; const next = () => { if (i < fresh.length) { say(fresh[i++]); if (i < fresh.length) setTimeout(next, 1800); } }; next();
+        render(before !== null && info.balance !== before);
+      } else render(false);
+    } catch (e) {} finally { busy = false; }
+    return info;
+  }
+  function spent(cost, balance) {                                        // vừa dùng xu mở lời giải
+    if (!info || !info.gated) return;
+    info.balance = balance; render(true); toast(`🔓 −${cost} xu · đã mở lời giải`); play('spend');
+  }
+  async function openPanel() {
+    if (!info || !info.gated) return;
+    const s = info.streak || {}, r = info.rules || {};
+    const ov = document.createElement('div'); ov.className = 'cn-ov'; ov.onclick = e => { if (e.target === ov) ov.remove(); };
+    const dots = Array.from({ length: s.target || 7 }, (_, i) => `<span class="cn-dot ${i < s.n ? 'on' : ''}">${i + 1}</span>`).join('');
+    ov.innerHTML = `<div class="cn-box" role="dialog" aria-label="Xu của tôi">
+      <div style="display:flex;align-items:center;gap:.5rem"><div style="font-size:1.1rem;font-weight:800">🪙 Xu của tôi: <span id="cnBig">${info.balance}</span></div>
+        <button type="button" id="cnMute" style="margin-left:auto;border:1px solid #cbd5e1;border-radius:.5rem;padding:.2rem .6rem;font-size:.8rem">${muted ? '🔇 Âm thanh: tắt' : '🔊 Âm thanh: bật'}</button>
+        <button type="button" id="cnX" style="font-size:1.2rem;line-height:1;padding:0 .3rem">✕</button></div>
+      <div style="margin-top:.9rem;font-weight:700">🔥 Chuỗi làm bài liên tục</div>
+      <div style="display:flex;gap:.3rem;margin-top:.4rem;flex-wrap:wrap">${dots}</div>
+      <div style="font-size:.8rem;color:#64748b;margin-top:.3rem">${s.today ? 'Hôm nay bạn đã làm bài ✔.' : 'Hôm nay nộp ít nhất 1 bài để giữ chuỗi.'} Đủ ${s.target} ngày liên tục nhận <b>+${s.bonus} xu</b>.</div>
+      <div style="margin-top:.9rem;font-weight:700">Cách kiếm xu</div>
+      <ul style="margin:.3rem 0 0 1.1rem;list-style:disc;line-height:1.6">
+        <li>Đăng nhập mỗi ngày: <b>+${info.daily} xu</b> (xu hằng ngày bổ sung đến tối đa ${info.cap} xu)</li>
+        <li>Làm bài ${s.target} ngày liên tục: <b>+${s.bonus} xu</b></li>
+        <li>Bài đạt <b>10 điểm</b> (từ ${r.perfect_min_q} câu, lần làm đầu, làm đủ thời gian ≥ ${r.perfect_sec || 10} giây/câu, 1 lần/ngày, tối đa ${r.perfect_weekly || 3} lần/tuần): <b>+${r.perfect_bonus} xu</b>${info.perfect_today ? ' <span style="color:#16a34a">· hôm nay đã nhận ✔</span>' : ''}</li>
+        <li>Báo lỗi câu hỏi được giáo viên duyệt: <b>+${r.report_bonus} xu</b> / câu</li></ul>
+      <div style="margin-top:.7rem;font-weight:700">Cách dùng xu</div>
+      <ul style="margin:.3rem 0 0 1.1rem;list-style:disc;line-height:1.6"><li>Mở lời giải câu Nhận biết, Thông hiểu: <b>${r.cost_basic} xu</b></li><li>Mở lời giải câu Vận dụng, Vận dụng cao: <b>${r.cost_adv} xu</b></li></ul>
+      <div style="margin-top:.9rem;font-weight:700">Lịch sử gần đây</div>
+      <div id="cnHist" style="margin-top:.3rem;max-height:13rem;overflow:auto;border:1px solid #e2e8f0;border-radius:.5rem"><div style="padding:.6rem;color:#94a3b8">Đang tải…</div></div></div>`;
+    document.body.appendChild(ov);
+    ov.querySelector('#cnX').onclick = () => ov.remove();
+    ov.querySelector('#cnMute').onclick = e => { muted = !muted; ls.set('coin_mute', muted ? '1' : '0'); e.target.textContent = muted ? '🔇 Âm thanh: tắt' : '🔊 Âm thanh: bật'; if (!muted) play('coin'); };
+    try {
+      const { data } = await db.rpc('coin_history', { p_limit: 30 });
+      const h = Array.isArray(data) ? data : [];
+      ov.querySelector('#cnHist').innerHTML = h.length ? h.map(x => `<div style="display:flex;gap:.5rem;padding:.4rem .6rem;border-top:1px solid #f1f5f9"><span style="flex:1">${REASON[x.reason] || x.reason}${x.reason === 'unlock' && x.ref ? ` <span style="color:#94a3b8">(câu ${String(x.ref).replace(/[^0-9]/g, '')})</span>` : ''}<br><span style="font-size:.72rem;color:#94a3b8">${new Date(x.at).toLocaleString('vi-VN', { hour12: false, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></span><b style="color:${x.delta > 0 ? '#16a34a' : '#dc2626'}">${x.delta > 0 ? '+' : ''}${x.delta}</b></div>`).join('')
+        : '<div style="padding:.6rem;color:#94a3b8">Chưa có giao dịch nào.</div>';
+    } catch (e) { const el = ov.querySelector('#cnHist'); if (el) el.innerHTML = '<div style="padding:.6rem;color:#dc2626">Không tải được lịch sử.</div>'; }
+  }
+  return {
+    init(client, el) { db = client; slot = el; css(); started = true; },
+    refresh, spent, play, toast, openPanel,
+    get info() { return info; },
+    clear() { info = null; if (slot) slot.innerHTML = ''; },
+  };
+})();
+/*COINS_UI_END*/
+</script>
+<script>
 // ================== CẤU HÌNH (điền thông tin của bạn) ==================
 const SUPABASE_URL = 'https://xzznmfgihzjeqsmiuypi.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_dUldhQYF1ETrSCZ4jiy3Og_ygfkm9XW';
@@ -317,7 +453,7 @@ async function submitAuth() {
     }
   } finally { $('authBtn').disabled = false; }
 }
-async function logout() { S.user = null; S.profile = null; await db.auth.signOut(); show('viewAuth'); }
+async function logout() { CoinsUI.clear(); S.user = null; S.profile = null; await db.auth.signOut(); show('viewAuth'); }
 
 async function registerProfile(name, code, cls) {
   const { error } = await db.rpc('student_register', { p_name: name, p_code: code, p_class: cls || null });
@@ -362,6 +498,7 @@ async function route(user, force) {
   if (seq !== S.routeSeq) return;
   S.profile = p || { full_name: user.email, student_code: '', class_name: '' };
   renderHeader(); show('viewApp');
+  CoinsUI.init(db, $('coinSlot')); CoinsUI.refresh();                    // ô xu + quà đăng nhập hằng ngày
   const hwc = new URLSearchParams(location.search).get('hw');           // link giao bài: đăng nhập xong chuyển thẳng vào bài
   if (hwc && /^[A-Za-z0-9]{4,12}$/.test(hwc)) { location.replace(examUrl('hw=' + encodeURIComponent(hwc))); return; }
   const t = new URLSearchParams(location.search).get('tab');
@@ -423,7 +560,8 @@ async function loadData() {
   ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
   renderAll();
 }
-const reloadData = async () => { await loadData(); toast('Đã cập nhật số liệu.'); };
+const reloadData = async () => { await loadData(); CoinsUI.refresh(); toast('Đã cập nhật số liệu.'); };
+document.addEventListener('visibilitychange', () => { if (!document.hidden && S.user) CoinsUI.refresh(); });   // quay lại tab: nhận thưởng báo lỗi được duyệt, bài vừa nộp…
 const doneItems = () => S.items.filter(i => i.status === 'done');
 
 function renderAll() { renderHw(); renderStats(); renderTrend(); renderSubjects(); renderRecent(); renderDoing(); renderPractice(); renderRooms(); fillSubjectFilter(); renderHistory(); }
