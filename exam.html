@@ -614,7 +614,12 @@ function showQuestion(i) {
   } else if (t === 'short_answer') {
     body = `<input id="ansText" value="${escA(a || '')}" oninput="typeAns(this.value)" placeholder="Nhập đáp án (số hoặc văn bản ngắn)" class="w-full border rounded-lg p-3">`;
   } else {
-    body = `<textarea id="ansText" rows="10" oninput="typeAns(this.value)" placeholder="Trình bày bài làm của bạn..." class="w-full border rounded-lg p-3">${esc(a || '')}</textarea>`;
+    body = `<div class="flex flex-wrap gap-1 p-1.5 bg-slate-50 border rounded-lg" id="mathBar">${MATH_KEYS.map((k, j) =>
+        `<button type="button" onmousedown="event.preventDefault()" onclick="insMath(${j})" title="${esc(k[2] || k[0])}" class="min-w-[2.25rem] px-2 py-1 text-sm rounded border bg-white hover:bg-indigo-50 active:bg-indigo-100">${esc(k[0])}</button>`).join('')}</div>
+      <textarea id="ansText" rows="10" oninput="typeAns(this.value)" placeholder="Trình bày bài làm của bạn... Dùng thanh công thức phía trên hoặc gõ LaTeX trong $...$" class="w-full border rounded-lg p-3">${esc(a || '')}</textarea>
+      <div class="text-xs text-slate-500">Xem trước công thức:</div>
+      <div id="ansPrev" class="whitespace-pre-wrap border rounded-lg p-3 bg-slate-50 min-h-[3rem] text-slate-800"></div>`;
+    setTimeout(() => prevAns(), 0);
   }
   $('qbox').innerHTML = `
     <div class="mb-2"><span class="inline-block text-xs font-bold uppercase tracking-wide rounded bg-indigo-100 text-indigo-700 px-2 py-0.5">Phần ${partOf(i).roman}. ${partOf(i).title}</span>
@@ -628,7 +633,46 @@ function showQuestion(i) {
 
 function choose(L) { answers[cur] = L; saveBackup(); showQuestion(cur); }
 function chooseTF(k, v) { answers[cur] = { ...(answers[cur] || {}), [k]: v }; saveBackup(); showQuestion(cur); }
-function typeAns(v) { answers[cur] = v; saveBackup(); renderNav(); }      // không vẽ lại câu hỏi để giữ con trỏ khi gõ
+// ---------- Thanh công thức cho ô tự luận: [nhãn, đoạn chèn (| = vị trí con trỏ), gợi ý] ----------
+const MATH_KEYS = [
+  ['a/b', '\\frac{|}{}', 'Phân số'], ['√', '\\sqrt{|}', 'Căn bậc hai'], ['ⁿ√', '\\sqrt[|]{}', 'Căn bậc n'],
+  ['x²', '^{2}', 'Mũ 2'], ['xⁿ', '^{|}', 'Số mũ'], ['xₙ', '_{|}', 'Chỉ số dưới'],
+  ['|x|', '\\lvert | \\rvert', 'Giá trị tuyệt đối'], ['( )', '\\left(|\\right)', 'Ngoặc to'],
+  ['{ hệ', '\\begin{cases} | \\\\  \\end{cases}', 'Hệ / hàm nhiều công thức'],
+  ['∫', '\\int_{|}^{} \\,dx', 'Tích phân'], ['Σ', '\\sum_{|}^{}', 'Tổng'], ['lim', '\\lim_{x \\to |}', 'Giới hạn'],
+  ['sin', '\\sin ', ''], ['cos', '\\cos ', ''], ['tan', '\\tan ', ''], ['log', '\\log_{|}', 'Logarit'], ['ln', '\\ln ', ''],
+  ['π', '\\pi ', ''], ['α', '\\alpha ', ''], ['β', '\\beta ', ''], ['γ', '\\gamma ', ''], ['Δ', '\\Delta ', ''], ['θ', '\\theta ', ''], ['φ', '\\varphi ', ''], ['λ', '\\lambda ', ''],
+  ['±', '\\pm ', ''], ['×', '\\times ', ''], ['·', '\\cdot ', ''], ['≤', '\\le ', ''], ['≥', '\\ge ', ''], ['≠', '\\ne ', ''], ['≈', '\\approx ', ''],
+  ['→', '\\to ', ''], ['⇒', '\\Rightarrow ', ''], ['⇔', '\\Leftrightarrow ', ''], ['∈', '\\in ', ''], ['∞', '\\infty ', ''], ['∪', '\\cup ', ''], ['∩', '\\cap ', ''],
+  ['ℝ', '\\mathbb{R}', ''], ['vectơ', '\\overrightarrow{|}', 'Vectơ'], ['°', '^\\circ ', 'Độ'], ['∥', '\\parallel ', ''], ['⊥', '\\perp ', ''], ['∠', '\\widehat{|}', 'Góc']
+];
+function insMath(j) {
+  const ta = $('ansText'); if (!ta) return;
+  let snip = MATH_KEYS[j][1];
+  const st = ta.selectionStart ?? ta.value.length, en = ta.selectionEnd ?? st;
+  const before = ta.value.slice(0, st), sel = ta.value.slice(st, en);
+  const inside = ((before.replace(/\\\$/g, '').match(/\$/g) || []).length % 2) === 1;   // con trỏ đang nằm trong $...$ ?
+  if (sel && snip.includes('|')) snip = snip.replace('|', () => sel);                          // bọc đoạn đang chọn
+  let pos = snip.indexOf('|'); snip = snip.replace('|', '');
+  if (pos < 0) pos = snip.length;
+  const wrap = !inside;
+  const ins = wrap ? '$' + snip + '$' : snip;
+  ta.value = before + ins + ta.value.slice(en);
+  const c = st + (wrap ? 1 : 0) + pos;
+  ta.focus(); ta.setSelectionRange(c, c);
+  typeAns(ta.value); prevAns();
+}
+let _prevT = null;
+function prevAns() {
+  clearTimeout(_prevT);
+  _prevT = setTimeout(() => {
+    const ta = $('ansText'), pv = $('ansPrev'); if (!ta || !pv) return;
+    const v = ta.value;
+    pv.innerHTML = v.trim() ? tex(v) : '<span class="text-slate-400">(công thức sẽ hiện ở đây)</span>';
+    if (v.trim()) math(pv);
+  }, 150);
+}
+function typeAns(v) { answers[cur] = v; saveBackup(); renderNav(); prevAns(); }      // không vẽ lại câu hỏi để giữ con trỏ khi gõ
 
 // ---------- Chấm điểm theo dạng ----------
 const normSA = s => String(s ?? '').trim().toLowerCase().replace(/\s+/g, '').replace(/,/g, '.');
@@ -750,7 +794,7 @@ function reviewBody(q, a, r) {
         <span class="md:ml-auto text-xs font-bold md:whitespace-nowrap">Bạn chọn: ${mine ? vn(mine) : 'chưa chọn'}</span></div>`;
     }).join('');
     if (t === 'short_answer') return `<div class="border rounded p-2 bg-red-100 border-red-500"><b>Bạn trả lời:</b> ${a && a.trim() ? esc(a) : '<i>chưa trả lời</i>'}</div>`;
-    return `<div class="border rounded p-2 bg-sky-50 border-sky-300"><b>Bài làm của bạn:</b><div class="whitespace-pre-wrap">${a && a.trim() ? esc(a) : '<i>chưa làm</i>'}</div></div>`;
+    return `<div class="border rounded p-2 bg-sky-50 border-sky-300"><b>Bài làm của bạn:</b><div class="whitespace-pre-wrap">${a && a.trim() ? tex(a) : '<i>chưa làm</i>'}</div></div>`;
   }
   if (t === 'multiple_choice') return LETTERS.map(L => {
     const isRight = L === q.correct_answer, isMine = L === a;
@@ -769,7 +813,7 @@ function reviewBody(q, a, r) {
   if (t === 'short_answer') return `
     <div class="border rounded p-2 ${r.s === 'right' ? 'bg-green-100 border-green-500' : 'bg-red-100 border-red-500'}"><b>Bạn trả lời:</b> ${a && a.trim() ? esc(a) : '<i>chưa trả lời</i>'}</div>
     <div class="border rounded p-2 bg-green-100 border-green-500"><b>Đáp án đúng:</b> ${tex(String(q.correct_answer ?? '').split('|').join('  hoặc  '))}</div>`;
-  return `<div class="border rounded p-2 bg-sky-50 border-sky-300"><b>Bài làm của bạn:</b><div class="whitespace-pre-wrap">${a && a.trim() ? esc(a) : '<i>chưa làm</i>'}</div></div>`;
+  return `<div class="border rounded p-2 bg-sky-50 border-sky-300"><b>Bài làm của bạn:</b><div class="whitespace-pre-wrap">${a && a.trim() ? tex(a) : '<i>chưa làm</i>'}</div></div>`;
 }
 
 function renderReview() {
