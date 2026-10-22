@@ -136,13 +136,16 @@
           <h2 class="font-semibold">🧑‍🎓 Tài khoản học sinh của lớp</h2>
           <span class="text-xs text-slate-400">Tạo sẵn cả lớp bằng danh sách · học sinh chỉ việc đăng nhập</span>
           <input id="stuSearch" oninput="renderStudents()" placeholder="Tìm tên, mã, lớp…" class="ml-auto border rounded-lg px-3 py-1.5 text-sm w-44">
+          <button onclick="stuTogglePw()" id="stuPwBtn" class="text-sm rounded-lg border px-3 py-1.5 hover:bg-slate-50" title="Xem mật khẩu đã lưu của học sinh trong danh sách">👁 Hiện mật khẩu</button>
+          <button onclick="stuListCsv()" class="text-sm rounded-lg border px-3 py-1.5 hover:bg-slate-50" title="Tải danh sách đang hiển thị (kèm mật khẩu)">⬇ Tải CSV</button>
+          <button onclick="stuListPrint()" class="text-sm rounded-lg border px-3 py-1.5 hover:bg-slate-50" title="In phiếu đăng nhập cho danh sách đang hiển thị">🖨 In phiếu</button>
           <button onclick="openStuCreate()" class="text-sm rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 font-medium">+ Tạo tài khoản cho lớp</button>
         </div>
         <div class="overflow-x-auto max-h-96"><table class="w-full text-sm">
           <thead class="bg-slate-50 text-slate-500 text-left sticky top-0"><tr>
             <th class="p-3 font-medium">Họ tên</th><th class="p-3 font-medium">Mã HS</th><th class="p-3 font-medium">Lớp</th><th class="p-3 font-medium">Tên đăng nhập (email)</th>
-            <th class="p-3 font-medium">Đăng nhập gần nhất</th><th class="p-3 font-medium text-right">Thao tác</th></tr></thead>
-          <tbody id="stuRows"><tr><td colspan="6" class="p-6 text-center text-slate-400">Đang tải…</td></tr></tbody>
+            <th class="p-3 font-medium">Mật khẩu</th><th class="p-3 font-medium">Đăng nhập gần nhất</th><th class="p-3 font-medium text-right">Thao tác</th></tr></thead>
+          <tbody id="stuRows"><tr><td colspan="7" class="p-6 text-center text-slate-400">Đang tải…</td></tr></tbody>
         </table></div>
       </section>
 
@@ -677,20 +680,56 @@ async function loadStudents() {
   if (error) {
     stuList = [];
     const m = /my_created_students|schema cache|Could not find the function/i.test(error.message || '') ? 'Chưa cài đặt: hãy chạy file class_accounts_setup.sql trong Supabase → SQL Editor.' : error.message;
-    return $('stuRows').innerHTML = `<tr><td colspan="6" class="p-6 text-center text-amber-700">${esc(m)}</td></tr>`;
+    return $('stuRows').innerHTML = `<tr><td colspan="7" class="p-6 text-center text-amber-700">${esc(m)}</td></tr>`;
   }
   stuList = Array.isArray(data) ? data : []; renderStudents();
 }
 function renderStudents() {
   const q = ($('stuSearch').value || '').trim().toLowerCase();
   const rows = stuList.filter(r => !q || [r.name, r.code, r.class, r.email].some(v => String(v || '').toLowerCase().includes(q)));
-  if (!stuList.length) return $('stuRows').innerHTML = '<tr><td colspan="6" class="p-8 text-center text-slate-400">Chưa tạo tài khoản nào. Bấm “+ Tạo tài khoản cho lớp”, dán danh sách học sinh từ Excel là xong.</td></tr>';
-  if (!rows.length) return $('stuRows').innerHTML = '<tr><td colspan="6" class="p-6 text-center text-slate-400">Không có học sinh khớp.</td></tr>';
+  if (!stuList.length) return $('stuRows').innerHTML = '<tr><td colspan="7" class="p-8 text-center text-slate-400">Chưa tạo tài khoản nào. Bấm “+ Tạo tài khoản cho lớp”, dán danh sách học sinh từ Excel là xong.</td></tr>';
+  if (!rows.length) return $('stuRows').innerHTML = '<tr><td colspan="7" class="p-6 text-center text-slate-400">Không có học sinh khớp.</td></tr>';
   $('stuRows').innerHTML = rows.map(r => `<tr class="border-t">
     <td class="p-3 font-medium">${esc(r.name)}</td><td class="p-3">${esc(r.code)}</td><td class="p-3">${esc(r.class || '')}</td>
     <td class="p-3 font-mono text-xs">${esc(r.email)}</td>
+    <td class="p-3 font-mono text-xs">${stuPwCell(r)}</td>
     <td class="p-3 text-xs ${r.last_sign_in ? 'text-slate-600' : 'text-amber-600'}">${r.last_sign_in ? esc(fmtDT(r.last_sign_in)) : 'Chưa đăng nhập'}</td>
-    <td class="p-3 text-right">${r.mine === false ? '<span class="text-xs text-slate-400" title="Tài khoản do giáo viên khác tạo, dùng chung cho mọi môn">GV khác tạo</span>' : `<button onclick="stuReset('${esc(r.user_id)}')" class="text-xs border rounded-lg px-2 py-1 hover:bg-slate-50">Đặt lại mật khẩu</button>`}</td></tr>`).join('');
+    <td class="p-3 text-right">${r.mine === false ? '<span class="text-[10px] text-slate-400 mr-1" title="Tài khoản do giáo viên khác tạo, dùng chung cho mọi môn; bạn vẫn xem / đặt lại được mật khẩu">dùng chung</span>' : ''}<button onclick="stuReset('${esc(r.user_id)}')" class="text-xs border rounded-lg px-2 py-1 hover:bg-slate-50">Đặt lại mật khẩu</button></td></tr>`).join('');
+}
+// ---- Xem / tải mật khẩu đã lưu (mã hóa trên máy chủ; mọi giáo viên có học sinh trong danh sách đều xem được) ----
+let stuPw = {}, stuPwOn = false;
+function stuPwCell(r) {
+  if (stuPwOn && stuPw[r.user_id]) return `<b class="text-sm">${esc(stuPw[r.user_id])}</b>`;
+  if (stuPwOn && stuPw[r.user_id] === null) return '<span class="text-slate-400" title="Tạo trước khi có tính năng lưu mật khẩu. Bấm Đặt lại mật khẩu để có mật khẩu mới.">chưa lưu</span>';
+  return r.has_pw || stuPw[r.user_id] ? '<span class="text-slate-400">••••••</span>' : '<span class="text-slate-300" title="Chưa lưu mật khẩu: bấm Đặt lại mật khẩu để tạo mật khẩu mới và lưu">—</span>';
+}
+async function stuFetchPw() {           // nạp mật khẩu của toàn bộ danh sách (1 lần, có thể nạp lại)
+  let res; try { res = await db.functions.invoke('create-students', { body: { action: 'passwords', user_ids: stuList.map(r => r.user_id) } }); } catch (e) { res = { error: e }; }
+  if (res.error || !res.data || !Array.isArray(res.data.items)) { toast(res.error ? await fnError(res.error) : ((res.data && res.data.error) || 'Không đọc được mật khẩu')); return false; }
+  res.data.items.forEach(x => { stuPw[x.user_id] = x.password || null; });
+  return true;
+}
+async function stuTogglePw() {
+  if (stuPwOn) { stuPwOn = false; $('stuPwBtn').textContent = '👁 Hiện mật khẩu'; return renderStudents(); }
+  if (!await stuFetchPw()) return;
+  stuPwOn = true; $('stuPwBtn').textContent = '🙈 Ẩn mật khẩu'; renderStudents();
+}
+function stuShown() {
+  const q = ($('stuSearch').value || '').trim().toLowerCase();
+  return stuList.filter(r => !q || [r.name, r.code, r.class, r.email].some(v => String(v || '').toLowerCase().includes(q)));
+}
+async function stuExportRows() {        // danh sách đang lọc, kèm mật khẩu
+  const rows = stuShown(); if (!rows.length) { toast('Chưa có học sinh nào để xuất'); return null; }
+  if (!await stuFetchPw()) return null;
+  return rows.map(r => ({ name: r.name, code: r.code, class: r.class || '', email: r.email, password: stuPw[r.user_id] || '', message: stuPw[r.user_id] ? '' : 'Chưa lưu mật khẩu (bấm Đặt lại mật khẩu)' }));
+}
+async function stuListCsv() {
+  const rows = await stuExportRows(); if (!rows) return;
+  downloadCsv([['STT', 'Họ tên', 'Mã HS', 'Lớp', 'Tên đăng nhập (email)', 'Mật khẩu', 'Ghi chú']].concat(rows.map((r, i) => [i + 1, r.name, r.code, r.class, r.email, r.password, r.message])), 'tai-khoan-hoc-sinh.csv');
+}
+async function stuListPrint() {
+  const rows = await stuExportRows(); if (!rows) return;
+  printCards(rows);
 }
 
 const STU_ORDERS = {
@@ -793,7 +832,7 @@ function showStuResult() {
   const lab = { created: ['Đã tạo', 'text-emerald-600'], linked: ['Đã có sẵn (dùng chung)', 'text-sky-600'], exists: ['Đã có tài khoản', 'text-amber-600'], error: ['Lỗi', 'text-red-600'] };
   openModal(`<h3 class="font-bold text-lg">✅ Kết quả tạo tài khoản</h3>
     <p class="text-sm mt-1">Đã tạo <b class="text-emerald-600">${c('created')}</b>${c('linked') ? ` · đã có sẵn (giáo viên khác tạo) <b class="text-sky-600">${c('linked')}</b>` : ''}${c('exists') ? ` · trùng email <b class="text-amber-600">${c('exists')}</b>` : ''}${c('error') ? ` · lỗi <b class="text-red-600">${c('error')}</b>` : ''}.</p>
-    <div class="mt-2 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-2">⚠ Mật khẩu <b>chỉ hiện ở màn hình này</b>. Hãy tải file hoặc in phiếu ngay. Nếu học sinh quên, bấm “Đặt lại mật khẩu” ở danh sách (không xem lại được mật khẩu cũ).</div>
+    <div class="mt-2 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-2">💾 Mật khẩu đã được <b>lưu mã hóa</b>: lỡ quên lưu vẫn xem lại / tải lại được ở mục “Tài khoản học sinh của lớp” (nút 👁 Hiện mật khẩu, ⬇ Tải CSV, 🖨 In phiếu). Giáo viên khác dạy chung lớp cũng xem và đặt lại được.</div>
     <div class="flex flex-wrap gap-2 mt-3 text-sm">
       <button onclick="stuCsv()" class="border rounded-lg px-3 py-1.5 hover:bg-slate-50">⬇ Tải file CSV</button>
       <button onclick="stuPrint()" class="border rounded-lg px-3 py-1.5 hover:bg-slate-50">🖨 In phiếu đăng nhập</button>
@@ -805,20 +844,24 @@ function showStuResult() {
     <div class="text-right mt-4"><button onclick="closeModal()" class="px-4 py-2 rounded-lg border text-sm">Đóng</button></div>`, true);
 }
 const stuLoginUrl = () => { try { return new URL(L('student'), location.href).href; } catch (e) { return L('student'); } };
-function stuCsv() {
+function downloadCsv(rows, filename) {
   const c = v => { v = String(v ?? ''); return /[",\n;]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
-  const rows = [['STT', 'Họ tên', 'Mã HS', 'Lớp', 'Tên đăng nhập (email)', 'Mật khẩu', 'Trạng thái', 'Ghi chú']];
-  stuRes.forEach((r, i) => rows.push([i + 1, r.name, r.code, r.class, r.email, r.password, r.status === 'created' ? 'Đã tạo' : r.status === 'linked' ? 'Đã có sẵn (dùng chung)' : r.status === 'exists' ? 'Đã có tài khoản' : 'Lỗi', r.message]));
-  const blob = new Blob(['﻿' + rows.map(r => r.map(c).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
-  const el = document.createElement('a'); el.href = URL.createObjectURL(blob); el.download = 'tai-khoan-hoc-sinh.csv'; document.body.appendChild(el); el.click(); el.remove();
+  const blob = new Blob(['\ufeff' + rows.map(r => r.map(c).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const el = document.createElement('a'); el.href = URL.createObjectURL(blob); el.download = filename; document.body.appendChild(el); el.click(); el.remove();
   setTimeout(() => URL.revokeObjectURL(el.href), 2000);
 }
+function stuCsv() {
+  const rows = [['STT', 'Họ tên', 'Mã HS', 'Lớp', 'Tên đăng nhập (email)', 'Mật khẩu', 'Trạng thái', 'Ghi chú']];
+  stuRes.forEach((r, i) => rows.push([i + 1, r.name, r.code, r.class, r.email, r.password, r.status === 'created' ? 'Đã tạo' : r.status === 'linked' ? 'Đã có sẵn (dùng chung)' : r.status === 'exists' ? 'Đã có tài khoản' : 'Lỗi', r.message]));
+  downloadCsv(rows, 'tai-khoan-hoc-sinh.csv');
+}
 async function stuCopy() {
-  const t = stuRes.filter(r => r.status === 'created').map(r => [r.name, r.code, r.class, r.email, r.password].join('\t')).join('\n');
+  const t = stuRes.filter(r => r.password).map(r => [r.name, r.code, r.class, r.email, r.password].join('\t')).join('\n');
   toast(t && await copyText(t) ? 'Đã sao chép (dán được vào Excel / Google Sheets)' : 'Không sao chép được, hãy tải file CSV');
 }
-function stuPrint() {
-  const made = stuRes.filter(r => r.status === 'created'); if (!made.length) return toast('Chưa có tài khoản mới để in');
+function stuPrint() { printCards(stuRes.filter(r => r.password)); }
+function printCards(made) {
+  if (!made.length) return toast('Chưa có tài khoản nào có mật khẩu để in');
   const w = window.open('', '_blank'); if (!w) return toast('Trình duyệt đã chặn cửa sổ in. Hãy cho phép cửa sổ bật lên rồi thử lại.');
   const url = stuLoginUrl();
   w.document.write(`<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Phiếu đăng nhập</title><style>
@@ -836,11 +879,12 @@ async function stuReset(id) {
   if (!confirm(`Đặt lại mật khẩu cho ${r.name} (${r.code})?\nMật khẩu cũ sẽ không dùng được nữa; hệ thống tạo mật khẩu mới để bạn đưa cho học sinh.`)) return;
   let res; try { res = await db.functions.invoke('create-students', { body: { action: 'reset', user_id: id } }); } catch (e) { res = { error: e }; }
   if (res.error || !res.data || !res.data.password) return toast(res.error ? await fnError(res.error) : ((res.data && res.data.error) || 'Không đặt lại được'));
+  if (res.data.saved !== false) { stuPw[id] = res.data.password; r.has_pw = true; renderStudents(); }
   openModal(`<h3 class="font-bold text-lg">🔑 Mật khẩu mới</h3>
     <p class="text-sm mt-2"><b>${esc(r.name)}</b> · ${esc(r.code)}</p>
     <div class="mt-3 border rounded-lg p-3 text-sm bg-slate-50 space-y-1"><div>Tên đăng nhập: <span class="font-mono font-bold">${esc(res.data.email || r.email)}</span></div>
       <div>Mật khẩu mới: <span class="font-mono font-bold text-lg">${esc(res.data.password)}</span></div></div>
-    <p class="text-xs text-amber-700 mt-2">Mật khẩu chỉ hiện một lần. Hãy ghi lại và đưa cho học sinh.</p>
+    <p class="text-xs text-slate-500 mt-2">${res.data.saved === false ? '⚠ Chưa lưu được mật khẩu để xem lại: hãy ghi lại ngay.' : 'Mật khẩu đã được lưu: xem lại ở danh sách bằng nút “👁 Hiện mật khẩu”.'} Giáo viên khác dạy chung lớp cũng dùng được mật khẩu này.</p>
     <div class="flex justify-end gap-2 mt-4"><button onclick="copyText('${esc(res.data.email || r.email)}\\t${esc(res.data.password)}').then(()=>toast('Đã sao chép'))" class="px-4 py-2 rounded-lg border text-sm">Sao chép</button>
       <button onclick="closeModal()" class="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm">Đóng</button></div>`);
 }
