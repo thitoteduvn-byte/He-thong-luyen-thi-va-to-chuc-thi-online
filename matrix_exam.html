@@ -179,6 +179,8 @@
       <div class="flex flex-col items-end gap-1"><span id="sumStatus" class="text-xs font-semibold px-2 py-1 rounded bg-slate-100 text-slate-600">Chưa nhập ma trận</span><div id="sumHint" class="text-[11px] text-slate-500"></div></div>
       <button id="drawBtn" onclick="drawExam()" disabled
         class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-indigo-600">Tạo đề thi từ ma trận</button>
+      <button id="aiBtn" onclick="aiStart()" disabled title="AI soạn câu hỏi MỚI theo đúng chương / bài / dạng / mức độ trong ma trận (không phụ thuộc số câu trong ngân hàng). Cần Gemini API Key."
+        class="bg-violet-600 hover:bg-violet-700 text-white px-5 py-2 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-violet-600">✨ Tạo đề bằng AI</button>
     </div>
   
 </section>
@@ -232,7 +234,7 @@
         <button onclick="saveExam()" class="px-3 py-1.5 rounded bg-slate-200 font-semibold">💾 Lưu đề</button>
         <button id="saveNewBtn" onclick="saveExam(true)" class="hidden px-3 py-1.5 rounded bg-slate-200 font-semibold">Lưu thành đề mới</button>
         <button onclick="exportExamDocx()" class="px-4 py-1.5 rounded bg-sky-700 text-white font-semibold ml-auto" title="Xuất đề (hoặc tất cả mã đề) ra file Word, kèm bảng đáp án nếu đang tích 'Kèm đáp án'">📄 Xuất Word (.docx)</button>
-        <button onclick="window.print()" class="px-4 py-1.5 rounded bg-indigo-600 text-white font-semibold">In đề / Lưu PDF</button>
+        <button onclick="printExam()" class="px-4 py-1.5 rounded bg-indigo-600 text-white font-semibold">In đề / Lưu PDF</button>
       </div>
       <div id="eNote" class="text-sm"></div>
       <div id="eMode" class="text-sm"></div>
@@ -266,6 +268,12 @@
       <button onclick="closePaywall()" class="px-4 py-2 rounded-lg text-slate-500 text-sm">Để sau, tiếp tục dùng miễn phí</button>
     </div>
   </div>
+</div>
+<div id="aiModal" class="hidden print:hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+  <div id="aiModalBody" class="bg-white rounded-xl shadow-xl w-full max-w-md p-5" role="dialog" aria-modal="true"></div>
+</div>
+<div id="qModal" class="hidden print:hidden fixed inset-0 z-50 bg-black/50 flex items-start justify-center p-4 overflow-y-auto">
+  <div id="qModalBody" class="bg-white rounded-xl shadow-xl w-full max-w-2xl p-5 my-6" role="dialog" aria-modal="true"></div>
 </div>
 <div id="toast" class="hidden print:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-slate-800 text-white text-sm px-4 py-2 rounded-lg shadow-lg"></div>
 
@@ -322,6 +330,7 @@ function math() {
 function show(name) {
   ['Matrix', 'Editor', 'Saved'].forEach(n => $('s' + n).classList.toggle('hidden', n !== name));
   if (name === 'Editor') renderPrivacy();
+  if (name === 'Matrix' && bankChanged) { bankChanged = false; loadMatrix(); }       // ngân hàng vừa có thêm câu AI: nạp lại số câu khả dụng
   window.scrollTo(0, 0);
 }
 function setMsg(type, html = '') {
@@ -565,7 +574,7 @@ function loadDraft() {
   mx.vals = {};
   for (const [k, v] of Object.entries(d?.vals || {})) {       // chỉ giữ ô còn tồn tại (đúng cặp chương + bài) và còn câu hỏi
     const [c, ls, t, df] = k.split('\t');
-    if (avail[c]?.[ls]?.[t]?.[df] > 0) mx.vals[k] = v;
+    if (avail[c]?.[ls]?.[t]?.[df] !== undefined) mx.vals[k] = v;      // giữ cả ô chưa có câu trong ngân hàng (dùng cho ✨ AI soạn mới)
   }
 }
 function flushDraft() {
@@ -674,7 +683,9 @@ function validateMatrix() {
   else if (agg.total === 0) { tone = 'slate'; msg = 'Chưa nhập ma trận'; }
   else if (pct && !pctOk) { tone = 'amber'; msg = `Tổng trọng số ${fmt(sumPct)}% (cần đúng 100%)`; }
   else { tone = 'green'; msg = '✓ Ma trận hợp lệ'; blocked = false; if (!pct && N > 0 && agg.total !== N) hint = `Đang có ${agg.total}/${N} câu mục tiêu`; }
-  return { ok: !blocked, blocked, tone, msg, hint, errors, agg, pct, N, sumPct, pctOk };
+  const aiOk = mrows.length > 0 && agg.total > 0 && !cellRefs.some(r => r.reason === 'invalid') && (!pct || (N > 0 && pctOk));   // AI soạn mới: không bị giới hạn bởi số câu trong ngân hàng
+  if (errors.length && aiOk) hint = 'Vượt số câu trong ngân hàng: vẫn tạo được bằng ✨ AI';
+  return { ok: !blocked, blocked, tone, msg, hint, errors, agg, pct, N, sumPct, pctOk, aiOk };
 }
 const fmt1 = x => (Math.round(x * 10) / 10).toLocaleString('vi-VN');
 
@@ -686,7 +697,7 @@ function recalc() {
     const bad = !!r.reason, none = r.reason === 'none';
     if (r.bad !== bad) { r.bad = bad; r.el.classList.toggle('bad', bad); r.note.classList.toggle('bad', bad); }
     if (r.none !== none) { r.none = none; r.note.classList.toggle('nobank', none); }
-    setText(r.note, r.reason === 'invalid' ? 'Không hợp lệ' : none ? 'Chưa có câu hỏi dạng này trong ngân hàng' : r.reason === 'over' ? `Vượt! Max ${r.max}` : (pct && r.num > 0 ? `= ${r.n}` : `/${r.max}`));
+    setText(r.note, r.reason === 'invalid' ? 'Không hợp lệ' : none ? 'Ngân hàng chưa có câu dạng này (AI vẫn soạn được)' : r.reason === 'over' ? `Vượt ngân hàng (${r.max}) · AI vẫn soạn được` : (pct && r.num > 0 ? `= ${r.n}` : `/${r.max}`));
   }
   const scale = mx.scale > 0 ? mx.scale : 10, perQ = mx.perQ > 0 ? mx.perQ : MIN_PER_QUESTION;
   agg.rowTot.forEach((x, i) => setText(rowTotEls[i], String(x)));
@@ -715,6 +726,7 @@ function recalc() {
     <div class="text-xs text-slate-500">${total ? fmt(agg.lvTot[i] * scale / total) : 0} điểm</div></div>`).join(''));
   setText($('sumTypes'), QTYPES.map((t, i) => agg.tyTot[i] ? `${t.s}: ${agg.tyTot[i]} câu` : '').filter(Boolean).join(' · ') || '—');
   $('drawBtn').disabled = v.blocked || drawing;
+  $('aiBtn').disabled = !v.aiOk || drawing || !!aiRun;
 }
 const schedule = () => { if (!rafId) rafId = requestAnimationFrame(recalc); saveSoon(); };
 
@@ -958,10 +970,11 @@ function shuffleKeepParts(list) {
 // Phần đầu đề + danh sách câu hỏi của 1 đề (edit = true: hiện nút ↑ ↓ 🔄 ✕ để chỉnh sửa)
 function paperHtml(list, code, edit) {
   const school = $('eSchool').value.trim(), parts = partOrder(list);
-  const ctrl = i => `<span class="print:hidden shrink-0 flex flex-wrap justify-end gap-1 text-xs max-w-[11rem]">
+  const ctrl = (i, q) => `<span class="print:hidden shrink-0 flex flex-wrap justify-end gap-1 text-xs max-w-[11rem]">
             <button onclick="mv(${i}, -1)" class="px-1.5 border rounded">↑</button>
             <button onclick="mv(${i}, 1)" class="px-1.5 border rounded">↓</button>
-            <button onclick="swapQuestion(${i})" class="px-1.5 border rounded">🔄 Đổi câu khác</button>
+            ${q._draft ? `<button onclick="aiEditQ(${i})" class="px-1.5 border rounded text-indigo-700">✏ Sửa</button><button onclick="aiRegen(${i})" class="px-1.5 border rounded text-violet-700">🤖 Soạn lại</button>`
+              : `<button onclick="swapQuestion(${i})" class="px-1.5 border rounded">🔄 Đổi câu khác</button>`}
             <button onclick="del(${i})" class="px-1.5 border rounded text-red-600">✕</button></span>`;
   return `
     <div class="print-header">
@@ -980,8 +993,9 @@ function paperHtml(list, code, edit) {
         <div class="flex gap-2">
           <b class="shrink-0">Câu ${i + 1}.</b>
           <div class="flex-1 whitespace-pre-wrap">${tex(q.content)}</div>
-          ${edit ? ctrl(i) : ''}
+          ${edit ? ctrl(i, q) : ''}
         </div>
+        ${edit && q._ai ? `<div class="print:hidden ml-12 mt-1 text-[11px] ${q._draft ? 'text-violet-700' : 'text-emerald-700'}">✨ Câu do AI soạn · ${q._draft ? 'chưa vào ngân hàng (tự nạp khi Lưu / Xuất / In)' : 'đã nạp vào ngân hàng'}</div>` : ''}
         ${q.image_url ? `<img src="${esc(q.image_url)}" alt="" class="max-h-56 my-2 ml-12">` : ''}
         ${optsHtml(q, edit)}
         ${edit ? expEditor(q) : ''}
@@ -1302,6 +1316,8 @@ const privacyColMissing = err => /is_public|owner_id/.test(err?.message || '');
 async function saveExam(asNew = false) {
   if (!session) return toast('Hãy đăng nhập (góc trên màn hình ma trận) để lưu đề.');
   if (!exam.length) return;
+  const bk = await bankDrafts();                       // câu AI → ngân hàng (có id thật) trước khi lưu đề
+  const bkMsg = (bk.added || bk.dup || bk.failed || bk.skipped) ? ' ' + bankMsg(bk) : '';
   const row = {
     title: $('eTitle').value.trim() || 'Đề thi', grade, subject, school: $('eSchool').value.trim() || null,
     minutes: Number($('eMin').value) || null, question_count: exam.length, version_count: versions ? versions.length : 1,
@@ -1323,7 +1339,7 @@ async function saveExam(asNew = false) {
     return toast('Lỗi lưu đề: ' + error.message);
   }
   savedId = data.id; renderPaper(); renderPrivacy();
-  toast(examPublic ? '🌐 Đã lưu đề (Công khai). Xem lại ở mục "Đề đã lưu".' : '🔒 Đã lưu đề vào Kho riêng. Xem lại ở mục "Đề đã lưu".');
+  toast((examPublic ? '🌐 Đã lưu đề (Công khai). Xem lại ở mục "Đề đã lưu".' : '🔒 Đã lưu đề vào Kho riêng. Xem lại ở mục "Đề đã lưu".') + bkMsg);
 }
 
 let savedRows = [], savedFilter = 'all';
@@ -1409,7 +1425,7 @@ function closeKeyGuide() {
   $('keyModal').classList.add('hidden');
   if (!$('gKey').value.trim()) keyField().focus();   // đóng popup xong, con trỏ vẫn nhấp nháy ở ô Key để dán
 }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeKeyGuide(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeKeyGuide(); $('qModal').classList.add('hidden'); } });
 
 const KEY_TIP = 'Nhập Gemini API Key miễn phí để dùng tính năng này';
 const AI_LABEL = '✨ AI Giải bài';
@@ -1476,13 +1492,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // Lỗi tạm thời (quá tải / hạn mức theo phút / lỗi server / mất mạng) -> đáng thử lại
 const isOverload = (status, msg) => [429, 500, 502, 503, 504, 529, 539].includes(status) || /high demand|overloaded|unavailable|try again later/i.test(msg || '');
 
-async function geminiOnce(model, prompt, key) {
+async function geminiOnce(model, prompt, key, json = false) {
   let res;
   try {
     res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },   // tương đương ?key=... nhưng không lộ key trên URL
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.3 } })
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: json ? { temperature: 0.7, responseMimeType: 'application/json' } : { temperature: 0.3 } })
     });
   } catch (e) { throw Object.assign(new Error('Không kết nối được tới Gemini (' + e.message + ').'), { retry: true }); }
   const data = await res.json().catch(() => ({}));
@@ -1496,7 +1512,7 @@ async function geminiOnce(model, prompt, key) {
 }
 
 // Thử model chính tối đa 3 lần (chờ 2 giây giữa các lần); vẫn lỗi quá tải thì chuyển sang model dự phòng
-async function callGemini(prompt, onStatus = () => {}) {
+async function callGemini(prompt, onStatus = () => {}, json = false) {
   const key = $('gKey').value.trim(), primary = $('gModel').value.trim() || GEMINI_DEFAULT_MODEL;
   const chain = [primary, ...GEMINI_FALLBACKS.filter(m => m !== primary)];
   let lastErr, tried = [];
@@ -1504,7 +1520,7 @@ async function callGemini(prompt, onStatus = () => {}) {
     const model = chain[m]; tried.push(model);
     if (m > 0) onStatus(`⏳ Đổi sang ${model}…`);
     for (let t = 1; t <= GEMINI_TRIES; t++) {
-      try { return { text: await geminiOnce(model, prompt, key), model }; }
+      try { return { text: await geminiOnce(model, prompt, key, json), model }; }
       catch (e) {
         lastErr = e;
         if (!e.retry) break;                                   // lỗi không phải quá tải: không thử lại model này
@@ -1532,7 +1548,8 @@ async function aiExplain(id) {
     const note = model !== ($('gModel').value.trim() || GEMINI_DEFAULT_MODEL) ? ` (model chính đang bận, đã dùng ${model})` : '';
     q.explanation = text;                                   // 1) gán vào đề
     refreshExpView(id);                                      // 2) render lại KaTeX
-    try { await saveExplanation(q.id, text); toast('Đã viết lời giải và lưu vào Supabase.' + note); }   // 3) cập nhật Supabase theo id
+    if (q._draft) toast('Đã viết lời giải' + note + ' (sẽ lưu cùng câu hỏi khi câu được nạp vào ngân hàng).');
+    else try { await saveExplanation(q.id, text); toast('Đã viết lời giải và lưu vào Supabase.' + note); }   // 3) cập nhật Supabase theo id
     catch (e) { toast('AI đã viết xong' + note + ' nhưng chưa lưu được vào Supabase: ' + e.message); }
   } catch (e) { toast('Lỗi Gemini: ' + e.message); }
   finally {
@@ -1952,6 +1969,7 @@ function multiKeyXml(vers) {              // nhiều mã đề: một bảng g�
 // ---------- 9. Nút xuất đề ----------
 async function exportExamDocx() {
   if (!exam.length) return toast('Chưa có đề để xuất.');
+  const bk = await bankDrafts();                       // câu AI → ngân hàng
   const withKey = $('eKey').checked, code = $('eCode').value.trim(), ctx = newCtx();
   toast('Đang tạo file Word...');
   try {
@@ -1966,7 +1984,7 @@ async function exportExamDocx() {
       name = `De_${fileSafe(subject)}_${grade}${code ? '_ma_' + fileSafe(code) : ''}.docx`;
     }
     saveBlob(buildDocx(body, ctx, { title: $('eTitle').value.trim() || 'Đề thi' }), name);
-    toast(`Đã xuất ${name}` + (ctx.imgN ? ` (${ctx.imgN} hình)` : '') + (ctx.imgFail ? `. ${ctx.imgFail} hình không tải được nên được thay bằng ghi chú.` : '.'));
+    toast(`Đã xuất ${name}` + (ctx.imgN ? ` (${ctx.imgN} hình)` : '') + (ctx.imgFail ? `. ${ctx.imgFail} hình không tải được nên được thay bằng ghi chú.` : '.') + ((bk.added || bk.dup || bk.failed || bk.skipped) ? ' ' + bankMsg(bk) : ''));
   } catch (e) { console.error(e); toast('Lỗi xuất Word: ' + e.message); }
 }
 
@@ -2150,6 +2168,298 @@ async function exportSpecDocx() {
     toast(missing ? `Đã xuất ${name}, nhưng AI chưa viết được ${missing} bài (đã đánh dấu đỏ trong file). Bấm xuất lại để AI viết bổ sung.` : `Đã xuất ${name}. Hãy đọc lại và chỉnh sửa trong Word cho đúng ý bạn.`);
   } catch (e) { toast('Lỗi Gemini: ' + e.message); }
   finally { btn.disabled = false; btn.textContent = label; }
+}
+
+// ================== ✨ TẠO ĐỀ MỚI BẰNG AI TỪ MA TRẬN ==================
+// Ma trận (chương / bài / dạng / mức độ / số câu) → Gemini soạn câu hỏi mới → màn biên tập để giáo viên xem lại, sửa.
+// Khi giáo viên bấm Lưu đề / Xuất Word / In đề, các câu AI tự được nạp vào ngân hàng câu hỏi (bankDrafts).
+const AI_LEVEL = {
+  nhan_biet: 'Nhận biết: nhớ / nhận ra định nghĩa, khái niệm, công thức, đơn vị; tính toán rất đơn giản, một bước',
+  thong_hieu: 'Thông hiểu: giải thích, so sánh, phân biệt, suy luận trực tiếp; tính toán 1-2 bước',
+  van_dung: 'Vận dụng: giải bài tập / tình huống quen thuộc, cần nhiều bước',
+  van_dung_cao: 'Vận dụng cao: tình huống mới hoặc thực tiễn, tổng hợp nhiều kiến thức, nhiều bước, có tính phân loại học sinh giỏi'
+};
+const AI_CHUNK = 6, AI_CONC = 2;
+let aiRun = null, aiSeq = 0, aiNote = '', bankChanged = false, banking = null;
+
+// Mỗi câu cần soạn = 1 "đơn vị"; thứ tự: dạng câu → chương/bài → mức độ (giống cách bốc đề từ ngân hàng)
+function aiUnits() {
+  recalc();
+  const units = [];
+  QTYPES.forEach((t, ti) => mrows.forEach((m, r) => DIFFS.forEach((d, di) => {
+    const ref = grid[r][ti * DIFFS.length + di];
+    if (ref.n > 0 && !ref.off) for (let j = 0; j < ref.n; j++) units.push({ r, ti, di, c: m.c, ls: m.ls, t: t.k, k: d.k });
+  })));
+  return units;
+}
+function aiTasks(units) {                   // mỗi lượt gọi AI chỉ gồm các câu của MỘT bài, tối đa AI_CHUNK câu
+  const byRow = new Map();
+  units.forEach(u => { const k = u.c + '\t' + u.ls; if (!byRow.has(k)) byRow.set(k, []); byRow.get(k).push(u); });
+  const tasks = [];
+  byRow.forEach(list => { for (let i = 0; i < list.length; i += AI_CHUNK) tasks.push(list.slice(i, i + AI_CHUNK)); });
+  return tasks;
+}
+function aiPrompt(chunk) {
+  const u0 = chunk[0], items = chunk.map((u, i) => ({ stt: i + 1, dang: u.t, muc_do: u.k }));
+  const lv = [...new Set(chunk.map(u => u.k))].map(k => '- ' + AI_LEVEL[k]).join('\n');
+  return `Bạn là giáo viên môn ${subject} lớp ${grade} giàu kinh nghiệm (Chương trình GDPT 2018, Việt Nam), đang soạn đề kiểm tra.
+PHẠM VI KIẾN THỨC - bám sát đúng tên chương / bài dưới đây, không ra ngoài phạm vi, không bịa kiến thức:
+- Chương / chủ đề: ${u0.c}
+- Bài học: ${u0.ls || '(toàn chương, không chia bài)'}
+Hãy soạn ĐÚNG ${chunk.length} câu hỏi mới theo danh sách yêu cầu (mỗi phần tử là 1 câu, đúng "dang" và "muc_do", đánh số "stt" khớp danh sách):
+${JSON.stringify(items)}
+Mức độ nhận thức:
+${lv}
+Quy cách từng dạng (mọi trường là chuỗi, trừ "options"):
+- multiple_choice: "content" là đề bài; "options" = {"A":"...","B":"...","C":"...","D":"..."} (không ghi sẵn "A." đầu phương án); đúng 1 phương án đúng, 3 phương án nhiễu hợp lý, vị trí đáp án đúng thay đổi giữa các câu; "correct_answer" là "A", "B", "C" hoặc "D".
+- true_false: "content" là đề dẫn / tình huống chung (không chứa các ý a, b, c, d); "options" = {"a":"...","b":"...","c":"...","d":"..."} là 4 phát biểu độc lập, cần phán đoán Đúng / Sai (không ghi sẵn "a)"); có cả ý đúng lẫn ý sai; "correct_answer" gồm 4 ký tự Đ hoặc S theo thứ tự a→d, ví dụ "Đ,S,Đ,S"; "explanation" giải thích ngắn gọn từng ý.
+- short_answer: "content" là đề bài có đáp số là MỘT số hoặc biểu thức ngắn (nêu rõ đơn vị và quy tắc làm tròn nếu cần); "options" = {}; "correct_answer" chỉ gồm đáp số (ví dụ "12,5"), không kèm đơn vị hay chữ.
+- essay: "content" là đề tự luận (có thể gồm các ý a, b, c); "options" = {}; "correct_answer" = ""; "explanation" là hướng dẫn chấm: lời giải từng ý kèm thang điểm.
+- Với 3 dạng đầu, "explanation" là lời giải ngắn gọn (tối đa khoảng 80 từ), nêu các bước then chốt dẫn tới đáp án.
+Yêu cầu chung:
+- Tiếng Việt chuẩn, rõ ràng, chính xác về kiến thức; các câu trong cùng lượt không được giống nhau; không phụ thuộc hình vẽ / bảng / ảnh (nếu cần số liệu thì nêu bằng chữ).
+- Công thức, ký hiệu toán lí hóa viết bằng LaTeX kẹp giữa dấu $...$ (ví dụ $v = \\frac{s}{t}$, $x^2$, $\\sqrt{3}$). Trong JSON phải viết HAI dấu gạch chéo ngược trước lệnh LaTeX (ví dụ "\\\\frac", "\\\\sqrt"). Không dùng Markdown (không **, không #).
+- Dùng số liệu thực tế, hợp lí; đáp án và lời giải phải nhất quán, đúng.${aiNote ? `\n- Yêu cầu thêm của giáo viên: ${aiNote}` : ''}
+Chỉ trả về DUY NHẤT một JSON hợp lệ dạng: {"questions":[{"stt":1,"content":"...","options":{...},"correct_answer":"...","explanation":"..."}, ...]}`;
+}
+const aiFixStr = s => String(s ?? '').replace(/\f/g, '\\f').replace(/\x08/g, '\\b').replace(/\t(?=[a-zA-Z])/g, '\\t').replace(/\r(?=[a-zA-Z])/g, '\\r')
+  .replace(/\n(?=(?:eq|abla|ot|ewline|u)(?![a-z]))/g, '\\n').replace(/^\s*Câu\s*\d+\s*[.:]\s*/i, '').trim();   // sửa lệnh LaTeX bị JSON "ăn" mất dấu \ + bỏ nhãn "Câu 1."
+function aiJson(text) {
+  let t = String(text).replace(/^```[a-z]*\n?|\n?```$/g, '').trim();
+  const a = t.indexOf('{'), b = t.lastIndexOf('}'); if (a >= 0 && b > a) t = t.slice(a, b + 1);
+  try { return JSON.parse(t); } catch { return JSON.parse(t.replace(/\\(["\\\/bfnrt]|u[0-9a-fA-F]{4})|\\/g, (m, ok) => ok ? m : '\\\\')); }
+}
+const aiDollarOk = s => ((String(s).replace(/\\\$/g, '').match(/\$/g) || []).length % 2) === 0;
+// Kiểm tra 1 câu AI trả về: trả { q } hoặc { err }
+function aiCheckItem(r, u) {
+  if (!r || typeof r !== 'object') return { err: 'thiếu dữ liệu' };
+  const content = aiFixStr(r.content), expl = aiFixStr(r.explanation), o = (r.options && typeof r.options === 'object' && !Array.isArray(r.options)) ? r.options : {};
+  if (content.length < 8) return { err: 'đề bài quá ngắn' };
+  const q = { _draft: true, _ai: true, id: 'ai_' + (++aiSeq), question_type: u.t, grade, subject, chapter: u.c, lesson: u.ls || null, difficulty: u.k, content, explanation: expl, image_url: null, options: {}, correct_answer: null };
+  let all = [content, expl];
+  if (u.t === 'multiple_choice') {
+    const opt = {}; for (const L of LETTERS) opt[L] = aiFixStr(o[L] ?? o[L.toLowerCase()]).replace(/^[A-Da-d]\s*[).:]\s+/, '');
+    if (LETTERS.some(L => !opt[L])) return { err: 'thiếu phương án' };
+    if (new Set(LETTERS.map(L => opt[L].toLowerCase())).size < 4) return { err: 'phương án trùng nhau' };
+    const ca = String(r.correct_answer ?? '').trim().toUpperCase();
+    if (!LETTERS.includes(ca)) return { err: 'đáp án đúng không hợp lệ' };
+    q.options = opt; q.correct_answer = ca; all = all.concat(LETTERS.map(L => opt[L]));
+  } else if (u.t === 'true_false') {
+    const opt = {}; for (const k of ['a', 'b', 'c', 'd']) opt[k] = aiFixStr(o[k] ?? o[k.toUpperCase()]).replace(/^[a-dA-D]\s*[).:]\s+/, '');
+    if (['a', 'b', 'c', 'd'].some(k => !opt[k])) return { err: 'thiếu phát biểu' };
+    const v = parseTF(r.correct_answer);
+    if (!v) return { err: 'đáp án Đúng/Sai không hợp lệ' };
+    q.options = { A: opt.a, B: opt.b, C: opt.c, D: opt.d }; q.correct_answer = v.map(x => x ? 'Đ' : 'S').join(','); all = all.concat(Object.values(opt));
+  } else if (u.t === 'short_answer') {
+    const ca = aiFixStr(r.correct_answer);
+    if (!ca || ca.length > 40) return { err: 'đáp số không hợp lệ' };
+    q.correct_answer = ca; all.push(ca);
+  } else if (expl.length < 10) return { err: 'thiếu hướng dẫn chấm' };
+  if (all.some(s => !aiDollarOk(s))) return { err: 'công thức LaTeX lỗi dấu $' };
+  return { q: normQ(q) };
+}
+
+// Gọi AI cho 1 nhóm câu; trả về mảng cùng độ dài với chunk: câu hợp lệ hoặc null
+async function aiDoTask(chunk, onStatus) {
+  const { text } = await callGemini(aiPrompt(chunk), onStatus, true);
+  let data; try { data = aiJson(text); } catch (e) { return chunk.map(() => null); }
+  const list = Array.isArray(data) ? data : Array.isArray(data?.questions) ? data.questions : [];
+  const by = new Map(list.map((x, i) => [Number(x?.stt) || i + 1, x]));
+  return chunk.map((u, i) => { const c = aiCheckItem(by.get(i + 1), u); return c.q || null; });
+}
+
+// ----- Hộp thoại: xác nhận → tiến trình -----
+function aiOpen(html) { $('aiModalBody').innerHTML = html; $('aiModal').classList.remove('hidden'); }
+function aiClose() { $('aiModal').classList.add('hidden'); }
+function aiStart() {   // bấm nút ✨ Tạo đề bằng AI
+  if (aiRun) return;
+  recalc(); const v = validateMatrix();
+  if (!v.aiOk) return setMsg('error', 'Chưa thể tạo đề bằng AI: ' + esc(v.msg));
+  if (!$('gKey').value.trim()) { keyField().scrollIntoView({ block: 'center', behavior: 'smooth' }); keyField().focus(); openKeyGuide(); return; }
+  const units = aiUnits(), tasks = aiTasks(units), nRow = new Set(units.map(u => u.c + '\t' + u.ls)).size;
+  const sec = Math.max(10, Math.round(tasks.length / AI_CONC * 12));
+  aiOpen(`<h3 class="text-lg font-bold">✨ Tạo đề mới bằng AI</h3>
+    <p class="text-sm text-slate-600 mt-2">AI sẽ <b>soạn mới ${units.length} câu</b> môn <b>${esc(subject)}</b> lớp <b>${grade}</b> theo đúng chương, bài, dạng câu và mức độ trong ma trận (${nRow} bài). Câu hỏi được chia thành ${tasks.length} lượt gửi nhỏ, ước tính khoảng ${sec >= 90 ? Math.round(sec / 60) + ' phút' : sec + ' giây'}.</p>
+    <ul class="text-xs text-slate-500 mt-2 list-disc pl-5 space-y-0.5"><li>Sau khi soạn xong, đề mở ở màn hình biên tập để bạn <b>đọc lại, sửa (✏) hoặc cho AI soạn lại (🤖)</b> từng câu.</li>
+      <li>Khi bấm <b>Lưu đề / Xuất Word / In đề</b>, các câu AI tự được nạp vào ${isAdmin ? 'ngân hàng <b>chung</b>' : 'ngân hàng câu hỏi của bạn'}.</li></ul>
+    <label class="block text-sm font-medium mt-3">Yêu cầu thêm cho AI <span class="font-normal text-slate-400">(tuỳ chọn)</span>
+      <textarea id="aiNoteIn" rows="2" placeholder="VD: ưu tiên bài toán thực tế; số liệu đơn giản; tránh câu hỏi đánh đố..." class="w-full border rounded p-2 mt-1 text-sm font-normal">${esc(aiNote)}</textarea></label>
+    <div class="flex justify-end gap-2 mt-4"><button onclick="aiClose()" class="px-4 py-2 rounded-lg border text-sm">Hủy</button>
+      <button onclick="aiGo()" class="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-semibold">✨ Bắt đầu soạn</button></div>`);
+}
+async function aiGo() {
+  if (aiRun) return;
+  aiNote = ($('aiNoteIn')?.value || '').trim().slice(0, 400);
+  grade = Number($('grade').value); subject = $('subject').value;
+  const units = aiUnits(), tasks = aiTasks(units);
+  const run = aiRun = { cancel: false }, results = new Map();   // results: unit -> câu
+  $('aiBtn').disabled = true;
+  const total = units.length;
+  let done = 0, errs = 0, okTasks = 0, lastErr = '', cur = '';
+  const draw = () => {
+    const pct = total ? Math.round(done * 100 / total) : 0;
+    aiOpen(`<h3 class="text-lg font-bold">✨ AI đang soạn đề, vui lòng chờ...</h3>
+      <p class="text-sm text-slate-600 mt-2">Đã soạn <b>${done}</b>/${total} câu. Đừng đóng trang này.</p>
+      <div class="h-2.5 rounded bg-slate-100 overflow-hidden mt-3"><div class="h-full bg-violet-600 transition-all" style="width:${pct}%"></div></div>
+      <p class="text-xs text-slate-500 mt-2 truncate">${esc(cur)}</p>
+      <div class="flex justify-end mt-4"><button onclick="aiRun && (aiRun.cancel = true)" class="px-4 py-2 rounded-lg border text-sm">Hủy</button></div>`);
+  };
+  const pass = async list => {                // chạy một lượt các nhóm câu, tối đa AI_CONC nhóm song song
+    let next = 0;
+    await Promise.all(Array.from({ length: Math.min(AI_CONC, list.length) }, async () => {
+      while (next < list.length && !run.cancel) {
+        const chunk = list[next++];
+        cur = `${chunk[0].c} › ${chunk[0].ls || 'Cả chương'}`; draw();
+        try {
+          const got = await aiDoTask(chunk, t => { cur = `${chunk[0].c} › ${chunk[0].ls || 'Cả chương'} ${t || ''}`; draw(); });
+          okTasks++;
+          chunk.forEach((u, i) => { if (got[i] && !results.has(u)) { results.set(u, got[i]); done++; } });
+        } catch (e) { errs++; lastErr = e.message; }
+        draw();
+        if (errs >= 3 && !okTasks) { run.cancel = true; run.fatal = lastErr; }   // lỗi liên tục từ đầu (sai key, hết hạn mức...): dừng sớm
+      }
+    }));
+  };
+  try {
+    draw();
+    await pass(tasks);
+    if (!run.cancel) {                         // lượt bù: soạn lại các câu AI trả về lỗi / thiếu
+      const miss = units.filter(u => !results.has(u));
+      if (miss.length) await pass(aiTasks(miss));
+    }
+  } catch (e) { run.fatal = e.message; }
+  aiRun = null; aiClose(); recalc();
+  if (run.fatal) return setMsg('error', 'AI không soạn được đề: ' + esc(run.fatal));
+  if (run.cancel) return setMsg('info', 'Đã hủy tạo đề bằng AI.');
+  const order = units.filter(u => results.has(u));
+  if (!order.length) return setMsg('error', 'AI chưa soạn được câu nào' + (lastErr ? ': ' + esc(lastErr) : '') + '. Hãy thử lại sau ít phút.');
+  exam = order.map(u => results.get(u));
+  const lack = units.filter(u => !results.has(u)), lackTxt = new Map();
+  lack.forEach(u => { const k = `${u.c} › ${lessonLabel(u.ls)} › ${QTYPES.find(t => t.k === u.t).s} › ${DIFFS.find(d => d.k === u.k).a}`; lackTxt.set(k, (lackTxt.get(k) || 0) + 1); });
+  $('eCode').value = ''; codeAuto = false; versions = null; savedId = null; examPublic = true;
+  $('eTitle').value = `ĐỀ KIỂM TRA ${subject.toUpperCase()} ${grade}`;
+  $('eMin').value = Math.max(1, Math.round(exam.length * (mx.perQ > 0 ? mx.perQ : MIN_PER_QUESTION)));
+  $('eNote').innerHTML = `<div class="rounded-lg px-3 py-2 bg-violet-50 text-violet-800">✨ <b>Đề do AI soạn (${exam.length}/${units.length} câu).</b> Hãy đọc kỹ từng câu, đáp án và lời giải: bấm <b>✏ Sửa</b> để chỉnh, <b>🤖 Soạn lại</b> để AI viết câu khác, ✕ để bỏ. Khi bấm <b>Lưu đề / Xuất Word / In đề</b>, các câu AI tự được nạp vào ${isAdmin ? 'ngân hàng chung' : 'ngân hàng câu hỏi của bạn'}.</div>`
+    + (lack.length ? `<div class="rounded-lg px-3 py-2 bg-orange-50 text-orange-700 mt-2">AI chưa soạn được ${lack.length} câu: ${[...lackTxt].map(([k, n]) => esc(k) + ' (' + n + ' câu)').join('; ')}. Quay lại ma trận và bấm ✨ để soạn bổ sung.</div>` : '');
+  show('Editor'); renderPaper();
+}
+
+// ----- Sửa tay / soạn lại 1 câu AI trong màn biên tập -----
+function aiEditQ(i) {
+  const q = exam[i]; if (!q) return;
+  const t = qtypeOf(q), o = q.options || {}, ta = (id, lb, val, rows = 2) => `<label class="block text-sm font-medium mt-2">${lb}<textarea id="${id}" rows="${rows}" class="w-full border rounded p-2 mt-1 text-sm font-normal">${esc(val ?? '')}</textarea></label>`;
+  let body = ta('qeContent', 'Nội dung câu hỏi', q.content, 4);
+  if (t === 'multiple_choice') body += LETTERS.map(L => ta('qeO' + L, 'Phương án ' + L, o[L], 1)).join('') +
+    `<label class="block text-sm font-medium mt-2">Đáp án đúng <select id="qeAns" class="border rounded p-1.5 ml-1">${LETTERS.map(L => `<option${q.correct_answer === L ? ' selected' : ''}>${L}</option>`).join('')}</select></label>`;
+  else if (t === 'true_false') { const v = parseTF(q.correct_answer) || [true, true, true, true];
+    body += LETTERS.map((L, j) => `<div class="flex items-end gap-2">${`<div class="flex-1">${ta('qeO' + L, 'Phát biểu ' + 'abcd'[j] + ')', o[L], 1)}</div>`}<select id="qeT${j}" class="border rounded p-1.5 mb-0.5"><option value="Đ"${v[j] ? ' selected' : ''}>Đúng</option><option value="S"${v[j] ? '' : ' selected'}>Sai</option></select></div>`).join(''); }
+  else if (t === 'short_answer') body += `<label class="block text-sm font-medium mt-2">Đáp số <input id="qeAns" value="${esc(q.correct_answer ?? '')}" class="w-full border rounded p-2 mt-1 text-sm font-normal"></label>`;
+  body += ta('qeExp', t === 'essay' ? 'Hướng dẫn chấm' : 'Lời giải', q.explanation, 4);
+  body += `<label class="block text-sm font-medium mt-2">Mức độ <select id="qeLv" class="border rounded p-1.5 ml-1">${DIFFS.map(d => `<option value="${d.k}"${q.difficulty === d.k ? ' selected' : ''}>${d.t}</option>`).join('')}</select></label>`;
+  $('qModalBody').innerHTML = `<h3 class="text-lg font-bold">✏ Sửa câu ${i + 1}</h3><p class="text-xs text-slate-500">Công thức viết trong dấu $...$ (VD $x^2$, $\\frac{a}{b}$).</p>${body}
+    <div class="flex justify-end gap-2 mt-4"><button onclick="$('qModal').classList.add('hidden')" class="px-4 py-2 rounded-lg border text-sm">Hủy</button>
+      <button onclick="aiSaveQ(${i})" class="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold">Lưu thay đổi</button></div>`;
+  $('qModal').classList.remove('hidden');
+}
+function aiSaveQ(i) {
+  const q = exam[i]; if (!q) return; const t = qtypeOf(q), v = id => ($(id)?.value ?? '').trim();
+  const n = { ...q, content: v('qeContent'), explanation: v('qeExp'), difficulty: v('qeLv') || q.difficulty };
+  if (!n.content) return toast('Nội dung câu hỏi không được để trống.');
+  if (t === 'multiple_choice') { n.options = Object.fromEntries(LETTERS.map(L => [L, v('qeO' + L)])); n.correct_answer = v('qeAns'); if (LETTERS.some(L => !n.options[L])) return toast('Cần đủ 4 phương án.'); }
+  else if (t === 'true_false') { n.options = Object.fromEntries(LETTERS.map(L => [L, v('qeO' + L)])); n.correct_answer = LETTERS.map((_, j) => v('qeT' + j)).join(','); if (LETTERS.some(L => !n.options[L])) return toast('Cần đủ 4 phát biểu.'); }
+  else if (t === 'short_answer') { n.correct_answer = v('qeAns'); if (!n.correct_answer) return toast('Đáp số không được để trống.'); }
+  exam[i] = normQ(n); $('qModal').classList.add('hidden'); renderPaper(); toast(`Đã sửa câu ${i + 1}.`);
+}
+let aiRegenBusy = false;
+async function aiRegen(i) {
+  const q = exam[i]; if (!q || aiRegenBusy) return;
+  if (!$('gKey').value.trim()) { $('gKey').focus(); openKeyGuide(); return; }
+  aiRegenBusy = true; toast('🤖 AI đang soạn lại câu ' + (i + 1) + '...');
+  try {
+    const u = { c: q.chapter, ls: q.lesson || '', t: qtypeOf(q), k: q.difficulty };
+    let got = null;
+    for (let a = 0; a < 2 && !got; a++) got = (await aiDoTask([u], () => {}))[0];
+    if (!got) throw new Error('AI trả về câu chưa hợp lệ, hãy bấm thử lại.');
+    exam[i] = got; renderPaper(); toast(`Đã soạn lại câu ${i + 1}.`);
+  } catch (e) { toast('Lỗi: ' + e.message); }
+  aiRegenBusy = false;
+}
+
+// ----- Nạp các câu AI vào ngân hàng (gọi khi Lưu đề / Xuất Word / In đề) -----
+const dupText = v => String(v ?? '').normalize('NFC').toLowerCase().replace(/\$|\\\(|\\\)|\\\[|\\\]/g, '').replace(/[\s\u200b-\u200d\ufeff]+/g, '');
+const dupKey = r => {
+  const o = r.options && typeof r.options === 'object' ? r.options : {};
+  const keys = r.question_type === 'multiple_choice' ? ['A', 'B', 'C', 'D'] : r.question_type === 'true_false' ? ['a', 'b', 'c', 'd'] : [];
+  return [r.question_type || 'multiple_choice', dupText(r.content), ...keys.map(k => dupText(o[k])), dupText(r.image_url)].join('\u241f');
+};
+function toBankRow(q, owner) {
+  const t = qtypeOf(q), o = q.options || {};
+  const row = { grade: q.grade, subject: q.subject, chapter: q.chapter, difficulty: q.difficulty, content: q.content, image_url: null, explanation: q.explanation || null, options: {}, correct_answer: null, owner_id: owner };
+  if (hasTypeCol() || USE_MOCK) row.question_type = t;
+  if (t === 'multiple_choice') { row.options = { A: o.A, B: o.B, C: o.C, D: o.D }; row.correct_answer = q.correct_answer; }
+  else if (t === 'true_false') { row.options = { a: o.A, b: o.B, c: o.C, d: o.D }; const v = parseTF(q.correct_answer); row.correct_answer = v ? v.map(x => x ? 'Đ' : 'S').join(',') : String(q.correct_answer || ''); }
+  else if (t === 'short_answer') row.correct_answer = q.correct_answer;
+  if (q.lesson && (hasLessonCol() || USE_MOCK)) row.lesson = q.lesson;
+  return row;
+}
+async function bankIndex(grade, subject, chapter, owner) {      // dấu vân tay các câu đã có trong kho đích, để không nạp trùng
+  const map = new Map();
+  if (USE_MOCK) { MOCK_QUESTIONS.filter(r => r.grade === grade && r.subject === subject && r.chapter === chapter).forEach(r => map.set(dupKey({ ...r, question_type: qtypeOf(r) }), r.id)); return map; }
+  for (let from = 0; from < 20000; from += 1000) {
+    let qy = db.from('questions').select('id, question_type, content, options, image_url').eq('grade', grade).eq('subject', subject).eq('chapter', chapter).order('id').range(from, from + 999);
+    if (owner === null) qy = qy.is('owner_id', null);
+    const { data, error } = await qy; if (error) throw error;
+    data.forEach(r => map.set(dupKey({ ...r, question_type: qtypeOf(r) }), r.id));
+    if (data.length < 1000) break;
+  }
+  return map;
+}
+function bankDrafts() { if (!banking) banking = bankDraftsRun().finally(() => { banking = null; }); return banking; }
+async function bankDraftsRun() {
+  const res = { added: 0, dup: 0, failed: 0, skipped: false, error: '', common: false };
+  const drafts = exam.filter(q => q._draft);
+  if (!drafts.length) return res;
+  if (!USE_MOCK && !session) { res.skipped = true; return res; }
+  await planReady;
+  const owner = USE_MOCK ? null : (isAdmin ? null : session.user.id); res.common = owner === null;
+  const idMap = new Map(), idx = new Map(), fresh = [], seen = new Map();
+  try {
+    for (const q of drafts) {
+      const row = toBankRow(q, owner), ck = `${q.grade}|${q.subject}|${q.chapter}`;
+      if (!idx.has(ck)) idx.set(ck, await bankIndex(q.grade, q.subject, q.chapter, owner));
+      const k = dupKey(row);
+      if (idx.get(ck).has(k)) { idMap.set(q.id, idx.get(ck).get(k)); res.dup++; }
+      else if (seen.has(k)) idMap.set(q.id, seen.get(k));                  // hai câu y hệt nhau trong cùng đề: dùng chung 1 dòng
+      else { fresh.push({ q, row, k }); seen.set(k, null); }
+    }
+    for (let i = 0; i < fresh.length; i += 50) {
+      const part = fresh.slice(i, i + 50);
+      if (USE_MOCK) { part.forEach(p => { const id = 900000 + MOCK_QUESTIONS.length; MOCK_QUESTIONS.push({ ...p.row, id }); idMap.set(p.q.id, id); seen.set(p.k, id); res.added++; }); continue; }
+      const ins = rows => db.from('questions').insert(rows).select('id');
+      let { data, error } = await ins(part.map(p => p.row));
+      if (error && /lesson/i.test(error.message || '')) ({ data, error } = await ins(part.map(p => { const { lesson, ...r } = p.row; return r; })));
+      if (error || !data || data.length !== part.length) { res.failed += part.length; res.error = error ? error.message : 'Máy chủ không trả về đủ dòng'; continue; }
+      part.forEach((p, j) => { idMap.set(p.q.id, data[j].id); seen.set(p.k, data[j].id); res.added++; });
+    }
+  } catch (e) { res.failed = drafts.length - idMap.size; res.error = e.message; }
+  // gán id thật cho các câu đã vào kho (cả bản trong đề gốc và trong các mã đề)
+  const apply = q => { if (q._draft && idMap.has(q.id) && idMap.get(q.id) != null) { q.id = idMap.get(q.id); q._draft = false; } };
+  exam.forEach(apply); (versions || []).forEach(v => v.questions.forEach(apply));
+  // câu trùng nội dung với câu đã nạp cùng lượt (seen) cũng cần id thật
+  exam.concat((versions || []).flatMap(v => v.questions)).forEach(q => { if (q._draft) { const k = dupKey(toBankRow(q, owner)); if (seen.get(k)) { q.id = seen.get(k); q._draft = false; } } });
+  if (res.added) bankChanged = true;
+  renderPaper();
+  return res;
+}
+function bankMsg(r) {
+  if (r.skipped) return 'Câu AI chưa được nạp vào ngân hàng vì bạn chưa đăng nhập.';
+  const where = r.common ? 'ngân hàng chung' : 'ngân hàng của bạn';
+  const parts = [r.added ? `đã nạp ${r.added} câu mới vào ${where}` : '', r.dup ? `${r.dup} câu đã có sẵn trong kho (không nạp trùng)` : ''].filter(Boolean);
+  return (parts.length ? 'Câu AI: ' + parts.join('; ') + '.' : '') + (r.failed ? ` ⚠ ${r.failed} câu chưa nạp được: ${r.error}` : '');
+}
+async function printExam() {
+  const r = await bankDrafts(); if (r.added || r.dup || r.failed) toast(bankMsg(r));
+  window.print();
 }
 
 // ---------- Khởi tạo ----------
