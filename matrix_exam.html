@@ -93,7 +93,7 @@
   <!-- ============ 1. BẢNG MA TRẬN ============ -->
   <section id="sMatrix" class="bg-white p-5 rounded-xl shadow space-y-4">
     <div class="flex flex-wrap items-center justify-end gap-2 text-sm">
-      <a href="?mock=1" class="mr-auto text-xs text-violet-700 underline" title="Mở với bộ câu hỏi mẫu Vật lý 11, không dùng Supabase">🧪 Dữ liệu mẫu</a>
+      <span class="mr-auto"></span>
       <span id="authBox" class="flex flex-wrap items-center gap-2"></span>
       <button onclick="openSaved()" class="px-3 py-1.5 rounded bg-slate-200 font-semibold">📂 Đề đã lưu</button>
     </div>
@@ -371,7 +371,8 @@ async function loadSubjects() {
 }
 
 // ================== DỮ LIỆU MẪU (mở trang với ?mock=1 — không đọc/ghi Supabase) ==================
-const USE_MOCK = new URLSearchParams(location.search).has('mock');
+const LOCAL_DEV = location.protocol === 'file:' || /^(localhost|127\.|\[::1\])/.test(location.hostname);   // dữ liệu mẫu chỉ mở được khi chạy thử trên máy
+const USE_MOCK = LOCAL_DEV && new URLSearchParams(location.search).has('mock');
 // Số câu mẫu theo [NB, TH, VD, VDC]. Chương 3, 4 có đủ 4 dạng × 4 mức độ; Chương 1, 2 chỉ có trắc nghiệm (để thử cảnh báo "chưa có câu").
 const MOCK_PLAN = {
   'Chương 1. Dao động':                  { multiple_choice: [8, 6, 4, 2],  true_false: [0, 0, 0, 0], short_answer: [0, 0, 0, 0], essay: [0, 0, 0, 0] },
@@ -2471,6 +2472,78 @@ try { $('eSchool').value = localStorage.getItem('exam_school') || ''; $('eDept')
 try { $('gKey').value = $('gKeyM').value = localStorage.getItem('gemini_key') || ''; { const m = localStorage.getItem('gemini_model2'); $('gModel').value = (!m || /^gemini-[12]\./.test(m)) ? GEMINI_DEFAULT_MODEL : m; } } catch {}   // model cũ (1.x / 2.x) tự chuyển sang Gemini 3.x
 updateKeyUi();
 loadSubjects();
+/* ===== BẮT BUỘC ĐĂNG NHẬP: phủ kín trang cho tới khi có phiên đăng nhập =====
+   Yêu cầu: trang đã có  const db = supabase.createClient(...). Quyền thật vẫn do RLS / require_login_setup.sql quyết định ở máy chủ;
+   lớp này chỉ để người dùng thấy rõ "cần đăng nhập" và đăng nhập ngay tại trang (xong tự tải lại trang). */
+(function loginGate(CFG) {
+  if (CFG.skip) return;                                         // chỉ dùng khi chạy thử cục bộ với dữ liệu mẫu
+  const KIND = CFG.kind;                                        // 'student' | 'teacher'
+  const HOME = KIND === 'student' ? 'student_home.html' : 'teacher_dashboard.html';
+  let ov = null, uid = null, checking = 0, viaForm = false;
+  const E = (t, c, a) => { const e = document.createElement(t); if (c) e.style.cssText = c; Object.assign(e, a || {}); return e; };
+  function cover() {
+    if (ov) return ov;
+    ov = E('div', 'position:fixed;inset:0;z-index:2147483100;background:linear-gradient(135deg,#1e1b4b,#4338ca);display:flex;align-items:center;justify-content:center;padding:16px;font-family:system-ui,Arial,sans-serif;overflow:auto');
+    ov.id = 'loginGate'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true');
+    document.body.appendChild(ov); document.body.style.overflow = 'hidden';
+    const lock = () => { if (ov) [...document.body.children].forEach(el => { if (el !== ov) el.inert = true; }); };
+    lock(); document.addEventListener('DOMContentLoaded', lock);                      // phần tử nằm sau thẻ script cũng bị khóa
+    return ov;
+  }
+  function release() {
+    if (!ov) return; ov.remove(); ov = null; document.body.style.overflow = '';
+    [...document.body.children].forEach(el => { el.inert = false; });
+  }
+  const card = html => { const o = cover(); o.innerHTML = '<div style="background:#fff;max-width:400px;width:100%;border-radius:20px;padding:26px;box-shadow:0 20px 60px rgba(0,0,0,.4)">' + html + '</div>'; return o; };
+  const IN = 'width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:10px;padding:10px;margin-top:4px;font-size:15px';
+  function showLoading() { card('<p style="margin:0;text-align:center;color:#64748b;font-size:14px">Đang kiểm tra đăng nhập…</p>'); }
+  function showForm(msg) {
+    const o = card(`<div style="text-align:center;font-size:40px">🔒</div>
+      <h2 style="margin:6px 0 4px;text-align:center;font-size:20px;font-weight:800;color:#1e1b4b">Vui lòng đăng nhập</h2>
+      <p style="margin:0 0 14px;text-align:center;color:#64748b;font-size:13px;line-height:1.5">${KIND === 'student' ? 'Mọi chức năng đều cần tài khoản học sinh (do giáo viên cấp hoặc tự đăng ký).' : 'Mọi chức năng đều cần tài khoản giáo viên.'}</p>
+      <form id="lgF"><label style="display:block;font-size:13px;font-weight:600;color:#334155">Email <input id="lgE" type="email" autocomplete="username" style="${IN}"></label>
+      <label style="display:block;font-size:13px;font-weight:600;color:#334155;margin-top:10px">Mật khẩu <input id="lgP" type="password" autocomplete="current-password" style="${IN}"></label>
+      <div id="lgM" style="display:${msg ? 'block' : 'none'};margin-top:10px;font-size:13px;color:#b91c1c;background:#fef2f2;border-radius:8px;padding:8px 10px"></div>
+      <button id="lgB" style="width:100%;margin-top:14px;background:#4f46e5;color:#fff;border:0;border-radius:10px;padding:11px;font-weight:700;font-size:15px;cursor:pointer">Đăng nhập</button></form>
+      <p style="margin:14px 0 0;text-align:center;font-size:13px;color:#64748b">Chưa có tài khoản? <a href="${HOME}" style="color:#4f46e5;font-weight:600">${KIND === 'student' ? 'Đăng ký ở Trang chủ học sinh' : 'Đăng ký ở Trang giáo viên'}</a></p>`);
+    if (msg) o.querySelector('#lgM').textContent = msg;
+    o.querySelector('#lgF').onsubmit = async ev => {
+      ev.preventDefault();
+      const b = o.querySelector('#lgB'), m = o.querySelector('#lgM'), email = o.querySelector('#lgE').value.trim(), pw = o.querySelector('#lgP').value;
+      if (!email || !pw) { m.style.display = 'block'; m.textContent = 'Nhập email và mật khẩu.'; return; }
+      b.disabled = true; b.textContent = 'Đang đăng nhập…'; viaForm = true;
+      const { error } = await db.auth.signInWithPassword({ email, password: pw });
+      if (error) { viaForm = false; b.disabled = false; b.textContent = 'Đăng nhập'; m.style.display = 'block'; m.textContent = /invalid|credentials/i.test(error.message) ? 'Sai email hoặc mật khẩu.' : error.message; }
+      /* đăng nhập được → onAuthStateChange xử lý */
+    };
+    setTimeout(() => o.querySelector('#lgE')?.focus(), 50);
+  }
+  function showStudentBlock(email) {
+    const o = card(`<div style="text-align:center;font-size:40px">🔒</div>
+      <h2 style="margin:6px 0;text-align:center;font-size:20px;font-weight:800;color:#1e1b4b">Khu vực dành cho giáo viên</h2>
+      <p style="margin:0 0 14px;text-align:center;color:#475569;font-size:14px;line-height:1.5">Tài khoản <b></b> là tài khoản học sinh nên không dùng được trang này.</p>
+      <a href="student_home.html" style="display:block;text-align:center;background:#4f46e5;color:#fff;font-weight:700;padding:11px;border-radius:10px;text-decoration:none;margin-bottom:8px">Về trang học sinh</a>
+      <button id="lgO" style="width:100%;background:#fff;color:#4f46e5;border:2px solid #c7d2fe;font-weight:700;padding:10px;border-radius:10px;cursor:pointer">Đăng xuất</button>`);
+    o.querySelector('b').textContent = email || ''; o.querySelector('#lgO').onclick = () => db.auth.signOut();
+  }
+  async function check(session) {
+    const u = session?.user || null, my = ++checking;
+    if (!u) { uid = null; return showForm(); }
+    if (uid === u.id && !ov) return;
+    if (CFG.blockStudent) {
+      showLoading();
+      const r = await db.rpc('is_student');
+      if (my !== checking) return;
+      if (!r.error && r.data === true) { uid = u.id; return showStudentBlock(u.email); }
+    }
+    const reload = viaForm; viaForm = false;                    // vừa đăng nhập từ form → tải lại để trang nạp dữ liệu bằng phiên mới
+    uid = u.id; release();
+    if (reload && CFG.reloadOnLogin) location.reload();
+  }
+  showLoading();
+  db.auth.getSession().then(({ data }) => check(data.session)).catch(() => showForm());
+  db.auth.onAuthStateChange((ev, s) => { if (ev === 'TOKEN_REFRESHED' || ev === 'USER_UPDATED') return; setTimeout(() => check(s), 0); });
+})({ kind: 'teacher', reloadOnLogin: true, blockStudent: false, skip: USE_MOCK });
 /* ===== Khu vực GIÁO VIÊN: chặn tài khoản HỌC SINH =====
    Giao diện chỉ là lớp chắn cho dễ hiểu; quyền thật vẫn do chính sách RLS (student_setup.sql) quyết định ở máy chủ. */
 (function guardStudent() {

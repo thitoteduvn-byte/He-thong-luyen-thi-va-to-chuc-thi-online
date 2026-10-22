@@ -40,7 +40,7 @@ Chạy 1 lần trong Supabase → SQL Editor, THEO THỨ TỰ:  exam_room_setup.
         <div id="authMsg" class="hidden text-sm rounded-lg px-3 py-2" role="alert"></div>
         <button id="authBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg py-2.5 font-semibold disabled:opacity-50">Đăng nhập</button>
       </form>
-      <p class="text-xs text-slate-500 mt-4 text-center">Không muốn tạo tài khoản? Bạn vẫn <a class="text-indigo-600 underline examLink" href="exam.html">luyện thi</a> được, chỉ là kết quả sẽ không được lưu lại.</p>
+      <p class="text-xs text-slate-500 mt-4 text-center">Mọi chức năng đều cần đăng nhập. Chưa có tài khoản? Hãy nhận tài khoản từ giáo viên hoặc bấm “Đăng ký”.</p>
     </div>
   </div>
 </div>
@@ -499,6 +499,8 @@ async function route(user, force) {
   S.profile = p || { full_name: user.email, student_code: '', class_name: '' };
   renderHeader(); show('viewApp');
   CoinsUI.init(db, $('coinSlot')); CoinsUI.refresh();                    // ô xu + quà đăng nhập hằng ngày
+  const nx = new URLSearchParams(location.search).get('next');            // quay lại trang đang mở dở (VD link phòng thi) sau khi đăng nhập
+  if (nx && /^[A-Za-z0-9_\-]+\.html(\?[^#\s]*)?$/.test(nx)) { location.replace(nx); return; }
   const hwc = new URLSearchParams(location.search).get('hw');           // link giao bài: đăng nhập xong chuyển thẳng vào bài
   if (hwc && /^[A-Za-z0-9]{4,12}$/.test(hwc)) { location.replace(examUrl('hw=' + encodeURIComponent(hwc))); return; }
   const t = new URLSearchParams(location.search).get('tab');
