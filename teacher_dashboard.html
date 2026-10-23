@@ -15,6 +15,38 @@
   .navi.on { background: #eef2ff; color: #4338ca; font-weight: 600; }
   .navi.on .dot { background: #4f46e5; }
   @media (prefers-reduced-motion: reduce) { .card-link, .skeleton { transition: none; animation: none; } }
+
+  /* ===== Sơ đồ khối các trang con (thay 4 ô thống kê) ===== */
+  .dg-root { max-width: 30rem; margin: 0 auto; border-radius: 1.1rem; padding: .95rem 1.4rem; text-align: center; color: #fff;
+    background: linear-gradient(135deg, #4338ca, #7c3aed); box-shadow: 0 14px 30px -14px rgba(79,70,229,.7); }
+  .dg-stem { width: 2px; height: 24px; background: #a5b4fc; margin: 0 auto; }
+  .dg-cols { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .dg-col { position: relative; padding: 30px 8px 0; --c: #4f46e5; --t: #eef2ff; }
+  .dg-col::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: #a5b4fc; }            /* thanh ngang nối các nhánh */
+  .dg-col:first-child::before { left: 50%; } .dg-col:last-child::before { right: 50%; }
+  .dg-col::after { content: ''; position: absolute; top: 0; left: calc(50% - 1px); width: 2px; height: 22px; background: var(--c); }     /* nhánh thả xuống */
+  .dg-arrow { position: absolute; top: 19px; left: calc(50% - 7px); border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 9px solid var(--c); }
+  .dg-head { display: flex; align-items: center; gap: .55rem; border-radius: .9rem; padding: .6rem .8rem; background: var(--c); color: #fff; font-weight: 800; letter-spacing: .02em; font-size: .85rem; box-shadow: 0 8px 18px -10px var(--c); }
+  .dg-num { display: inline-flex; align-items: center; justify-content: center; width: 1.45rem; height: 1.45rem; border-radius: 9999px; background: rgba(255,255,255,.25); font-size: .8rem; flex: none; }
+  .dg-sub { margin: .4rem .2rem .55rem; font-size: .72rem; color: #64748b; text-align: center; }
+  .dg-list { display: flex; flex-direction: column; gap: .5rem; padding: 0; margin: 0; list-style: none; position: relative; }
+  .dg-list::before { content: ''; position: absolute; left: calc(50% - 1px); top: -.55rem; bottom: .6rem; width: 2px; background: var(--t); z-index: 0; }   /* trục dọc nối các trang con */
+  .dg-node { position: relative; z-index: 1; display: flex; align-items: center; gap: .6rem; background: #fff; border: 1px solid #e2e8f0; border-radius: .85rem; padding: .6rem .7rem;
+    transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; text-decoration: none; color: inherit; }
+  .dg-node:hover, .dg-node:focus-visible { transform: translateY(-2px); border-color: var(--c); box-shadow: 0 10px 22px -12px var(--c); outline: none; }
+  .dg-node:focus-visible { outline: 2px solid var(--c); outline-offset: 2px; }
+  .dg-ico { flex: none; width: 2.2rem; height: 2.2rem; border-radius: .65rem; background: var(--t); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; }
+  .dg-t { font-weight: 700; font-size: .85rem; line-height: 1.2; color: #0f172a; }
+  .dg-d { font-size: .7rem; color: #64748b; margin-top: .15rem; line-height: 1.3; }
+  .dg-go { margin-left: auto; color: var(--c); font-weight: 800; opacity: .55; flex: none; }
+  .dg-node:hover .dg-go { opacity: 1; }
+  .dg-g1 { --c: #4f46e5; --t: #eef2ff; } .dg-g2 { --c: #059669; --t: #ecfdf5; } .dg-g3 { --c: #7c3aed; --t: #f5f3ff; } .dg-g4 { --c: #d97706; --t: #fffbeb; }
+  @media (max-width: 1023px) {
+    .dg-cols { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 10px; }
+    .dg-col { padding: 0; } .dg-col::before, .dg-col::after, .dg-arrow { display: none; }
+  }
+  @media (max-width: 639px) { .dg-cols { grid-template-columns: minmax(0, 1fr); } }
+  @media (prefers-reduced-motion: reduce) { .dg-node { transition: none; } }
 </style>
 </head>
 <body class="bg-slate-100 text-slate-800">
@@ -89,30 +121,15 @@
         <button onclick="loadAll()" class="ml-auto text-sm border rounded-lg bg-white px-3 py-1.5 hover:bg-slate-50">↻ Làm mới số liệu</button>
       </div>
 
-      <!-- 4 thẻ thống kê -->
-      <section class="grid gap-4 grid-cols-2 xl:grid-cols-4" aria-label="Thống kê nhanh">
-        <div class="bg-white rounded-2xl border p-4">
-          <div class="flex items-center justify-between"><span class="text-sm text-slate-500">Tổng câu hỏi trong kho</span><span class="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center">📂</span></div>
-          <div id="stQ" class="text-3xl font-bold mt-2"><span class="skeleton"></span></div><div id="stQs" class="text-xs text-slate-400 mt-1">&nbsp;</div>
+      <!-- Sơ đồ khối các trang con (theo tiến trình dạy học) -->
+      <section class="bg-white rounded-2xl border p-4 sm:p-6" aria-labelledby="flowTitle">
+        <div class="dg-root">
+          <div class="text-xs font-semibold tracking-widest text-indigo-200">KHÔNG GIAN GIÁO VIÊN</div>
+          <h2 id="flowTitle" class="text-lg sm:text-xl font-extrabold mt-0.5">🎓 BÀN LÀM VIỆC GIÁO VIÊN</h2>
+          <p class="text-xs text-indigo-100 mt-1">Bấm vào một khối để mở trang con · đi từ soạn đề đến quản lý lớp</p>
         </div>
-        <div class="bg-white rounded-2xl border p-4">
-          <div class="flex items-center justify-between"><span class="text-sm text-slate-500">Đề thi đã xuất</span><span class="w-9 h-9 rounded-xl bg-violet-50 flex items-center justify-center">📊</span></div>
-          <div id="stE" class="text-3xl font-bold mt-2"><span class="skeleton"></span></div><div id="stEs" class="text-xs text-slate-400 mt-1">&nbsp;</div>
-        </div>
-        <div class="bg-white rounded-2xl border p-4">
-          <div class="flex items-center justify-between"><span class="text-sm text-slate-500">Phòng thi đang mở</span><span class="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center">🏫</span></div>
-          <div id="stR" class="text-3xl font-bold mt-2"><span class="skeleton"></span></div><div id="stRs" class="text-xs text-slate-400 mt-1">&nbsp;</div>
-        </div>
-        <div class="bg-white rounded-2xl border p-4">
-          <div class="flex items-center justify-between"><span class="text-sm text-slate-500">Học sinh tham gia</span><span class="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center">🧑‍🎓</span></div>
-          <div id="stS" class="text-3xl font-bold mt-2"><span class="skeleton"></span></div><div id="stSs" class="text-xs text-slate-400 mt-1">&nbsp;</div>
-        </div>
-      </section>
-
-      <!-- Thẻ điều hướng -->
-      <section aria-label="Tính năng">
-        <h2 class="font-semibold mb-3">Tính năng</h2>
-        <div id="featureGrid" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5"></div>
+        <div class="dg-stem" aria-hidden="true"></div>
+        <div id="flowChart" class="dg-cols"></div>
       </section>
 
       <!-- Bài tập đã giao -->
@@ -193,7 +210,7 @@ const SUPABASE_URL = 'https://xzznmfgihzjeqsmiuypi.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_dUldhQYF1ETrSCZ4jiy3Og_ygfkm9XW';
 // Địa chỉ các trang tính năng. Mặc định là tên file nằm cùng thư mục với trang này.
 // Khi đưa lên web, có thể đổi bằng nút "Cài đặt tài khoản & liên kết" (lưu trên trình duyệt) hoặc sửa trực tiếp ở đây.
-const DEFAULT_LINKS = { bank: 'admin.html', matrix: 'matrix_exam.html', room: 'exam_room.html', community: 'community.html', exam: 'exam.html', student: 'student_home.html', gradebook: 'gradebook.html', essay: 'essay_grading.html' };
+const DEFAULT_LINKS = { bank: 'admin.html', matrix: 'matrix_exam.html', room: 'exam_room.html', community: 'community.html', exam: 'exam.html', student: 'student_home.html', gradebook: 'gradebook.html', essay: 'essay_grading.html', arena: 'arena.html' };
 const DEFAULT_PROFILE = { name: '', role: 'Giáo viên Bộ môn Vật lí', avatar: '' };
 // ===============================================
 
@@ -229,6 +246,38 @@ const FEATURES = [
   { key: 'essay', icon: '✍️', title: 'Chấm tự luận bằng AI', desc: 'AI chấm bài tự luận của bài giao hoặc ca thi theo hướng dẫn giải, bạn xem lại từng bài, sửa điểm rồi duyệt để cộng vào điểm của học sinh.', tone: 'violet', kw: 'chấm tự luận ai gemini nhận xét duyệt điểm bài giao ca thi' },
   { key: 'community', icon: '🌐', title: 'Kho học liệu cộng đồng', desc: 'Khám phá, chia sẻ và sao chép (clone) đề, bộ câu hỏi về kho của bạn.', tone: 'amber', kw: 'cộng đồng chia sẻ marketplace clone sao chép' }
 ];
+// Sơ đồ khối: mỗi cụm là một bước của tiến trình dạy học; mỗi khối con mở một trang (key = địa chỉ trong "Cài đặt liên kết"), hoặc chạy một thao tác (go) / cuộn tới mục ngay trên trang này
+const DIAGRAM = [
+  { g: 1, title: 'SOẠN ĐỀ', sub: 'Chuẩn bị câu hỏi và đề thi', items: [
+    { key: 'bank', icon: '📂', t: 'Ngân hàng câu hỏi', d: 'Nhập Excel/JSON, AI nhập liệu, sửa và xóa câu hỏi' },
+    { key: 'matrix', icon: '📊', t: 'Ma trận đề kiểm tra', d: 'Tạo đề theo ma trận · ✨ AI soạn đề · trộn mã đề · xuất Word' },
+    { key: 'community', icon: '🌐', t: 'Kho học liệu cộng đồng', d: 'Khám phá, chia sẻ và sao chép đề, bộ câu hỏi' }] },
+  { g: 2, title: 'TỔ CHỨC THI', sub: 'Đưa đề đến học sinh', items: [
+    { key: 'room', icon: '🏫', t: 'Phòng thi trực tuyến', d: 'Tạo ca thi, mã vào ca, giám sát chống gian lận' },
+    { key: 'assign', icon: '📚', t: 'Giao bài tập', d: 'Mã giao bài cho học sinh làm ở nhà', go: 'openAssign()' },
+    { key: 'arena', icon: '⚔️', t: 'Đấu trường đề thi thật', d: 'Đề thi các năm cho học sinh luyện, có bảng vàng' }] },
+  { g: 3, title: 'CHẤM & ĐIỂM', sub: 'Chấm bài và theo dõi kết quả', items: [
+    { key: 'essay', icon: '✍️', t: 'Chấm tự luận bằng AI', d: 'AI chấm theo hướng dẫn giải, bạn xem lại rồi duyệt' },
+    { key: 'gradebook', icon: '📒', t: 'Sổ điểm lớp', d: 'Nhập, tính ĐTB, lấy điểm từ bài giao / ca thi, xuất Excel' },
+    { key: 'report', icon: '📈', t: 'Báo cáo bài đã giao', d: 'Ai đã nộp, điểm trung bình, chi tiết từng em', scroll: 'asgSection' }] },
+  { g: 4, title: 'LỚP HỌC', sub: 'Quản lý học sinh', items: [
+    { key: 'students', icon: '🧑‍🎓', t: 'Tài khoản học sinh', d: 'Tạo cả lớp bằng danh sách, xem / đặt lại mật khẩu', scroll: 'stuSection' },
+    { key: 'student', icon: '🏠', t: 'Trang chủ học sinh', d: 'Xem giao diện học sinh nhìn thấy' },
+    { key: 'settings', icon: '⚙️', t: 'Cài đặt & liên kết', d: 'Tên hiển thị, địa chỉ các trang khi đưa lên web', go: 'openSettings()' }] }
+];
+function renderDiagram() {
+  $('flowChart').innerHTML = DIAGRAM.map(c => `
+    <section class="dg-col dg-g${c.g}" aria-label="${esc(c.title)}">
+      <span class="dg-arrow" aria-hidden="true"></span>
+      <div class="dg-head"><span class="dg-num">${c.g}</span>${esc(c.title)}</div>
+      <p class="dg-sub">${esc(c.sub)}</p>
+      <ul class="dg-list">${c.items.map(i => {
+        const inner = `<span class="dg-ico" aria-hidden="true">${i.icon}</span><span class="min-w-0"><div class="dg-t">${esc(i.t)}</div><div class="dg-d">${esc(i.d)}</div></span><span class="dg-go" aria-hidden="true">›</span>`;
+        return '<li>' + (i.go ? `<a href="#" class="dg-node" onclick="${i.go}; return false;">${inner}</a>`
+          : i.scroll ? `<a href="#${i.scroll}" class="dg-node" onclick="document.getElementById('${i.scroll}').scrollIntoView({ behavior: 'smooth', block: 'start' }); return false;">${inner}</a>`
+          : `<a data-link="${i.key}" class="dg-node">${inner}</a>`) + '</li>'; }).join('')}</ul>
+    </section>`).join('');
+}
 const TONE = { indigo: 'bg-indigo-50 text-indigo-700', violet: 'bg-violet-50 text-violet-700', emerald: 'bg-emerald-50 text-emerald-700', amber: 'bg-amber-50 text-amber-700', rose: 'bg-rose-50 text-rose-700' };
 
 function renderChrome() {
@@ -243,12 +292,7 @@ function renderChrome() {
     FEATURES.map(f => f.action
       ? `<a href="#asgSection" onclick="${f.action}; toggleSide(false); return false;" class="navi flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-100"><span class="dot w-1.5 h-1.5 rounded-full bg-slate-300"></span>${f.icon} ${esc(f.title)}</a>`
       : `<a data-link="${f.key}" class="navi flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-slate-100"><span class="dot w-1.5 h-1.5 rounded-full bg-slate-300"></span>${f.icon} ${esc(f.title)}</a>`).join('');
-  $('featureGrid').innerHTML = FEATURES.map(f => `
-    <a ${f.action ? `href="#asgSection" onclick="${f.action}; return false;"` : `data-link="${f.key}"`} class="card-link block bg-white rounded-2xl border p-5">
-      <div class="w-11 h-11 rounded-xl ${TONE[f.tone]} flex items-center justify-center text-xl">${f.icon}</div>
-      <div class="font-semibold mt-3">${esc(f.title)}</div>
-      <p class="text-sm text-slate-500 mt-1">${esc(f.desc)}</p>
-      <div class="text-sm text-indigo-600 font-medium mt-3">${f.action ? 'Giao bài mới →' : 'Mở trang →'}</div></a>`).join('');
+  renderDiagram();
   applyLinks();
 }
 function toggleSide(on) { $('side').classList.toggle('-translate-x-full', !on); $('scrim').classList.toggle('hidden', !on); }
@@ -294,35 +338,18 @@ function setUser(u) {
 const OWN = () => `owner_id.is.null,owner_id.eq.${user.id}`;      // kho của tôi = câu của tôi + ngân hàng chung (dữ liệu cũ owner_id = null)
 const cnt = r => (r.status === 'fulfilled' && !r.value.error) ? (r.value.count ?? 0) : null;
 const val = r => (r.status === 'fulfilled' && !r.value.error) ? r.value.data : null;
-function setStat(id, sub, n, subText, err) {
-  $(id).textContent = n == null ? '–' : nf(n);
-  $(sub).textContent = subText || '';
-  if (n == null && err) $(sub).textContent = 'Chưa đọc được dữ liệu';
-}
 async function loadAll() {
   if (!user) return;
   const nowIso = new Date().toISOString(), head = { count: 'exact', head: true };
   const TYPES = [['multiple_choice', 'Trắc nghiệm'], ['true_false', 'Đúng/Sai'], ['short_answer', 'Trả lời ngắn'], ['essay', 'Tự luận']];
-  const [qAll, qMine, exams, rooms, results, doing, shiftRows, recent, ...byType] = await Promise.allSettled([
-    db.from('questions').select('id', head).or(OWN()),
-    db.from('questions').select('id', head).eq('owner_id', user.id),
-    db.from('exams').select('id', head).or(`owner_id.eq.${user.id},owner_id.is.null`),
-    db.from('exam_rooms').select('id', head),
-    db.from('exam_results').select('id', head),
-    db.from('exam_results').select('id', head).is('submitted_at', null),
+  const [shiftRows, recent, ...byType] = await Promise.allSettled([
     db.from('exam_shifts').select('id, room_id, shift_name, shift_code, start_time, end_time, is_active, exam_rooms(title, room_code)').gte('end_time', nowIso).order('start_time').limit(30),
     db.from('exams').select('id, title, grade, subject, question_count, version_count, created_at, is_public, owner_id').or(`owner_id.eq.${user.id},owner_id.is.null`).order('created_at', { ascending: false }).limit(6),   // "Đề của tôi" (kèm đề cũ chưa có chủ)
     ...TYPES.map(([t]) => db.from('questions').select('id', head).or(OWN()).eq('question_type', t))
   ]);
 
-  setStat('stQ', 'stQs', cnt(qAll), '', 1); if (cnt(qAll) != null) $('stQs').textContent = cnt(qMine) != null ? `${nf(cnt(qMine))} câu do bạn tạo / sao chép` : '';
-  setStat('stE', 'stEs', cnt(exams), 'đề đã lưu của bạn', 1);
-
   shifts = (val(shiftRows) || []).filter(s => s.is_active);
   const now = Date.now(), live = shifts.filter(s => +new Date(s.start_time) <= now && +new Date(s.end_time) >= now), next = shifts.filter(s => +new Date(s.start_time) > now);
-  const liveRooms = new Set(live.map(s => s.room_id)).size;
-  setStat('stR', 'stRs', shiftRows.status === 'fulfilled' && !shiftRows.value.error ? liveRooms : null, `${live.length} ca đang diễn ra · ${next.length} ca sắp tới` + (cnt(rooms) != null ? ` · ${cnt(rooms)} phòng` : ''), 1);
-  setStat('stS', 'stSs', cnt(results), cnt(doing) != null ? `${nf(cnt(doing))} lượt đang làm bài / chưa nộp` : '', 1);
 
   let recentRes = recent;
   if (recent.status === 'fulfilled' && /is_public|owner_id/.test(recent.value.error?.message || '')) {   // chưa chạy exam_privacy_setup.sql: tải lại không kèm cột quyền riêng tư
@@ -942,7 +969,7 @@ async function openAttempt(id) {
 }
 
 /* ------------------ Cài đặt ------------------ */
-const LINK_LABELS = { bank: 'Ngân hàng câu hỏi & Nhập liệu', matrix: 'Ma trận đề kiểm tra (trang tạo đề, trộn đề)', room: 'Phòng thi trực tuyến (exam_room)', community: 'Kho học liệu cộng đồng', exam: 'Trang làm bài của học sinh (exam.html) — dùng cho link giao bài', student: 'Trang chủ học sinh (student_home.html) — in trên phiếu đăng nhập', gradebook: 'Sổ điểm lớp (gradebook.html)', essay: 'Chấm tự luận bằng AI (essay_grading)' };
+const LINK_LABELS = { arena: 'Đấu trường đề thi thật (arena.html)', bank: 'Ngân hàng câu hỏi & Nhập liệu', matrix: 'Ma trận đề kiểm tra (trang tạo đề, trộn đề)', room: 'Phòng thi trực tuyến (exam_room)', community: 'Kho học liệu cộng đồng', exam: 'Trang làm bài của học sinh (exam.html) — dùng cho link giao bài', student: 'Trang chủ học sinh (student_home.html) — in trên phiếu đăng nhập', gradebook: 'Sổ điểm lớp (gradebook.html)', essay: 'Chấm tự luận bằng AI (essay_grading)' };
 function openSettings() {
   openModal(`<h3 class="font-bold text-lg">Cài đặt tài khoản & liên kết</h3>
     <p class="text-xs text-slate-500 mb-3">Đăng nhập: ${esc(user.email)}</p>
