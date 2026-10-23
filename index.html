@@ -48,6 +48,7 @@
     <nav class="hidden items-center gap-1 text-sm font-semibold text-indigo-900 md:flex" aria-label="Điều hướng chính">
       <a href="index.html" class="rounded-lg bg-indigo-50 px-3 py-2 text-indigo-700">Trang chủ</a>
       <a data-link="practice" href="#" class="rounded-lg px-3 py-2 hover:bg-indigo-50">Luyện tập tự do</a>
+      <a data-link="arena" href="#" class="rounded-lg px-3 py-2 hover:bg-indigo-50">Đấu trường đề thi</a>
       <a href="#vao-thi" class="rounded-lg px-3 py-2 hover:bg-indigo-50">Phòng thi</a>
       <a data-link="admin" href="#" class="rounded-lg px-3 py-2 hover:bg-indigo-50">Quản trị</a>
     </nav>
@@ -70,6 +71,7 @@
   <nav id="mobileNav" class="hidden border-t border-indigo-100 bg-white px-4 pb-3 pt-2 text-sm font-semibold md:hidden" aria-label="Menu di động">
     <a href="index.html" class="block rounded-lg px-3 py-2.5 text-indigo-700">Trang chủ</a>
     <a data-link="practice" href="#" class="block rounded-lg px-3 py-2.5 hover:bg-indigo-50">Luyện tập tự do</a>
+    <a data-link="arena" href="#" class="block rounded-lg px-3 py-2.5 hover:bg-indigo-50">⚔️ Đấu trường đề thi thật</a>
     <a href="#vao-thi" class="block rounded-lg px-3 py-2.5 hover:bg-indigo-50">Phòng thi</a>
     <a data-link="admin" href="#" class="block rounded-lg px-3 py-2.5 hover:bg-indigo-50">Quản trị</a>
   </nav>
@@ -149,6 +151,7 @@
         <div class="relative mt-4 grid gap-3 sm:grid-cols-2">
           <a data-link="practice" href="#" class="btn flex items-center justify-center gap-2 rounded-xl border border-white/40 bg-white/10 px-4 py-3 text-sm font-bold hover:bg-white/20">📝 Luyện tập tự do</a>
           <a data-link="student" href="#" class="btn flex items-center justify-center gap-2 rounded-xl border border-white/40 bg-white/10 px-4 py-3 text-sm font-bold hover:bg-white/20">📊 Kết quả & lịch sử của tôi</a>
+          <a data-link="arena" href="#" class="btn flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 px-4 py-3 text-sm font-extrabold text-indigo-950 shadow hover:brightness-105 sm:col-span-2">⚔️ Đấu trường đề thi thật</a>
         </div>
       </article>
 
@@ -268,6 +271,7 @@
       <h3 class="font-bold text-indigo-900">Liên kết nhanh</h3>
       <ul class="mt-2 space-y-1">
         <li><a data-link="practice" href="#" class="hover:text-indigo-600">Luyện tập tự do</a></li>
+        <li><a data-link="arena" href="#" class="hover:text-indigo-600">Đấu trường đề thi thật</a></li>
         <li><a href="#vao-thi" class="hover:text-indigo-600">Vào phòng thi</a></li>
         <li><a data-link="student" href="#" class="hover:text-indigo-600">Góc học tập của học sinh</a></li>
         <li><a data-link="admin" href="#" class="hover:text-indigo-600">Trang quản trị</a></li>
@@ -290,7 +294,8 @@ const LINKS = {                                   // đổi thành địa chỉ 
   matrix:   'matrix_exam.html',                   // tạo đề từ ma trận
   teacher:  'teacher_dashboard.html',             // trang chủ giáo viên: thống kê kết quả
   assign:   'teacher_dashboard.html?assign=new',  // giao bài tập (mở sẵn hộp thoại giao bài)
-  student:  'student_home.html'                   // đăng nhập, kết quả & lịch sử học sinh
+  student:  'student_home.html',                  // đăng nhập, kết quả & lịch sử học sinh
+  arena:    'arena.html'                          // Đấu trường đề thi thật
 };
 const CONTACT_EMAIL = 'hotro@example.com';        // <<< thay bằng email hỗ trợ của bạn
 const AI_ENDPOINT = '';                           // (tuỳ chọn) địa chỉ của một API riêng, xem hàm fetchAiStory bên dưới

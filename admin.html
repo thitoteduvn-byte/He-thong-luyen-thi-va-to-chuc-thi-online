@@ -206,8 +206,46 @@ create policy "admin delete questions" on questions for delete to authenticated
         <div id="preview" class="space-y-3"></div>
       </div>
     </details>
-    <button onclick="importBulk()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-semibold">Nạp vào Supabase</button>
+    <div class="flex flex-wrap items-center gap-3">
+      <button onclick="importBulk()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg font-semibold">Nạp vào Supabase</button>
+      <button id="arenaBtn" onclick="toggleArena()" class="hidden bg-amber-500 hover:bg-amber-600 text-white px-5 py-2 rounded-lg font-semibold" title="Nạp một đề thi thật / đề thi mẫu của các năm: câu hỏi vào ngân hàng chung và đề hiện ở trang Đấu trường đề thi thật">📚 Nạp đề thi mẫu</button>
+    </div>
     <div id="msg2" class="text-sm"></div>
+
+    <!-- Nạp ĐỀ THI MẪU các năm (chỉ quản trị): dùng chung ô tải file / JSON / ảnh ở trên -->
+    <div id="arenaBox" class="hidden rounded-xl border-2 border-amber-300 bg-amber-50/60 p-4 space-y-3">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h3 class="font-bold text-amber-900">📚 Nạp đề thi mẫu → Đấu trường đề thi thật</h3>
+        <a href="arena.html" target="_blank" class="text-sm underline text-amber-800">⚔️ Mở trang Đấu trường</a>
+      </div>
+      <p class="text-xs text-slate-600">Dùng chung phần tải file CSV/Excel, JSON và ảnh ở trên. Mọi câu của đề được nạp vào <b>ngân hàng chung</b> (câu đã có sẵn thì bỏ qua, không nạp trùng) và cả đề xuất hiện ở trang <b>Đấu trường đề thi thật</b> để học sinh chọn thi thử. Lớp và môn của từng câu lấy theo thông tin đề dưới đây; mỗi câu vẫn cần <code>chapter</code> và <code>difficulty</code> (hoặc điền mặc định bên dưới).</p>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <label class="text-sm font-medium col-span-2">Tên đề <span class="text-red-600">*</span>
+          <input id="arTitle" placeholder="VD: Đề thi tốt nghiệp THPT 2025 - Môn Toán" class="w-full border rounded p-2 mt-1 font-normal bg-white"></label>
+        <label class="text-sm font-medium">Năm <span class="text-red-600">*</span>
+          <input id="arYear" type="number" min="1990" max="2100" class="w-full border rounded p-2 mt-1 font-normal bg-white"></label>
+        <label class="text-sm font-medium">Thời gian (phút) <span class="text-red-600">*</span>
+          <input id="arMinutes" type="number" min="1" max="300" value="50" class="w-full border rounded p-2 mt-1 font-normal bg-white"></label>
+        <label class="text-sm font-medium col-span-2">Nơi xuất bản đề thi <span class="text-red-600">*</span>
+          <input id="arPublisher" list="arPubs" placeholder="VD: Bộ Giáo dục và Đào tạo" class="w-full border rounded p-2 mt-1 font-normal bg-white">
+          <datalist id="arPubs"><option>Bộ Giáo dục và Đào tạo<option>Sở GD&ĐT Hà Nội<option>Sở GD&ĐT TP. Hồ Chí Minh<option>Sở GD&ĐT Hải Phòng<option>Sở GD&ĐT Đà Nẵng<option>Sở GD&ĐT Nghệ An<option>Đề minh họa của Bộ GD&ĐT</datalist></label>
+        <label class="text-sm font-medium">Lớp <span class="text-red-600">*</span>
+          <select id="arGrade" class="w-full border rounded p-2 mt-1 font-normal bg-white"></select></label>
+        <label class="text-sm font-medium">Môn <span class="text-red-600">*</span>
+          <input id="arSubject" list="subjects" placeholder="Toán" class="w-full border rounded p-2 mt-1 font-normal bg-white"></label>
+        <label class="text-sm font-medium col-span-2">Chương mặc định <span class="font-normal text-slate-400">(nếu câu không ghi chapter)</span>
+          <input id="arChapter" placeholder="VD: Tổng ôn tập" class="w-full border rounded p-2 mt-1 font-normal bg-white"></label>
+        <label class="text-sm font-medium col-span-2">Mức độ mặc định <span class="font-normal text-slate-400">(nếu câu không ghi difficulty)</span>
+          <select id="arLevel" class="w-full border rounded p-2 mt-1 font-normal bg-white"><option value="">— Không đặt (câu nào thiếu mức độ sẽ báo lỗi) —</option><option value="nhan_biet">Nhận biết</option><option value="thong_hieu" selected>Thông hiểu</option><option value="van_dung">Vận dụng</option><option value="van_dung_cao">Vận dụng cao</option></select></label>
+      </div>
+      <label class="flex items-center gap-2 text-sm"><input id="arPublish" type="checkbox" checked> Hiển thị ngay ở Đấu trường đề thi thật</label>
+      <button id="arBtn" onclick="importArena()" class="bg-amber-600 hover:bg-amber-700 text-white px-5 py-2 rounded-lg font-semibold">📚 Nạp đề thi mẫu &amp; đăng lên Đấu trường</button>
+      <div id="msgAr" class="text-sm"></div>
+      <div class="border-t border-amber-200 pt-3">
+        <div class="flex items-center justify-between"><b class="text-sm">Đề thi mẫu đã nạp</b><button onclick="loadArena()" class="text-xs underline text-slate-600">Làm mới</button></div>
+        <div id="arList" class="mt-2 text-sm space-y-2"></div>
+      </div>
+    </div>
   </section>
 
   <!-- AI nhập liệu -->
@@ -2073,6 +2111,102 @@ async function curDel(a) {
   if (error) return say('msg7', false, esc(error.message)); loadCurriculum();
 }
 
+// ---------- ĐỀ THI MẪU → ĐẤU TRƯỜNG ĐỀ THI THẬT (chỉ quản trị; cần arena_setup.sql) ----------
+$('arGrade').innerHTML = Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}"${i === 11 ? ' selected' : ''}>Lớp ${i + 1}</option>`).join('');
+$('arYear').value = new Date().getFullYear();
+function toggleArena() {
+  if (!isAdmin) return;
+  const box = $('arenaBox'); box.classList.toggle('hidden');
+  if (!box.classList.contains('hidden')) { loadArena(); box.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+}
+const arErr = e => /arena_|real_exams|schema cache|Could not find the function/i.test(e.message || '') ? 'Chưa cài đặt: hãy chạy file arena_setup.sql trong Supabase → SQL Editor.' : (e.message || String(e));
+// Dấu vân tay → id của các câu ĐÃ CÓ trong ngân hàng chung (cùng lớp + môn)
+async function commonIdIndex(grade, subject) {
+  const map = new Map();
+  for (let from = 0; from < 50000; from += 1000) {
+    const { data, error } = await db.from('questions').select('id, question_type, content, options, image_url').eq('grade', grade).eq('subject', subject).is('owner_id', null).order('id').range(from, from + 999);
+    if (error) throw error;
+    data.forEach(r => { const k = dupKey(r); if (!map.has(k)) map.set(k, r.id); });
+    if (data.length < 1000) break;
+  }
+  return map;
+}
+let arImporting = false;
+async function importArena() {
+  if (arImporting) return; arImporting = true; $('arBtn').disabled = true;
+  try { await importArenaRun(); } catch (e) { say('msgAr', false, esc(arErr(e))); } finally { arImporting = false; $('arBtn').disabled = false; }
+}
+async function importArenaRun() {
+  if (!isAdmin) return say('msgAr', false, 'Chỉ quản trị mới nạp được đề thi mẫu.');
+  const title = $('arTitle').value.trim(), year = Number($('arYear').value), publisher = $('arPublisher').value.trim(), grade = Number($('arGrade').value),
+    subject = $('arSubject').value.trim(), minutes = Math.round(Number($('arMinutes').value)), defChap = normChapter($('arChapter').value), defLv = $('arLevel').value;
+  const miss = [!title && 'tên đề', !(year >= 1990 && year <= 2100) && 'năm', !publisher && 'nơi xuất bản', !subject && 'môn', !(minutes >= 1 && minutes <= 300) && 'thời gian (1-300 phút)'].filter(Boolean);
+  if (miss.length) return say('msgAr', false, 'Hãy nhập: ' + miss.join(', ') + '.');
+  let data;
+  try {
+    data = JSON.parse(fixEsc($('json').value));
+    if (!Array.isArray(data)) data = data.questions;
+    if (!Array.isArray(data) || !data.length) throw new Error('cần một mảng gồm ít nhất 1 câu hỏi (dán JSON hoặc tải file CSV/Excel ở phần trên)');
+  } catch (err) { return say('msgAr', false, 'JSON không hợp lệ: ' + esc(err.message)); }
+  if (data.length > 200) return say('msgAr', false, 'Một đề tối đa 200 câu.');
+  const rows = data.map(r => { const q = normalize(r); q.grade = grade; q.subject = subject; if (!q.chapter && defChap) q.chapter = defChap; if (!q.difficulty && defLv) q.difficulty = defLv; return q; });
+  const problems = [];
+  rows.forEach((q, i) => {
+    const e = check(q), k = slotOf(q.image_url);
+    if (k > imgs.length) e.push(`dùng ${q.image_url} nhưng mới chọn ${imgs.length} ảnh`);
+    if (e.length) problems.push(`Câu ${i + 1} (${q.question_type}): ${e.join('; ')}`);
+  });
+  if (problems.length) return say('msgAr', false, `Có ${problems.length}/${rows.length} câu lỗi, chưa nạp gì:<br>${problems.slice(0, 20).map(esc).join('<br>')}${problems.length > 20 ? '<br>...' : ''}`);
+  if (!confirm(`Nạp đề "${title}" (${year}, ${publisher}) gồm ${rows.length} câu vào ngân hàng chung và đăng lên Đấu trường?`)) return;
+
+  say('msgAr', true, 'Đang kiểm tra câu đã có trong ngân hàng chung...');
+  const exist = await commonIdIndex(grade, subject);
+  const keys = rows.map(dupKey), fresh = [], seen = new Set();
+  rows.forEach((q, i) => { if (!exist.has(keys[i]) && !seen.has(keys[i])) { seen.add(keys[i]); fresh.push({ q, k: keys[i] }); } });
+  const slots = new Set(fresh.map(f => slotOf(f.q.image_url)).filter(Boolean));
+  let up = { map: {}, paths: [] };
+  if (slots.size) {
+    say('msgAr', true, 'Đang tải ảnh lên...');
+    up = await uploadImages(slots);
+    fresh.forEach(f => { if (up.map[f.q.image_url]) f.q.image_url = up.map[f.q.image_url]; });
+  }
+  const idOf = new Map(exist);
+  for (let i = 0; i < fresh.length; i += 100) {
+    say('msgAr', true, `Đang nạp câu hỏi vào ngân hàng chung ${Math.min(i + 100, fresh.length)}/${fresh.length}...`);
+    const part = fresh.slice(i, i + 100);
+    const { data: ins, error } = await db.from('questions').insert(part.map(f => { const r = { ...f.q, owner_id: null }; if (!r.lesson) delete r.lesson; return r; })).select('id');
+    if (error || !ins || ins.length !== part.length) {
+      if (!i && up.paths.length) await db.storage.from('question-images').remove(up.paths);
+      return say('msgAr', false, `Đã nạp ${i}/${fresh.length} câu mới rồi dừng — ` + (error ? dbMsg(error) : 'máy chủ không trả về đủ dòng.') + ' Bấm nạp lại: câu đã vào kho sẽ được nhận ra, không bị trùng.');
+    }
+    part.forEach((f, j) => idOf.set(f.k, ins[j].id));
+  }
+  const ids = [...new Set(keys.map(k => idOf.get(k)))];
+  say('msgAr', true, 'Đang đăng đề lên Đấu trường...');
+  const { data: pub, error } = await db.rpc('arena_publish', { p_title: title, p_year: year, p_publisher: publisher, p_grade: grade, p_subject: subject, p_minutes: minutes, p_question_ids: ids, p_published: $('arPublish').checked });
+  if (error) return say('msgAr', false, `Đã nạp ${fresh.length} câu vào ngân hàng chung nhưng chưa tạo được đề trên Đấu trường: ` + esc(arErr(error)));
+  say('msgAr', true, `✓ Đã nạp đề "${esc(title)}": ${pub.total} câu (mới vào ngân hàng chung: ${fresh.length}, đã có sẵn: ${ids.length - fresh.length})${up.paths.length ? `, kèm ${up.paths.length} ảnh` : ''}. ${$('arPublish').checked ? 'Đề đã hiển thị ở <a class="underline" href="arena.html" target="_blank">Đấu trường đề thi thật</a>.' : 'Đề đang ẩn: bật “Hiển thị” trong danh sách bên dưới khi sẵn sàng.'}`);
+  dupClear(); $('json').value = ''; clearImages(); $('arTitle').value = ''; refreshLessons(); if (mg.loaded) loadFilterOptions(); loadArena();
+}
+async function loadArena() {
+  const box = $('arList'); box.innerHTML = '<p class="text-slate-500">Đang tải…</p>';
+  const { data, error } = await db.rpc('arena_admin_list');
+  if (error) return box.innerHTML = `<p class="text-amber-700">${esc(arErr(error))}</p>`;
+  arData = data;
+  if (!data.length) return box.innerHTML = '<p class="text-slate-500">Chưa có đề thi mẫu nào.</p>';
+  box.innerHTML = data.map(r => `<div class="flex flex-wrap items-center gap-x-3 gap-y-1 bg-white border rounded-lg px-3 py-2">
+    <div class="flex-1 min-w-[12rem]"><b>${esc(r.title)}</b><div class="text-xs text-slate-500">${r.year} · ${esc(r.publisher)} · Lớp ${r.grade ?? '?'} ${esc(r.subject)} · ${r.minutes} phút · ${r.total} câu · ${r.plays} lượt thi · mã ${esc(r.code || '')}</div></div>
+    <label class="text-xs flex items-center gap-1"><input type="checkbox" ${r.published ? 'checked' : ''} onchange="arPub(${r.id}, this.checked)"> Hiển thị</label>
+    <button onclick="arDel(${r.id})" class="text-xs text-red-600 underline">Xóa khỏi Đấu trường</button></div>`).join('');
+}
+async function arPub(id, on) { const { error } = await db.rpc('arena_set_published', { p_id: id, p_published: on }); if (error) toast(arErr(error)); else toast(on ? 'Đã hiển thị đề ở Đấu trường.' : 'Đã ẩn đề.'); loadArena(); }
+let arData = [];
+async function arDel(id) {
+  const title = (arData.find(x => x.id === id) || {}).title || '';
+  if (!confirm(`Xóa đề "${title}" khỏi Đấu trường?\nCâu hỏi vẫn ở ngân hàng chung; lịch sử thi thử của đề này sẽ bị xóa.`)) return;
+  const { error } = await db.rpc('arena_delete', { p_id: id }); if (error) toast(arErr(error)); else toast('Đã xóa đề khỏi Đấu trường.'); loadArena();
+}
+
 // ---------- Giao diện & đăng nhập ----------
 function showTab(n) {
   if (n === 6 && !isAdmin) n = 1;      // tab duyệt kho chung chỉ dành cho quản trị web
@@ -2114,6 +2248,7 @@ async function loadRole() {
     else isAdmin = data === true;
   }
   $('scopeCommonLbl').classList.toggle('hidden', !isAdmin);
+  $('arenaBtn').classList.toggle('hidden', !isAdmin); if (!isAdmin) $('arenaBox').classList.add('hidden');
   $('tab6').classList.toggle('hidden', !isAdmin); if (!isAdmin && !$('panel6').classList.contains('hidden')) showTab(1);
   if (sess) { refreshSgBadge(); loadShareNote(); }
   let saved = null; try { saved = localStorage.getItem('bank_scope'); } catch (e) {}

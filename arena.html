@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Đấu trường đề thi thật</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  :root { --bg: #0b0b1e; --card: #12122b; --line: rgba(255,255,255,.09); }
+  html { scroll-behavior: smooth; }
+  body { font-family: 'Be Vietnam Pro', system-ui, sans-serif; background: var(--bg); color: #e5e7ff; }
+  .bgfx { position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    background: radial-gradient(900px 500px at 12% -5%, rgba(99,102,241,.35), transparent 60%), radial-gradient(800px 500px at 95% 5%, rgba(236,72,153,.25), transparent 60%),
+                radial-gradient(900px 600px at 50% 110%, rgba(6,182,212,.18), transparent 60%); }
+  .grid-lines { position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: .5;
+    background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px); background-size: 44px 44px;
+    -webkit-mask-image: radial-gradient(ellipse at 50% 0%, #000 20%, transparent 75%); mask-image: radial-gradient(ellipse at 50% 0%, #000 20%, transparent 75%); }
+  .title-glow { background: linear-gradient(90deg, #a5b4fc, #f0abfc 45%, #67e8f9); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  @keyframes floaty { 0%,100% { transform: translateY(0) rotate(-6deg); } 50% { transform: translateY(-8px) rotate(4deg); } }
+  .floaty { animation: floaty 4s ease-in-out infinite; display: inline-block; }
+  @keyframes pulseGlow { 0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ac) 55%, transparent); } 50% { box-shadow: 0 0 22px 2px color-mix(in srgb, var(--ac) 45%, transparent); } }
+  .card { position: relative; overflow: hidden; background: linear-gradient(160deg, color-mix(in srgb, var(--ac) 22%, #12122b) 0%, var(--card) 55%); border: 1px solid var(--line); border-radius: 22px;
+    transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+  .card:hover { transform: translateY(-4px); border-color: color-mix(in srgb, var(--ac) 70%, white 0%); box-shadow: 0 16px 40px -12px color-mix(in srgb, var(--ac) 55%, transparent); }
+  .card::before { content: ''; position: absolute; width: 210px; height: 210px; right: -70px; top: -80px; border-radius: 50%;
+    background: radial-gradient(circle, color-mix(in srgb, var(--ac) 55%, transparent), transparent 70%); opacity: .55; pointer-events: none; }
+  .yr { font-weight: 900; font-size: 3.1rem; line-height: 1; letter-spacing: -.03em; color: transparent; -webkit-text-stroke: 1.5px color-mix(in srgb, var(--ac) 80%, white); opacity: .9; }
+  .go { background: linear-gradient(135deg, var(--ac), color-mix(in srgb, var(--ac) 55%, #ec4899)); color: #fff; font-weight: 800; letter-spacing: .02em; animation: pulseGlow 2.6s ease-in-out infinite; }
+  .go:hover { filter: brightness(1.12); }
+  .chip { border: 1px solid var(--line); background: rgba(255,255,255,.04); border-radius: 9999px; padding: .42rem .95rem; font-size: .85rem; font-weight: 600; color: #c7c9f5; white-space: nowrap; cursor: pointer; transition: all .15s; }
+  .chip:hover { background: rgba(255,255,255,.09); }
+  .chip.on { background: linear-gradient(135deg, #6366f1, #d946ef); border-color: transparent; color: #fff; box-shadow: 0 6px 20px -6px rgba(168,85,247,.7); }
+  .stat { background: rgba(255,255,255,.05); border: 1px solid var(--line); border-radius: 16px; padding: .7rem 1.1rem; backdrop-filter: blur(6px); }
+  .tag { font-size: .7rem; font-weight: 700; padding: .15rem .55rem; border-radius: 9999px; background: rgba(255,255,255,.1); }
+  .inp { background: rgba(255,255,255,.06); border: 1px solid var(--line); border-radius: 12px; padding: .55rem .8rem; color: #fff; font-size: .9rem; outline: none; }
+  .inp:focus { border-color: #818cf8; }
+  .inp option { color: #111; }
+  .skeleton { background: linear-gradient(90deg, rgba(255,255,255,.04), rgba(255,255,255,.1), rgba(255,255,255,.04)); background-size: 200% 100%; animation: sk 1.3s infinite; border-radius: 22px; height: 250px; }
+  @keyframes sk { to { background-position: -200% 0; } }
+  .medal-1 { color: #fbbf24; } .medal-2 { color: #cbd5e1; } .medal-3 { color: #fb923c; }
+  @media (prefers-reduced-motion: reduce) { .floaty, .go, .skeleton { animation: none; } .card { transition: none; } }
+</style>
+</head>
+<body class="min-h-screen">
+<div class="bgfx"></div><div class="grid-lines"></div>
+
+<header class="max-w-6xl mx-auto px-4 pt-4 flex items-center gap-3 text-sm">
+  <a href="student_home.html" class="rounded-full border border-white/10 bg-white/5 hover:bg-white/10 px-4 py-1.5 font-semibold">← Trang chủ học sinh</a>
+  <a href="index.html" class="text-slate-400 hover:text-white hidden sm:inline">Trang chủ</a>
+  <span id="who" class="ml-auto text-slate-400 truncate"></span>
+</header>
+
+<main class="max-w-6xl mx-auto px-4 pb-16">
+  <!-- HERO -->
+  <section class="text-center pt-8 pb-6">
+    <div class="text-5xl"><span class="floaty">⚔️</span></div>
+    <h1 class="mt-2 text-3xl sm:text-5xl font-black tracking-tight leading-tight"><span class="title-glow">ĐẤU TRƯỜNG ĐỀ THI THẬT</span></h1>
+    <p class="mt-3 text-base sm:text-lg text-indigo-200/90 font-medium">Bạn đã sẵn sàng chinh phục đề thi? Chọn đề các năm, bấm giờ và thử sức như thi thật.</p>
+    <div id="stats" class="mt-6 flex flex-wrap items-center justify-center gap-3"></div>
+  </section>
+
+  <!-- BỘ LỌC -->
+  <section class="sm:sticky sm:top-0 z-20 -mx-4 px-4 py-3 backdrop-blur bg-[#0b0b1e]/75 border-b border-white/5">
+    <div id="subjTabs" class="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Môn học"></div>
+    <div class="mt-2 flex flex-wrap items-center gap-2">
+      <select id="fGrade" class="inp" onchange="setFilter('grade', this.value)"><option value="">Mọi lớp</option></select>
+      <div id="yearChips" class="flex gap-2 overflow-x-auto"></div>
+      <input id="fQ" type="search" placeholder="🔎 Tìm đề, nơi xuất bản…" oninput="setFilter('q', this.value)" class="inp sm:ml-auto w-full sm:w-64">
+      <select id="fSort" class="inp" onchange="setFilter('sort', this.value)">
+        <option value="new">Mới nhất</option><option value="hot">Nhiều lượt thi nhất</option><option value="easy">Đề ngắn nhất</option></select>
+    </div>
+  </section>
+
+  <section id="grid" class="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3"></section>
+  <p id="empty" class="hidden text-center text-slate-400 py-16"></p>
+</main>
+
+<!-- Hộp thoại: sẵn sàng thi / bảng vàng -->
+<div id="modal" class="hidden fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onclick="if (event.target === this) closeModal()">
+  <div id="modalBody" class="w-full max-w-md rounded-3xl border border-white/10 bg-[#14142e] shadow-2xl p-6 text-slate-100" role="dialog" aria-modal="true"></div>
+</div>
+<div id="toast" class="hidden fixed bottom-5 left-1/2 -translate-x-1/2 z-[60] bg-slate-900 border border-white/10 text-white text-sm px-4 py-2 rounded-xl shadow-lg"></div>
+
+<script>
+// ================== CẤU HÌNH KẾT NỐI ==================
+const SUPABASE_URL = 'https://xzznmfgihzjeqsmiuypi.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_dUldhQYF1ETrSCZ4jiy3Og_ygfkm9XW';
+const EXAM_URL = 'exam.html';            // trang làm bài (chế độ bài giao: exam.html?hw=MÃ)
+// =======================================================
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const nf = n => Number(n || 0).toLocaleString('vi-VN');
+const fmtScore = x => x == null ? '' : (Math.round(Number(x) * 100) / 100).toLocaleString('vi-VN');
+const noAccent = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase();
+
+// Màu theo môn: [màu chủ đạo, biểu tượng]
+const SUBJ = [
+  [/toan/, '#6366f1', '📐'], [/vat ?li|vat ly|ly\b/, '#a855f7', '⚛️'], [/hoa/, '#10b981', '🧪'], [/sinh/, '#22c55e', '🧬'],
+  [/anh|english/, '#ec4899', '🔤'], [/van|ngu van|tieng viet/, '#f97316', '📖'], [/su\b|lich su/, '#f59e0b', '🏛️'], [/dia/, '#06b6d4', '🌏'],
+  [/gdcd|cong dan|kinh te/, '#14b8a6', '⚖️'], [/tin/, '#3b82f6', '💻']
+];
+const subjStyle = name => { const k = noAccent(name); const m = SUBJ.find(x => x[0].test(k)); return m ? { c: m[1], i: m[2] } : { c: '#8b5cf6', i: '🎯' }; };
+
+let ALL = [], F = { subject: '', grade: '', year: '', q: '', sort: 'new' };
+
+async function load() {
+  $('grid').innerHTML = Array.from({ length: 6 }, () => '<div class="skeleton"></div>').join('');
+  const { data, error } = await db.rpc('arena_list');
+  if (error) {
+    $('grid').innerHTML = '';
+    const m = /arena_|schema cache|Could not find the function/i.test(error.message || '') ? 'Đấu trường chưa được cài đặt: quản trị hãy chạy file arena_setup.sql trong Supabase → SQL Editor.' : error.message;
+    return showEmpty('⚠ ' + m);
+  }
+  ALL = Array.isArray(data) ? data : [];
+  renderStats(); renderFilters(); render();
+}
+function renderStats() {
+  const plays = ALL.reduce((a, x) => a + (x.plays || 0), 0), subs = new Set(ALL.map(x => x.subject)).size, qs = ALL.reduce((a, x) => a + (x.total || 0), 0);
+  const mine = ALL.filter(x => x.my_n > 0).length;
+  const st = (ico, v, l) => `<div class="stat text-left flex items-center gap-3"><span class="text-2xl">${ico}</span><div><div class="text-xl font-extrabold leading-none">${v}</div><div class="text-xs text-slate-400 mt-1">${l}</div></div></div>`;
+  $('stats').innerHTML = st('📚', nf(ALL.length), 'đề thi thật') + st('🔥', nf(plays), 'lượt thử sức') + st('🎓', nf(subs), 'môn học') + st('✅', `${nf(mine)}/${nf(ALL.length)}`, 'đề bạn đã chinh phục');
+}
+function renderFilters() {
+  const subjects = [...new Set(ALL.map(x => x.subject))].sort((a, b) => a.localeCompare(b, 'vi'));
+  $('subjTabs').innerHTML = [['', 'Tất cả môn']].concat(subjects.map(s => [s, s])).map(([v, l]) =>
+    `<button role="tab" aria-selected="${F.subject === v}" class="chip ${F.subject === v ? 'on' : ''}" onclick="setFilter('subject', ${JSON.stringify(v).replace(/"/g, '&quot;')})">${v ? subjStyle(v).i + ' ' : '🏟️ '}${esc(l)}</button>`).join('');
+  const grades = [...new Set(ALL.map(x => x.grade).filter(Boolean))].sort((a, b) => a - b);
+  $('fGrade').innerHTML = '<option value="">Mọi lớp</option>' + grades.map(g => `<option value="${g}"${String(F.grade) === String(g) ? ' selected' : ''}>Lớp ${g}</option>`).join('');
+  const base = ALL.filter(x => (!F.subject || x.subject === F.subject) && (!F.grade || String(x.grade) === String(F.grade)));
+  const years = [...new Set(base.map(x => x.year))].sort((a, b) => b - a);
+  if (F.year && !years.includes(Number(F.year))) F.year = '';
+  $('yearChips').innerHTML = [['', 'Mọi năm']].concat(years.map(y => [String(y), String(y)])).map(([v, l]) =>
+    `<button class="chip ${String(F.year) === v ? 'on' : ''}" onclick="setFilter('year', '${v}')">${l}</button>`).join('');
+}
+function setFilter(k, v) { F[k] = v; if (k !== 'q') renderFilters(); render(); }
+function showEmpty(t) { $('empty').textContent = t; $('empty').classList.remove('hidden'); }
+function render() {
+  const q = noAccent(F.q);
+  let list = ALL.filter(x => (!F.subject || x.subject === F.subject) && (!F.grade || String(x.grade) === String(F.grade)) && (!F.year || String(x.year) === String(F.year))
+    && (!q || noAccent(`${x.title} ${x.publisher} ${x.subject} ${x.year}`).includes(q)));
+  list.sort(F.sort === 'hot' ? (a, b) => b.plays - a.plays || b.year - a.year : F.sort === 'easy' ? (a, b) => a.minutes - b.minutes || b.year - a.year : (a, b) => b.year - a.year || b.id - a.id);
+  $('empty').classList.add('hidden');
+  if (!ALL.length) { $('grid').innerHTML = ''; return showEmpty('Đấu trường đang chuẩn bị đề thi. Hãy quay lại sau nhé! 🛠️'); }
+  if (!list.length) { $('grid').innerHTML = ''; return showEmpty('Không có đề nào khớp bộ lọc. Thử chọn môn / năm khác nhé.'); }
+  $('grid').innerHTML = list.map(cardHtml).join('');
+}
+function cardHtml(x) {
+  const s = subjStyle(x.subject), mine = x.my_n > 0, hot = x.plays >= 1000;
+  const status = x.in_progress ? '<span class="tag" style="background:rgba(251,191,36,.2);color:#fcd34d">⏳ Đang làm dở</span>'
+    : mine ? `<span class="tag" style="background:rgba(16,185,129,.2);color:#6ee7b7">🏅 Điểm cao nhất của bạn: ${fmtScore(x.my_best)}</span>`
+    : '<span class="tag" style="color:#a5b4fc">✨ Chưa thử sức</span>';
+  return `<article class="card p-5 flex flex-col" style="--ac:${s.c}">
+    <div class="flex items-start justify-between gap-3 relative">
+      <div class="yr">${esc(x.year)}</div>
+      <div class="flex flex-col items-end gap-1"><span class="tag">${s.i} ${esc(x.subject)}${x.grade ? ' · Lớp ' + x.grade : ''}</span>${hot ? '<span class="tag" style="background:rgba(244,63,94,.25);color:#fda4af">🔥 HOT</span>' : ''}</div>
+    </div>
+    <h3 class="mt-3 text-lg font-extrabold leading-snug text-white relative">🎯 ${esc(x.title)}</h3>
+    <p class="mt-1 text-sm text-slate-300/90 relative">🏛️ ${esc(x.publisher)}</p>
+    <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-semibold text-slate-100 relative"><span>⏱️ ${x.minutes} phút</span><span class="text-white/30">|</span><span>📝 ${x.total} câu</span></div>
+    <p class="mt-2 text-sm text-orange-300 font-semibold relative">🔥 ${nf(x.plays)} lượt thử sức</p>
+    <div class="mt-2 relative">${status}</div>
+    <div class="mt-auto pt-4 flex gap-2 relative">
+      <button onclick="ready(${x.id})" class="go flex-1 rounded-2xl py-2.5 text-sm">${x.in_progress ? '▶ TIẾP TỤC LÀM BÀI' : '⚡ THI THỬ NGAY'}</button>
+      <button onclick="board(${x.id})" class="rounded-2xl border border-white/15 bg-white/5 hover:bg-white/10 px-3 text-lg" title="Bảng vàng" aria-label="Bảng vàng">🏆</button>
+    </div></article>`;
+}
+
+// ----- Hộp thoại -----
+function openModal(html) { $('modalBody').innerHTML = html; $('modal').classList.remove('hidden'); document.body.style.overflow = 'hidden'; }
+function closeModal() { $('modal').classList.add('hidden'); document.body.style.overflow = ''; }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+function toast(m) { const t = $('toast'); t.textContent = m; t.classList.remove('hidden'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.add('hidden'), 3500); }
+function ready(id) {
+  const x = ALL.find(e => e.id === id); if (!x) return; const s = subjStyle(x.subject);
+  openModal(`<div class="text-center"><div class="text-5xl">${s.i}</div>
+    <h3 class="mt-2 text-xl font-extrabold">${esc(x.title)}</h3>
+    <p class="text-sm text-slate-400 mt-1">${esc(x.publisher)} · ${esc(x.year)}</p>
+    <div class="mt-4 grid grid-cols-2 gap-3 text-center"><div class="stat"><div class="text-2xl font-extrabold">${x.minutes}</div><div class="text-xs text-slate-400">phút</div></div>
+      <div class="stat"><div class="text-2xl font-extrabold">${x.total}</div><div class="text-xs text-slate-400">câu hỏi</div></div></div>
+    <ul class="mt-4 text-left text-sm text-slate-300 space-y-1 list-disc pl-5">
+      <li>Đồng hồ <b>bắt đầu chạy ngay</b> khi bạn vào bài.</li><li>Nộp bài xong, hệ thống chấm điểm và hiện đáp án, lời giải.</li><li>Làm lại nhiều lần được; điểm cao nhất của bạn được ghi vào bảng vàng.</li></ul>
+    ${x.in_progress ? '<p class="mt-3 text-sm text-amber-300">Bạn đang có một lượt làm dở: bấm tiếp tục để làm tiếp.</p>' : ''}
+    <div class="mt-5 flex gap-2"><button onclick="closeModal()" class="flex-1 rounded-2xl border border-white/15 py-2.5 text-sm font-semibold hover:bg-white/5">Để sau</button>
+      <a href="${EXAM_URL}?hw=${encodeURIComponent(x.code)}&from=arena" class="go flex-[2] rounded-2xl py-2.5 text-sm text-center" style="--ac:${s.c}">${x.in_progress ? '▶ TIẾP TỤC' : '⚡ VÀO THI'}</a></div></div>`);
+}
+async function board(id) {
+  const x = ALL.find(e => e.id === id); if (!x) return;
+  openModal(`<h3 class="text-lg font-extrabold text-center">🏆 Bảng vàng</h3><p class="text-center text-sm text-slate-400 mt-1">${esc(x.title)}</p><p class="text-center text-slate-400 py-8 text-sm">Đang tải…</p>`);
+  const { data, error } = await db.rpc('arena_board', { p_id: id });
+  const head = `<h3 class="text-lg font-extrabold text-center">🏆 Bảng vàng</h3><p class="text-center text-sm text-slate-400 mt-1">${esc(x.title)}</p>`;
+  const foot = '<button onclick="closeModal()" class="mt-5 w-full rounded-2xl border border-white/15 py-2.5 text-sm font-semibold hover:bg-white/5">Đóng</button>';
+  if (error) return openModal(head + `<p class="text-center text-red-300 text-sm py-6">${esc(error.message)}</p>` + foot);
+  if (!data.length) return openModal(head + '<p class="text-center text-slate-300 py-8 text-sm">Chưa có ai nộp bài.<br><b>Hãy là người đầu tiên lên bảng vàng!</b> 🚀</p>' + foot);
+  const medal = r => r === 1 ? '🥇' : r === 2 ? '🥈' : r === 3 ? '🥉' : r;
+  const mm = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  openModal(head + `<div class="mt-4 space-y-1.5">${data.map(r => `<div class="flex items-center gap-3 rounded-xl px-3 py-2 ${r.me ? 'bg-indigo-500/25 border border-indigo-400/50' : 'bg-white/5'}">
+      <span class="w-7 text-center font-extrabold ${r.rank <= 3 ? 'medal-' + r.rank : 'text-slate-400'}">${medal(r.rank)}</span>
+      <span class="flex-1 truncate font-semibold">${esc(r.name)}${r.me ? ' <span class="text-xs text-indigo-300">(bạn)</span>' : ''}</span>
+      <span class="text-xs text-slate-400">${r.secs ? mm(r.secs) : ''}</span><b class="w-12 text-right">${fmtScore(r.score)}</b></div>`).join('')}</div>` + foot);
+}
+
+db.auth.getSession().then(({ data }) => { const u = data.session?.user; if (u) { $('who').textContent = u.email || ''; load(); } });
+db.auth.onAuthStateChange((ev, s) => { if (ev === 'SIGNED_OUT') location.reload(); });
+/* ===== BẮT BUỘC ĐĂNG NHẬP: phủ kín trang cho tới khi có phiên đăng nhập =====
+   Yêu cầu: trang đã có  const db = supabase.createClient(...). Quyền thật vẫn do RLS / require_login_setup.sql quyết định ở máy chủ;
+   lớp này chỉ để người dùng thấy rõ "cần đăng nhập" và đăng nhập ngay tại trang (xong tự tải lại trang). */
+(function loginGate(CFG) {
+  if (CFG.skip) return;                                         // chỉ dùng khi chạy thử cục bộ với dữ liệu mẫu
+  const KIND = CFG.kind;                                        // 'student' | 'teacher'
+  const HOME = KIND === 'student' ? 'student_home.html' : 'teacher_dashboard.html';
+  let ov = null, uid = null, checking = 0, viaForm = false;
+  const E = (t, c, a) => { const e = document.createElement(t); if (c) e.style.cssText = c; Object.assign(e, a || {}); return e; };
+  function cover() {
+    if (ov) return ov;
+    ov = E('div', 'position:fixed;inset:0;z-index:2147483100;background:linear-gradient(135deg,#1e1b4b,#4338ca);display:flex;align-items:center;justify-content:center;padding:16px;font-family:system-ui,Arial,sans-serif;overflow:auto');
+    ov.id = 'loginGate'; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true');
+    document.body.appendChild(ov); document.body.style.overflow = 'hidden';
+    const lock = () => { if (ov) [...document.body.children].forEach(el => { if (el !== ov) el.inert = true; }); };
+    lock(); document.addEventListener('DOMContentLoaded', lock);                      // phần tử nằm sau thẻ script cũng bị khóa
+    return ov;
+  }
+  function release() {
+    if (!ov) return; ov.remove(); ov = null; document.body.style.overflow = '';
+    [...document.body.children].forEach(el => { el.inert = false; });
+  }
+  const card = html => { const o = cover(); o.innerHTML = '<div style="background:#fff;max-width:400px;width:100%;border-radius:20px;padding:26px;box-shadow:0 20px 60px rgba(0,0,0,.4)">' + html + '</div>'; return o; };
+  const IN = 'width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:10px;padding:10px;margin-top:4px;font-size:15px';
+  function showLoading() { card('<p style="margin:0;text-align:center;color:#64748b;font-size:14px">Đang kiểm tra đăng nhập…</p>'); }
+  function showForm(msg) {
+    const o = card(`<div style="text-align:center;font-size:40px">🔒</div>
+      <h2 style="margin:6px 0 4px;text-align:center;font-size:20px;font-weight:800;color:#1e1b4b">Vui lòng đăng nhập</h2>
+      <p style="margin:0 0 14px;text-align:center;color:#64748b;font-size:13px;line-height:1.5">${KIND === 'student' ? 'Mọi chức năng đều cần tài khoản học sinh (do giáo viên cấp hoặc tự đăng ký).' : 'Mọi chức năng đều cần tài khoản giáo viên.'}</p>
+      <form id="lgF"><label style="display:block;font-size:13px;font-weight:600;color:#334155">Email <input id="lgE" type="email" autocomplete="username" style="${IN}"></label>
+      <label style="display:block;font-size:13px;font-weight:600;color:#334155;margin-top:10px">Mật khẩu <input id="lgP" type="password" autocomplete="current-password" style="${IN}"></label>
+      <div id="lgM" style="display:${msg ? 'block' : 'none'};margin-top:10px;font-size:13px;color:#b91c1c;background:#fef2f2;border-radius:8px;padding:8px 10px"></div>
+      <button id="lgB" style="width:100%;margin-top:14px;background:#4f46e5;color:#fff;border:0;border-radius:10px;padding:11px;font-weight:700;font-size:15px;cursor:pointer">Đăng nhập</button></form>
+      <p style="margin:14px 0 0;text-align:center;font-size:13px;color:#64748b">Chưa có tài khoản? <a href="${HOME}" style="color:#4f46e5;font-weight:600">${KIND === 'student' ? 'Đăng ký ở Trang chủ học sinh' : 'Đăng ký ở Trang giáo viên'}</a></p>`);
+    if (msg) o.querySelector('#lgM').textContent = msg;
+    o.querySelector('#lgF').onsubmit = async ev => {
+      ev.preventDefault();
+      const b = o.querySelector('#lgB'), m = o.querySelector('#lgM'), email = o.querySelector('#lgE').value.trim(), pw = o.querySelector('#lgP').value;
+      if (!email || !pw) { m.style.display = 'block'; m.textContent = 'Nhập email và mật khẩu.'; return; }
+      b.disabled = true; b.textContent = 'Đang đăng nhập…'; viaForm = true;
+      const { error } = await db.auth.signInWithPassword({ email, password: pw });
+      if (error) { viaForm = false; b.disabled = false; b.textContent = 'Đăng nhập'; m.style.display = 'block'; m.textContent = /invalid|credentials/i.test(error.message) ? 'Sai email hoặc mật khẩu.' : error.message; }
+      /* đăng nhập được → onAuthStateChange xử lý */
+    };
+    setTimeout(() => o.querySelector('#lgE')?.focus(), 50);
+  }
+  function showStudentBlock(email) {
+    const o = card(`<div style="text-align:center;font-size:40px">🔒</div>
+      <h2 style="margin:6px 0;text-align:center;font-size:20px;font-weight:800;color:#1e1b4b">Khu vực dành cho giáo viên</h2>
+      <p style="margin:0 0 14px;text-align:center;color:#475569;font-size:14px;line-height:1.5">Tài khoản <b></b> là tài khoản học sinh nên không dùng được trang này.</p>
+      <a href="student_home.html" style="display:block;text-align:center;background:#4f46e5;color:#fff;font-weight:700;padding:11px;border-radius:10px;text-decoration:none;margin-bottom:8px">Về trang học sinh</a>
+      <button id="lgO" style="width:100%;background:#fff;color:#4f46e5;border:2px solid #c7d2fe;font-weight:700;padding:10px;border-radius:10px;cursor:pointer">Đăng xuất</button>`);
+    o.querySelector('b').textContent = email || ''; o.querySelector('#lgO').onclick = () => db.auth.signOut();
+  }
+  async function check(session) {
+    const u = session?.user || null, my = ++checking;
+    if (!u) { uid = null; return showForm(); }
+    if (uid === u.id && !ov) return;
+    if (CFG.blockStudent) {
+      showLoading();
+      const r = await db.rpc('is_student');
+      if (my !== checking) return;
+      if (!r.error && r.data === true) { uid = u.id; return showStudentBlock(u.email); }
+    }
+    const reload = viaForm; viaForm = false;                    // vừa đăng nhập từ form → tải lại để trang nạp dữ liệu bằng phiên mới
+    uid = u.id; release();
+    if (reload && CFG.reloadOnLogin) location.reload();
+  }
+  showLoading();
+  db.auth.getSession().then(({ data }) => check(data.session)).catch(() => showForm());
+  db.auth.onAuthStateChange((ev, s) => { if (ev === 'TOKEN_REFRESHED' || ev === 'USER_UPDATED') return; setTimeout(() => check(s), 0); });
+})({ kind: 'student', reloadOnLogin: true, blockStudent: false, skip: false });
+</script>
+</body>
+</html>

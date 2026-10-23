@@ -53,7 +53,7 @@
     <div id="hInfo" class="hidden rounded-lg bg-slate-50 border border-slate-200 px-4 py-3 text-sm space-y-1"></div>
     <div id="hMsg" class="hidden text-sm rounded-lg px-3 py-2"></div>
     <button id="hBtn" onclick="startHw()" class="hidden w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg font-semibold disabled:opacity-50">Bắt đầu làm bài</button>
-    <div class="text-center text-sm"><a href="student_home.html" class="homeLink text-indigo-600 hover:underline font-medium">← Trang chủ học sinh</a></div>
+    <div class="text-center text-sm"><a id="hwBack" href="student_home.html" class="homeLink text-indigo-600 hover:underline font-medium">← Trang chủ học sinh</a></div>
   </section>
 
   <!-- ============ 1. MÀN HÌNH CHỌN ĐỀ ============ -->
@@ -1180,6 +1180,9 @@ function showRoomResult(r, auto) {
 // =====================================================================
 const HOME_URL = 'student_home.html';                   // đổi nếu đặt trang chủ ở nơi khác
 document.querySelectorAll('.homeLink').forEach(a => a.href = HOME_URL);
+if (new URLSearchParams(location.search).get('from') === 'arena') {          // vào từ "Đấu trường đề thi thật" → nút quay về trỏ về đó
+  [['hwBack', '← Về Đấu trường đề thi thật'], ['homeBtn', '⚔️ Về Đấu trường']].forEach(([id, t]) => { const a = $(id); if (a) { a.href = 'arena.html'; a.textContent = t; } });
+}
 let authUser = null, pracCfg = null, pracT0 = 0;
 async function getUser() {
   try { const { data } = await db.auth.getSession(); authUser = data?.session?.user || null; } catch (e) { authUser = null; }
