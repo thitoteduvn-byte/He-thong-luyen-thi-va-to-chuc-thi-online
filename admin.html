@@ -229,8 +229,10 @@ create policy "admin delete questions" on questions for delete to authenticated
         <label class="text-sm font-medium col-span-2">Nơi xuất bản đề thi <span class="text-red-600">*</span>
           <input id="arPublisher" list="arPubs" placeholder="VD: Bộ Giáo dục và Đào tạo" class="w-full border rounded p-2 mt-1 font-normal bg-white">
           <datalist id="arPubs"><option>Bộ Giáo dục và Đào tạo<option>Sở GD&ĐT Hà Nội<option>Sở GD&ĐT TP. Hồ Chí Minh<option>Sở GD&ĐT Hải Phòng<option>Sở GD&ĐT Đà Nẵng<option>Sở GD&ĐT Nghệ An<option>Đề minh họa của Bộ GD&ĐT</datalist></label>
-        <label class="text-sm font-medium">Lớp <span class="text-red-600">*</span>
+        <label class="text-sm font-medium" title="Chỉ để lọc đề ở Đấu trường, KHÔNG đổi lớp của từng câu">Lớp lọc đề <span class="font-normal text-slate-400">(không đổi lớp câu)</span>
           <select id="arGrade" class="w-full border rounded p-2 mt-1 font-normal bg-white"></select></label>
+        <label class="text-sm font-medium" title="Chỉ dùng cho câu trong file KHÔNG ghi grade">Lớp cho câu thiếu <code>grade</code>
+          <select id="arDefGrade" class="w-full border rounded p-2 mt-1 font-normal bg-white"></select></label>
         <label class="text-sm font-medium">Môn <span class="text-red-600">*</span>
           <input id="arSubject" list="subjects" placeholder="Toán" class="w-full border rounded p-2 mt-1 font-normal bg-white"></label>
         <label class="text-sm font-medium col-span-2">Chương mặc định <span class="font-normal text-slate-400">(nếu câu không ghi chapter)</span>
@@ -241,6 +243,10 @@ create policy "admin delete questions" on questions for delete to authenticated
       <label class="flex items-center gap-2 text-sm"><input id="arPublish" type="checkbox" checked> Hiển thị ngay ở Đấu trường đề thi thật</label>
       <button id="arBtn" onclick="importArena()" class="bg-amber-600 hover:bg-amber-700 text-white px-5 py-2 rounded-lg font-semibold">📚 Nạp đề thi mẫu &amp; đăng lên Đấu trường</button>
       <div id="msgAr" class="text-sm"></div>
+      <div class="border-t border-amber-200 pt-3">
+        <div class="flex items-center justify-between"><b class="text-sm">📨 Đề giáo viên đề xuất chờ duyệt <span id="prCount" class="text-xs text-amber-700"></span></b><button onclick="loadProposals()" class="text-xs underline text-slate-600">Làm mới</button></div>
+        <div id="prList" class="mt-2 text-sm space-y-2"></div>
+      </div>
       <div class="border-t border-amber-200 pt-3">
         <div class="flex items-center justify-between"><b class="text-sm">Đề thi mẫu đã nạp</b><button onclick="loadArena()" class="text-xs underline text-slate-600">Làm mới</button></div>
         <div id="arList" class="mt-2 text-sm space-y-2"></div>
@@ -319,9 +325,32 @@ create policy "admin delete questions" on questions for delete to authenticated
     <div class="flex flex-wrap items-center gap-3">
       <button onclick="loadManage(0)" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold text-sm">Tìm / Làm mới</button>
       <button onclick="resetManageFilters()" class="text-sm underline text-slate-500">Xóa bộ lọc</button>
-      <label class="ml-auto flex items-center gap-2 text-sm"><input id="mAll" type="checkbox" onchange="mgSelAll(this.checked)"> Chọn cả trang</label>
+      <label class="ml-auto flex items-center gap-1.5 text-sm text-slate-600">Hiển thị <select id="mSize" onchange="setPageSize(this.value)" class="border rounded p-1.5 text-sm">
+        <option value="20">20</option><option value="50">50</option><option value="100">100</option><option value="200">200</option><option value="custom">Tùy chọn…</option></select> câu/trang</label>
+      <label class="flex items-center gap-2 text-sm"><input id="mAll" type="checkbox" onchange="mgSelAll(this.checked)"> Chọn cả trang</label>
       <button id="mDelSel" onclick="mgDeleteSelected()" disabled class="bg-red-600 text-white px-4 py-2 rounded-lg font-semibold text-sm disabled:opacity-40">Xóa các câu đã chọn (0)</button>
     </div>
+    <details id="bkBox" class="hidden rounded-lg border-2 border-rose-200 bg-rose-50/40 p-3 text-sm" ontoggle="if (this.open) bkRefresh()">
+      <summary class="cursor-pointer font-semibold">🛠 Sửa đồng loạt tên Chương / Bài / Lớp <span class="text-xs font-normal text-rose-700">· 🔒 cần nhập mật khẩu</span></summary>
+      <div class="mt-3 space-y-3">
+        <p class="text-slate-600">Chọn đúng <b>Lớp, Môn, Chương (và Bài)</b> cần đổi ở các ô lọc phía dưới, chọn loại thay đổi rồi nhập tên mới. Mọi câu hỏi (và mục lục) thuộc mục đang chọn được đổi cùng lúc.</p>
+        <div class="grid sm:grid-cols-3 gap-2">
+          <label class="block font-medium">Đổi gì?
+            <select id="bkField" onchange="bkRefresh()" class="w-full border rounded p-2 mt-1 font-normal bg-white">
+              <option value="chapter">Tên chương</option><option value="lesson">Tên bài</option><option value="grade">Chuyển sang lớp khác</option></select></label>
+          <label class="block font-medium sm:col-span-2"><span id="bkNewLbl">Tên chương mới</span>
+            <input id="bkNew" oninput="bkRefresh()" autocomplete="off" class="w-full border rounded p-2 mt-1 font-normal" placeholder="Nhập tên mới"></label>
+        </div>
+        <div id="bkTarget" class="rounded bg-white border p-2 text-slate-700"></div>
+        <label class="flex items-center gap-2"><input id="bkPriv" type="checkbox" onchange="bkRefresh()"> Gồm cả câu <b>cá nhân của giáo viên</b> (mặc định chỉ ngân hàng chung)</label>
+        <div class="flex flex-wrap items-end gap-2">
+          <label class="block font-medium">Mật khẩu của bạn
+            <input id="bkPass" type="password" autocomplete="current-password" class="block w-56 border rounded p-2 mt-1 font-normal" onkeydown="if (event.key === 'Enter') bkApply()"></label>
+          <button id="bkGo" onclick="bkApply()" class="px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold disabled:opacity-40">Áp dụng đồng loạt</button>
+        </div>
+        <div id="bkMsg" class="text-sm"></div>
+      </div>
+    </details>
     <div id="mInfo" class="text-sm text-slate-500"></div>
     <div id="mList" class="space-y-2"></div>
     <div id="mPager" class="flex items-center justify-center gap-3 text-sm"></div>
@@ -808,7 +837,7 @@ function normalize(r) {
 function check(q) {
   const e = [];
   if (!TYPES.includes(q.question_type)) { e.push('question_type phải là ' + TYPES.join('/')); return e; }
-  if (!Number.isInteger(q.grade) || q.grade < 1 || q.grade > 12) e.push('lớp phải từ 1 đến 12');
+  if (!Number.isInteger(q.grade) || q.grade < 1 || q.grade > 12) e.push('lớp phải từ 1 đến 12 (ghi trường grade cho câu, hoặc chọn "Lớp cho câu thiếu grade" khi nạp đề mẫu)');
   if (!q.subject) e.push('thiếu môn');
   if (!q.chapter) e.push('thiếu chương');
   if (!LEVELS.includes(q.difficulty)) e.push('độ khó phải là ' + LEVELS.join('/'));
@@ -1566,12 +1595,12 @@ function qCard(q, label, errs = []) {
 }
 
 // ---------- Quản lý ngân hàng: xem / sửa / xóa ----------
-const PAGE = 20;
+let PAGE = (() => { try { const v = Math.floor(Number(localStorage.getItem('mg_page_size'))); return v >= 5 && v <= 500 ? v : 50; } catch (e) { return 50; } })();
 const mg = { page: 0, total: 0, rows: [], byId: new Map(), sel: new Set(), open: new Set(), loaded: false };
 const likeOf = v => '%' + v.replace(/[\\%_]/g, m => '\\' + m) + '%';
 
 async function loadManage(page = 0) {
-  mg.page = page; mg.sel.clear();
+  mg.page = page; mg.sel.clear(); syncSize();
   $('mList').innerHTML = '<div class="text-sm text-slate-500">Đang tải...</div>';
   let qb = db.from('questions').select('*', { count: 'exact' });
   const g = $('mGrade').value, s = $('mSubject').value, c = $('mChapter').value, ls = $('mLesson').value, d = $('mDiff').value, t = $('mType').value, kw = $('mKw').value.trim();
@@ -1630,6 +1659,62 @@ function renderManage() {
     <button onclick="loadManage(${mg.page + 1})" ${mg.page + 1 >= pages ? 'disabled' : ''} class="px-3 py-1 rounded bg-slate-100 disabled:opacity-40">Sau →</button>`;
   updateSelUi();
   math($('mList'));
+  if ($('bkBox') && $('bkBox').open) bkRefresh();
+}
+function syncSize() {                      // số câu/trang tùy chọn được thêm vào danh sách để ô chọn luôn khớp
+  const sel = $('mSize'); let o = sel.querySelector('option[data-c]');
+  if (![20, 50, 100, 200].includes(PAGE)) { if (!o) { o = document.createElement('option'); o.dataset.c = '1'; sel.insertBefore(o, sel.querySelector('option[value=custom]')); } o.value = String(PAGE); o.textContent = String(PAGE); }
+  else if (o) o.remove();
+  sel.value = String(PAGE);
+}
+function setPageSize(v) {
+  if (v === 'custom') { const n = Math.floor(Number(prompt('Số câu hỏi hiển thị trên mỗi trang (5 – 500):', String(PAGE)))); if (!(n >= 5 && n <= 500)) { toast('Hãy nhập số từ 5 đến 500.'); return syncSize(); } v = n; }
+  PAGE = Number(v) || 50; try { localStorage.setItem('mg_page_size', String(PAGE)); } catch (e) {} loadManage(0); }
+
+// ---------- Sửa đồng loạt (quản trị, cần mật khẩu — kiểm tra ở máy chủ) ----------
+function bkState() {
+  const f = $('bkField').value, g = $('mGrade').value, s = $('mSubject').value, c = $('mChapter').value, ls = $('mLesson').value;
+  const raw = $('bkNew').value.trim();
+  const nv = f === 'chapter' ? normChapter(raw) : f === 'lesson' ? normLesson(raw) : raw.replace(/\D/g, '').slice(0, 2);
+  let miss = '', old = '';
+  if (f === 'chapter') { if (!g || !s || !c) miss = 'Hãy chọn Lớp, Môn và Chương ở ô lọc bên dưới.'; old = c; }
+  else if (f === 'lesson') { if (!g || !s || !c || !ls || ls === NO_LESSON) miss = 'Hãy chọn Lớp, Môn, Chương và một Bài cụ thể ở ô lọc bên dưới.'; old = ls; }
+  else { if (!g) miss = 'Hãy chọn Lớp cần chuyển ở ô lọc bên dưới (có thể chọn thêm Môn / Chương để chuyển một phần).'; old = g ? 'Lớp ' + g : ''; }
+  return { f, g, s, c, ls, nv, old, miss };
+}
+let bkTimer = null;
+function bkRefresh() {
+  clearTimeout(bkTimer); bkTimer = setTimeout(async () => {
+    if (!isAdmin) return;
+    const st = bkState(), el = $('bkTarget'), go = $('bkGo');
+    $('bkNewLbl').textContent = { chapter: 'Tên chương mới (tự viết HOA)', lesson: 'Tên bài mới', grade: 'Lớp mới (1–12)' }[st.f];
+    $('bkNew').placeholder = st.f === 'grade' ? 'VD: 11' : 'Nhập tên mới';
+    go.disabled = true;
+    if (st.miss) { el.innerHTML = '<span class="text-amber-700">' + esc(st.miss) + '</span>'; return; }
+    const { data, error } = await db.rpc('questions_bulk_count', { p_field: st.f, p_grade: Number(st.g), p_subject: st.s || null, p_chapter: st.c || null, p_lesson: st.f === 'lesson' ? st.ls : null, p_include_private: $('bkPriv').checked });
+    if (error) { el.innerHTML = '<span class="text-red-700">' + esc(/questions_bulk|schema cache|Could not find the function/i.test(error.message) ? 'Chưa cài đặt: hãy chạy file bulk_edit_setup.sql trong Supabase → SQL Editor.' : error.message) + '</span>'; return; }
+    const where = [`Lớp ${st.g}`, st.s, st.c, st.f === 'lesson' ? st.ls : ''].filter(Boolean).join(' › ');
+    el.innerHTML = `<b>${data}</b> câu hỏi sẽ bị đổi: <span class="text-slate-500">${esc(where)}</span><br>` +
+      (st.nv ? `<span class="line-through text-slate-400">${esc(st.old)}</span> → <b class="text-rose-700">${esc(st.f === 'grade' ? 'Lớp ' + st.nv : st.nv)}</b>` : '<span class="text-slate-400">Nhập tên mới để tiếp tục.</span>');
+    go.disabled = !(data > 0 && st.nv);
+  }, 250);
+}
+async function bkApply() {
+  const st = bkState(), say2 = (ok, t) => say('bkMsg', ok, t);
+  if (st.miss) return say2(false, esc(st.miss));
+  if (!st.nv) return say2(false, 'Hãy nhập tên mới.');
+  const pass = $('bkPass').value; if (!pass) return say2(false, 'Hãy nhập mật khẩu của bạn để xác nhận.');
+  if (!confirm(`Đổi đồng loạt${$('bkPriv').checked ? ' (GỒM CẢ câu cá nhân của giáo viên)' : ''}:\n\n${st.old}  →  ${st.f === 'grade' ? 'Lớp ' + st.nv : st.nv}\n\nThao tác này sửa nhiều câu hỏi cùng lúc và không có nút hoàn tác. Tiếp tục?`)) return;
+  $('bkGo').disabled = true;
+  const { data, error } = await db.rpc('questions_bulk_rename', { p_field: st.f, p_grade: Number(st.g), p_subject: st.s || null, p_chapter: st.c || null, p_lesson: st.f === 'lesson' ? st.ls : null,
+    p_new: st.nv, p_include_private: $('bkPriv').checked, p_password: pass });
+  $('bkPass').value = '';
+  if (error) { $('bkGo').disabled = false; return say2(false, esc(/questions_bulk|schema cache|Could not find the function/i.test(error.message) ? 'Chưa cài đặt: hãy chạy file bulk_edit_setup.sql trong Supabase → SQL Editor.' : error.message)); }
+  if (data?.error === 'WRONG_PASSWORD') { $('bkGo').disabled = false; return say2(false, `Mật khẩu không đúng. Còn ${data.left} lần thử${data.left === 0 ? ' — chức năng bị khóa 15 phút' : ''}.`); }
+  say2(true, `✓ Đã đổi ${data.questions} câu hỏi${data.curriculum ? ` và ${data.curriculum} mục trong mục lục` : ''}.`);
+  $('bkNew').value = '';
+  if (st.f === 'chapter') { $('mChapter').value = ''; $('mLesson').value = ''; } else if (st.f === 'lesson') $('mLesson').value = ''; else $('mGrade').value = '';
+  await loadFilterOptions(); loadManage(0); if (typeof refreshLessons === 'function') refreshLessons(); bkRefresh();
 }
 function resetManageFilters() { ['mGrade', 'mSubject', 'mChapter', 'mLesson', 'mDiff', 'mType', 'mKw', 'mScope'].forEach(id => $(id).value = ''); fillFilterOptions(); loadManage(0); }
 
@@ -2112,19 +2197,20 @@ async function curDel(a) {
 }
 
 // ---------- ĐỀ THI MẪU → ĐẤU TRƯỜNG ĐỀ THI THẬT (chỉ quản trị; cần arena_setup.sql) ----------
-$('arGrade').innerHTML = Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}"${i === 11 ? ' selected' : ''}>Lớp ${i + 1}</option>`).join('');
+$('arDefGrade').innerHTML = '<option value="">— Không đặt (câu thiếu grade sẽ báo lỗi) —</option>' + Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}">Lớp ${i + 1}</option>`).join('');
+$('arGrade').innerHTML = '<option value="" selected>Nhiều lớp (10–12)</option>' + Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}">Chỉ lớp ${i + 1}</option>`).join('');
 $('arYear').value = new Date().getFullYear();
 function toggleArena() {
   if (!isAdmin) return;
   const box = $('arenaBox'); box.classList.toggle('hidden');
-  if (!box.classList.contains('hidden')) { loadArena(); box.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+  if (!box.classList.contains('hidden')) { loadArena(); loadProposals(); box.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
 }
 const arErr = e => /arena_|real_exams|schema cache|Could not find the function/i.test(e.message || '') ? 'Chưa cài đặt: hãy chạy file arena_setup.sql trong Supabase → SQL Editor.' : (e.message || String(e));
 // Dấu vân tay → id của các câu ĐÃ CÓ trong ngân hàng chung (cùng lớp + môn)
-async function commonIdIndex(grade, subject) {
+async function commonIdIndex(grades, subject) {
   const map = new Map();
   for (let from = 0; from < 50000; from += 1000) {
-    const { data, error } = await db.from('questions').select('id, question_type, content, options, image_url').eq('grade', grade).eq('subject', subject).is('owner_id', null).order('id').range(from, from + 999);
+    const { data, error } = await db.from('questions').select('id, question_type, content, options, image_url').in('grade', grades).eq('subject', subject).is('owner_id', null).order('id').range(from, from + 999);
     if (error) throw error;
     data.forEach(r => { const k = dupKey(r); if (!map.has(k)) map.set(k, r.id); });
     if (data.length < 1000) break;
@@ -2138,7 +2224,7 @@ async function importArena() {
 }
 async function importArenaRun() {
   if (!isAdmin) return say('msgAr', false, 'Chỉ quản trị mới nạp được đề thi mẫu.');
-  const title = $('arTitle').value.trim(), year = Number($('arYear').value), publisher = $('arPublisher').value.trim(), grade = Number($('arGrade').value),
+  const title = $('arTitle').value.trim(), year = Number($('arYear').value), publisher = $('arPublisher').value.trim(), examGrade = $('arGrade').value ? Number($('arGrade').value) : null, defGrade = Number($('arDefGrade').value) || null,
     subject = $('arSubject').value.trim(), minutes = Math.round(Number($('arMinutes').value)), defChap = normChapter($('arChapter').value), defLv = $('arLevel').value;
   const miss = [!title && 'tên đề', !(year >= 1990 && year <= 2100) && 'năm', !publisher && 'nơi xuất bản', !subject && 'môn', !(minutes >= 1 && minutes <= 300) && 'thời gian (1-300 phút)'].filter(Boolean);
   if (miss.length) return say('msgAr', false, 'Hãy nhập: ' + miss.join(', ') + '.');
@@ -2149,7 +2235,7 @@ async function importArenaRun() {
     if (!Array.isArray(data) || !data.length) throw new Error('cần một mảng gồm ít nhất 1 câu hỏi (dán JSON hoặc tải file CSV/Excel ở phần trên)');
   } catch (err) { return say('msgAr', false, 'JSON không hợp lệ: ' + esc(err.message)); }
   if (data.length > 200) return say('msgAr', false, 'Một đề tối đa 200 câu.');
-  const rows = data.map(r => { const q = normalize(r); q.grade = grade; q.subject = subject; if (!q.chapter && defChap) q.chapter = defChap; if (!q.difficulty && defLv) q.difficulty = defLv; return q; });
+  const rows = data.map(r => { const q = normalize(r); if (!(Number.isInteger(q.grade) && q.grade >= 1 && q.grade <= 12) && defGrade) q.grade = defGrade; q.subject = subject; if (!q.chapter && defChap) q.chapter = defChap; if (!q.difficulty && defLv) q.difficulty = defLv; return q; });
   const problems = [];
   rows.forEach((q, i) => {
     const e = check(q), k = slotOf(q.image_url);
@@ -2160,7 +2246,7 @@ async function importArenaRun() {
   if (!confirm(`Nạp đề "${title}" (${year}, ${publisher}) gồm ${rows.length} câu vào ngân hàng chung và đăng lên Đấu trường?`)) return;
 
   say('msgAr', true, 'Đang kiểm tra câu đã có trong ngân hàng chung...');
-  const exist = await commonIdIndex(grade, subject);
+  const exist = await commonIdIndex([...new Set(rows.map(q => q.grade))], subject);
   const keys = rows.map(dupKey), fresh = [], seen = new Set();
   rows.forEach((q, i) => { if (!exist.has(keys[i]) && !seen.has(keys[i])) { seen.add(keys[i]); fresh.push({ q, k: keys[i] }); } });
   const slots = new Set(fresh.map(f => slotOf(f.q.image_url)).filter(Boolean));
@@ -2183,7 +2269,7 @@ async function importArenaRun() {
   }
   const ids = [...new Set(keys.map(k => idOf.get(k)))];
   say('msgAr', true, 'Đang đăng đề lên Đấu trường...');
-  const { data: pub, error } = await db.rpc('arena_publish', { p_title: title, p_year: year, p_publisher: publisher, p_grade: grade, p_subject: subject, p_minutes: minutes, p_question_ids: ids, p_published: $('arPublish').checked });
+  const { data: pub, error } = await db.rpc('arena_publish', { p_title: title, p_year: year, p_publisher: publisher, p_grade: examGrade, p_subject: subject, p_minutes: minutes, p_question_ids: ids, p_published: $('arPublish').checked });
   if (error) return say('msgAr', false, `Đã nạp ${fresh.length} câu vào ngân hàng chung nhưng chưa tạo được đề trên Đấu trường: ` + esc(arErr(error)));
   say('msgAr', true, `✓ Đã nạp đề "${esc(title)}": ${pub.total} câu (mới vào ngân hàng chung: ${fresh.length}, đã có sẵn: ${ids.length - fresh.length})${up.paths.length ? `, kèm ${up.paths.length} ảnh` : ''}. ${$('arPublish').checked ? 'Đề đã hiển thị ở <a class="underline" href="arena.html" target="_blank">Đấu trường đề thi thật</a>.' : 'Đề đang ẩn: bật “Hiển thị” trong danh sách bên dưới khi sẵn sàng.'}`);
   dupClear(); $('json').value = ''; clearImages(); $('arTitle').value = ''; refreshLessons(); if (mg.loaded) loadFilterOptions(); loadArena();
@@ -2195,12 +2281,33 @@ async function loadArena() {
   arData = data;
   if (!data.length) return box.innerHTML = '<p class="text-slate-500">Chưa có đề thi mẫu nào.</p>';
   box.innerHTML = data.map(r => `<div class="flex flex-wrap items-center gap-x-3 gap-y-1 bg-white border rounded-lg px-3 py-2">
-    <div class="flex-1 min-w-[12rem]"><b>${esc(r.title)}</b><div class="text-xs text-slate-500">${r.year} · ${esc(r.publisher)} · Lớp ${r.grade ?? '?'} ${esc(r.subject)} · ${r.minutes} phút · ${r.total} câu · ${r.plays} lượt thi · mã ${esc(r.code || '')}</div></div>
+    <div class="flex-1 min-w-[12rem]"><b>${esc(r.title)}</b><div class="text-xs text-slate-500">${r.year} · ${esc(r.publisher)} · ${r.grade ? 'Lớp ' + r.grade : 'Nhiều lớp'} ${esc(r.subject)} · ${r.minutes} phút · ${r.total} câu · ${r.plays} lượt thi · mã ${esc(r.code || '')}</div></div>
     <label class="text-xs flex items-center gap-1"><input type="checkbox" ${r.published ? 'checked' : ''} onchange="arPub(${r.id}, this.checked)"> Hiển thị</label>
     <button onclick="arDel(${r.id})" class="text-xs text-red-600 underline">Xóa khỏi Đấu trường</button></div>`).join('');
 }
 async function arPub(id, on) { const { error } = await db.rpc('arena_set_published', { p_id: id, p_published: on }); if (error) toast(arErr(error)); else toast(on ? 'Đã hiển thị đề ở Đấu trường.' : 'Đã ẩn đề.'); loadArena(); }
 let arData = [];
+async function loadProposals() {
+  const box = $('prList'); box.innerHTML = '<p class="text-slate-500">Đang tải…</p>';
+  let { data, error } = await db.rpc('arena_proposals_admin', { p_status: 'pending' });
+  if (error) return box.innerHTML = `<p class="text-amber-700">${esc(arErr(error))}</p>`;
+  data = data || []; $('prCount').textContent = data.length ? '(' + data.length + ')' : '';
+  if (!data.length) return box.innerHTML = '<p class="text-slate-500">Không có đề nào chờ duyệt.</p>';
+  box.innerHTML = data.map(r => `<div class="flex flex-wrap items-center gap-x-3 gap-y-1 bg-white border rounded-lg px-3 py-2">
+    <div class="flex-1 min-w-[12rem]"><b>${esc(r.title)}</b><div class="text-xs text-slate-500">${r.year} · ${esc(r.publisher)} · Lớp ${r.grade ?? '?'} ${esc(r.subject)} · ${r.minutes} phút · ${r.total} câu (${r.private_n} câu riêng sẽ được sao vào kho chung) · GV ${esc(r.teacher)}</div></div>
+    <button onclick="prApprove(${r.id})" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg font-semibold">Duyệt &amp; đăng</button>
+    <button onclick="prReject(${r.id})" class="text-xs text-red-600 underline">Từ chối</button></div>`).join('');
+}
+async function prApprove(id) {
+  const { data, error } = await db.rpc('arena_approve', { p_id: id, p_published: true });
+  if (error) toast(arErr(error)); else toast(`Đã đăng đề lên Đấu trường (${data.total} câu, sao mới ${data.copied} câu vào kho chung).`);
+  loadProposals(); loadArena();
+}
+async function prReject(id) {
+  const note = prompt('Lý do từ chối (giáo viên sẽ thấy):', ''); if (note === null) return;
+  const { error } = await db.rpc('arena_reject', { p_id: id, p_note: note }); if (error) toast(arErr(error)); else toast('Đã từ chối đề.');
+  loadProposals();
+}
 async function arDel(id) {
   const title = (arData.find(x => x.id === id) || {}).title || '';
   if (!confirm(`Xóa đề "${title}" khỏi Đấu trường?\nCâu hỏi vẫn ở ngân hàng chung; lịch sử thi thử của đề này sẽ bị xóa.`)) return;
@@ -2248,7 +2355,7 @@ async function loadRole() {
     else isAdmin = data === true;
   }
   $('scopeCommonLbl').classList.toggle('hidden', !isAdmin);
-  $('arenaBtn').classList.toggle('hidden', !isAdmin); if (!isAdmin) $('arenaBox').classList.add('hidden');
+  $('bkBox').classList.toggle('hidden', !isAdmin); $('arenaBtn').classList.toggle('hidden', !isAdmin); if (!isAdmin) $('arenaBox').classList.add('hidden');
   $('tab6').classList.toggle('hidden', !isAdmin); if (!isAdmin && !$('panel6').classList.contains('hidden')) showTab(1);
   if (sess) { refreshSgBadge(); loadShareNote(); }
   let saved = null; try { saved = localStorage.getItem('bank_scope'); } catch (e) {}
