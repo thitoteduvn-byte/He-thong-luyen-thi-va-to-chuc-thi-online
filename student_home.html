@@ -6,6 +6,39 @@
 <title>Góc học tập của học sinh</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  .dg-root { max-width: 30rem; margin: 0 auto; border-radius: 1.1rem; padding: .95rem 1.4rem; text-align: center; color: #fff;
+    background: linear-gradient(135deg, #4338ca, #7c3aed); box-shadow: 0 14px 30px -14px rgba(79,70,229,.7); }
+  .dg-stem { width: 2px; height: 24px; background: #a5b4fc; margin: 0 auto; }
+  .dg-cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dg-col { position: relative; padding: 30px 8px 0; --c: #4f46e5; --t: #eef2ff; }
+  .dg-col::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: #a5b4fc; }            /* thanh ngang nối các nhánh */
+  .dg-col:first-child::before { left: 50%; } .dg-col:last-child::before { right: 50%; }
+  .dg-col::after { content: ''; position: absolute; top: 0; left: calc(50% - 1px); width: 2px; height: 22px; background: var(--c); }     /* nhánh thả xuống */
+  .dg-arrow { position: absolute; top: 19px; left: calc(50% - 7px); border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 9px solid var(--c); }
+  .dg-head { display: flex; align-items: center; gap: .55rem; border-radius: .9rem; padding: .6rem .8rem; background: var(--c); color: #fff; font-weight: 800; letter-spacing: .02em; font-size: .85rem; box-shadow: 0 8px 18px -10px var(--c); }
+  .dg-num { display: inline-flex; align-items: center; justify-content: center; width: 1.45rem; height: 1.45rem; border-radius: 9999px; background: rgba(255,255,255,.25); font-size: .8rem; flex: none; }
+  .dg-sub { margin: .4rem .2rem .55rem; font-size: .72rem; color: #64748b; text-align: center; }
+  .dg-list { display: flex; flex-direction: column; gap: .5rem; padding: 0; margin: 0; list-style: none; position: relative; }
+  .dg-list::before { content: ''; position: absolute; left: calc(50% - 1px); top: -.55rem; bottom: .6rem; width: 2px; background: var(--t); z-index: 0; }   /* trục dọc nối các trang con */
+  .dg-node { position: relative; z-index: 1; display: flex; align-items: center; gap: .6rem; background: #fff; border: 1px solid #e2e8f0; border-radius: .85rem; padding: .6rem .7rem;
+    transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; text-decoration: none; color: inherit; }
+  .dg-node:hover, .dg-node:focus-visible { transform: translateY(-2px); border-color: var(--c); box-shadow: 0 10px 22px -12px var(--c); outline: none; }
+  .dg-node:focus-visible { outline: 2px solid var(--c); outline-offset: 2px; }
+  .dg-ico { flex: none; width: 2.2rem; height: 2.2rem; border-radius: .65rem; background: var(--t); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; }
+  .dg-t { font-weight: 700; font-size: .85rem; line-height: 1.2; color: #0f172a; }
+  .dg-d { font-size: .7rem; color: #64748b; margin-top: .15rem; line-height: 1.3; }
+  .dg-go { margin-left: auto; color: var(--c); font-weight: 800; opacity: .55; flex: none; }
+  .dg-node:hover .dg-go { opacity: 1; }
+  .dg-g1 { --c: #059669; --t: #ecfdf5; } .dg-g2 { --c: #0284c7; --t: #e0f2fe; } .dg-g3 { --c: #7c3aed; --t: #f5f3ff; }
+  @media (max-width: 799px) {
+    .dg-cols { grid-template-columns: minmax(0, 1fr); gap: 14px; margin-top: 10px; }
+    .dg-col { padding: 0; } .dg-col::before, .dg-col::after, .dg-arrow { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { .dg-node { transition: none; } }
+  .dg-chips { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .5rem; max-width: 40rem; margin: .9rem auto 0; }
+  .dg-badge { flex: none; border-radius: 9999px; background: #059669; color: #fff; font-size: .7rem; font-weight: 800; padding: .05rem .5rem; }
+</style>
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen">
 
@@ -65,83 +98,86 @@ Chạy 1 lần trong Supabase → SQL Editor, THEO THỨ TỰ:  exam_room_setup.
 
 <!-- ===== Ứng dụng ===== -->
 <div id="viewApp" class="hidden">
-  <header class="bg-white border-b sticky top-0 z-30">
-    <div class="max-w-6xl mx-auto px-4 h-14 flex items-center gap-3">
-      <div class="font-bold text-indigo-700 whitespace-nowrap">🎓 Góc học tập</div>
-      <nav class="hidden md:flex items-center gap-1 ml-4 text-sm font-medium" id="navDesk"></nav>
-      <div class="ml-auto flex items-center gap-3">
+  <header class="bg-white/90 backdrop-blur border-b sticky top-0 z-30">
+    <div class="max-w-5xl mx-auto px-4 h-12 flex items-center gap-2">
+      <div class="font-extrabold text-indigo-700 whitespace-nowrap" title="Góc học tập">🎓<span class="hidden sm:inline"> Góc học tập</span></div>
+      <nav class="hidden md:flex items-center gap-0.5 ml-3 text-[13px] font-medium" id="navDesk"></nav>
+      <div class="ml-auto flex items-center gap-2">
         <span id="coinSlot"></span>
-        <button onclick="openProfile()" class="flex items-center gap-2 rounded-full pl-1 pr-3 py-1 hover:bg-slate-100" title="Sửa hồ sơ">
-          <span id="avatar" class="w-8 h-8 rounded-full bg-indigo-600 text-white grid place-items-center text-sm font-bold"></span>
-          <span class="text-sm text-left leading-tight hidden sm:block"><b id="hName" class="block"></b><span id="hSub" class="text-xs text-slate-500"></span></span>
+        <button onclick="openProfile()" class="flex items-center gap-2 rounded-full pl-1 pr-2 sm:pr-3 py-0.5 hover:bg-slate-100" title="Sửa hồ sơ">
+          <span id="avatar" class="w-7 h-7 rounded-full bg-indigo-600 text-white grid place-items-center text-xs font-bold"></span>
+          <span class="text-xs text-left leading-tight hidden sm:block max-w-[9rem]"><b id="hName" class="block truncate"></b><span id="hSub" class="text-[11px] text-slate-500 block truncate"></span></span>
         </button>
-        <button onclick="logout()" class="text-sm text-slate-500 hover:text-slate-800 underline">Đăng xuất</button>
+        <button onclick="logout()" class="text-xs text-slate-500 hover:text-slate-800 whitespace-nowrap" title="Đăng xuất">⎋<span class="hidden sm:inline"> Thoát</span></button>
       </div>
     </div>
-    <nav class="md:hidden border-t flex overflow-x-auto text-sm font-medium px-2" id="navMob"></nav>
+    <nav class="md:hidden border-t flex overflow-x-auto text-[13px] font-medium px-2" id="navMob"></nav>
   </header>
 
-  <main class="max-w-6xl mx-auto p-4 space-y-4">
+  <main class="max-w-5xl mx-auto p-4 space-y-4">
     <div id="loadErr" class="hidden text-sm rounded-lg px-3 py-2 bg-red-100 text-red-700" role="alert"></div>
 
     <!-- Tổng quan -->
-    <section id="paneHome" class="space-y-4">
-      <div class="flex flex-wrap items-end gap-2">
-        <div>
-          <h1 id="greet" class="text-2xl font-bold"></h1>
-          <p class="text-sm text-slate-500">Tổng hợp kết quả luyện tập và phòng thi của bạn.</p>
-        </div>
-        <button onclick="reloadData()" class="ml-auto text-sm border bg-white rounded-lg px-3 py-1.5 hover:bg-slate-50">↻ Làm mới</button>
-      </div>
-
+    <section id="paneHome" class="space-y-5">
       <div id="doingBox" class="hidden"></div>
 
-      <div id="statGrid" class="grid grid-cols-2 lg:grid-cols-4 gap-3"></div>
-
-      <a href="arena.html" class="block relative overflow-hidden rounded-2xl p-5 text-white shadow hover:shadow-lg transition bg-gradient-to-r from-violet-700 via-fuchsia-600 to-orange-500">
-        <div class="pointer-events-none absolute -right-6 -top-10 h-40 w-40 rounded-full bg-white/15"></div>
-        <div class="relative flex items-center gap-4">
-          <div class="text-4xl">⚔️</div>
-          <div class="flex-1"><div class="text-lg font-extrabold">Đấu trường đề thi thật</div>
-            <p class="text-sm text-white/90">Chọn đề thi tốt nghiệp, đề minh họa, đề của các Sở qua từng năm; bấm giờ như thi thật và leo bảng vàng.</p></div>
-          <div class="hidden sm:block rounded-xl bg-white/20 px-4 py-2 text-sm font-bold whitespace-nowrap">Thi thử ngay →</div>
+      <section class="bg-white rounded-2xl border p-4 sm:p-6" aria-labelledby="greet">
+        <div class="dg-root">
+          <div class="text-xs font-semibold tracking-widest text-indigo-200">KHÔNG GIAN HỌC TẬP</div>
+          <h1 id="greet" class="text-lg sm:text-2xl font-extrabold mt-0.5 break-words leading-snug">🚀 HÀNH TRÌNH BỨT PHÁ CỦA BẠN</h1>
+          <p class="text-xs sm:text-sm text-indigo-100 mt-1">Chinh phục từng dạng đề để tạo nên sự khác biệt hôm nay!</p>
         </div>
-      </a>
+        <div id="statGrid" class="dg-chips" aria-label="Chỉ số học tập"></div>
+        <div class="dg-stem mt-3" aria-hidden="true"></div>
+        <div class="dg-cols">
+        <section class="dg-col dg-g1" aria-label="NHIỆM VỤ HÔM NAY">
+          <span class="dg-arrow" aria-hidden="true"></span>
+          <div class="dg-head"><span class="dg-num">1</span>NHIỆM VỤ HÔM NAY</div>
+          <p class="dg-sub">Ưu tiên làm trước</p>
+          <ul class="dg-list">
+            <li><a href="#" onclick="setTab('rooms'); return false;" class="dg-node"><span class="dg-ico" aria-hidden="true">🏫</span><span class="min-w-0"><div class="dg-t">Phòng thi trực tuyến</div><div class="dg-d">Nhập mã phòng &amp; mã ca giáo viên gửi</div></span><span class="dg-go" aria-hidden="true">›</span></a></li>
+<li><a href="#" onclick="setTab('homework'); return false;" class="dg-node"><span class="dg-ico" aria-hidden="true">📚</span><span class="min-w-0"><div class="dg-t">Bài tập đã giao</div><div class="dg-d">Bài tập về nhà từ giáo viên</div></span><span id="hwBadge" class="dg-badge hidden"></span><span class="dg-go" aria-hidden="true">›</span></a></li>
+          </ul>
+        </section>
+        <section class="dg-col dg-g2" aria-label="TỰ DO CHINH PHỤC">
+          <span class="dg-arrow" aria-hidden="true"></span>
+          <div class="dg-head"><span class="dg-num">2</span>TỰ DO CHINH PHỤC</div>
+          <p class="dg-sub">Tự chọn nội dung để luyện</p>
+          <ul class="dg-list">
+            <li><a href="exam.html" data-x="" class="examLink dg-node"><span class="dg-ico" aria-hidden="true">🎯</span><span class="min-w-0"><div class="dg-t">Luyện đề theo chương</div><div class="dg-d">Chọn môn, lớp, chương và dạng bài</div></span><span class="dg-go" aria-hidden="true">›</span></a></li>
+<li><a href="exam.html" class="examLink dg-node"><span class="dg-ico" aria-hidden="true">⚡</span><span class="min-w-0"><div class="dg-t">Tạo đề ôn tập nhanh</div><div class="dg-d">Trắc nghiệm ngẫu nhiên, ôn gọn</div></span><span class="dg-go" aria-hidden="true">›</span></a></li>
+          </ul>
+        </section>
+        <section class="dg-col dg-g3" aria-label="ĐẤU TRƯỜNG &amp; BẢNG VÀNG">
+          <span class="dg-arrow" aria-hidden="true"></span>
+          <div class="dg-head"><span class="dg-num">3</span>ĐẤU TRƯỜNG &amp; BẢNG VÀNG</div>
+          <p class="dg-sub">Thử sức và nhìn lại tiến độ</p>
+          <ul class="dg-list">
+            <li><a href="arena.html" class="dg-node"><span class="dg-ico" aria-hidden="true">⚔️</span><span class="min-w-0"><div class="dg-t">Đấu trường đề thi thật</div><div class="dg-d">Thi thử đề Bộ GD&amp;ĐT, leo bảng vàng</div></span><span class="dg-go" aria-hidden="true">›</span></a></li>
+<li><a href="#" onclick="setTab('history'); return false;" class="dg-node"><span class="dg-ico" aria-hidden="true">📊</span><span class="min-w-0"><div class="dg-t">Lịch sử &amp; phân tích điểm</div><div class="dg-d">Xem lại bài đã làm, theo dõi tiến độ</div></span><span class="dg-go" aria-hidden="true">›</span></a></li>
+          </ul>
+        </section>
+        </div>
+      </section>
 
-      <div class="grid md:grid-cols-2 gap-3">
-        <a class="examLink group rounded-2xl p-5 text-white bg-gradient-to-br from-indigo-600 to-indigo-500 shadow hover:shadow-lg transition" href="exam.html">
-          <div class="text-3xl">📝</div>
-          <div class="text-lg font-bold mt-1">Luyện thi online</div>
-          <p class="text-sm text-indigo-100">Tự chọn môn, chương, mức độ và dạng câu hỏi để tạo đề luyện tập. Kết quả được lưu vào lịch sử của bạn.</p>
-          <div class="mt-3 text-sm font-semibold">Bắt đầu luyện tập →</div>
-        </a>
-        <button onclick="setTab('rooms')" class="text-left group rounded-2xl p-5 bg-white border shadow-sm hover:shadow transition">
-          <div class="text-3xl">🏫</div>
-          <div class="text-lg font-bold mt-1">Vào phòng thi</div>
-          <p class="text-sm text-slate-500">Nhập mã phòng và mã ca do giáo viên cung cấp (hoặc dán link phòng thi) để làm bài kiểm tra.</p>
-          <div class="mt-3 text-sm font-semibold text-indigo-600">Mở phòng thi →</div>
-        </button>
-      </div>
-
-      <div class="grid lg:grid-cols-5 gap-3">
-        <div class="lg:col-span-3 bg-white rounded-2xl shadow-sm border p-4">
-          <div class="flex items-center gap-2 mb-1">
-            <h2 class="font-semibold">Điểm qua các bài gần đây</h2>
-            <button id="trendToggle" onclick="toggleTrend()" class="ml-auto text-xs border rounded-md px-2 py-1 hover:bg-slate-50">Xem dạng bảng</button>
+      <!-- Phân tích chi tiết (thu gọn) -->
+      <details class="bg-white rounded-2xl border shadow-sm group">
+        <summary class="cursor-pointer select-none list-none px-4 py-3 flex items-center gap-2 font-semibold text-sm text-slate-700">📈 Biểu đồ tiến độ &amp; hoạt động gần đây <span class="ml-auto text-xs font-normal text-slate-400 group-open:hidden">Bấm để mở</span></summary>
+        <div class="px-4 pb-4 space-y-4">
+          <div class="grid lg:grid-cols-5 gap-4">
+            <div class="lg:col-span-3">
+              <div class="flex items-center gap-2 mb-1"><h2 class="font-semibold text-sm">Điểm qua các bài gần đây</h2>
+                <button id="trendToggle" onclick="toggleTrend()" class="ml-auto text-xs border rounded-md px-2 py-1 hover:bg-slate-50">Xem dạng bảng</button></div>
+              <div id="trendBox"></div>
+            </div>
+            <div class="lg:col-span-2"><h2 class="font-semibold text-sm mb-2">Điểm trung bình theo môn</h2><div id="subjectBars" class="space-y-3"></div></div>
           </div>
-          <div id="trendBox"></div>
+          <div><div class="flex items-center mb-1"><h2 class="font-semibold text-sm">Hoạt động gần đây</h2>
+            <button onclick="setTab('history')" class="ml-auto text-xs text-indigo-600 hover:underline">Xem tất cả →</button></div>
+            <div id="recentList" class="divide-y"></div></div>
         </div>
-        <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border p-4">
-          <h2 class="font-semibold mb-2">Điểm trung bình theo môn</h2>
-          <div id="subjectBars" class="space-y-3"></div>
-        </div>
-      </div>
-
-      <div class="bg-white rounded-2xl shadow-sm border p-4">
-        <div class="flex items-center mb-2"><h2 class="font-semibold">Hoạt động gần đây</h2>
-          <button onclick="setTab('history')" class="ml-auto text-sm text-indigo-600 hover:underline">Xem tất cả →</button></div>
-        <div id="recentList" class="divide-y"></div>
-      </div>
+      </details>
+      <div class="text-center"><button onclick="reloadData()" class="text-xs text-slate-500 hover:text-slate-800 underline">↻ Làm mới dữ liệu</button></div>
     </section>
 
     <!-- Luyện thi -->
@@ -521,7 +557,7 @@ function renderHeader() {
   const p = S.profile, nm = p.full_name || S.user.email || '';
   $('avatar').textContent = (nm.trim().split(/\s+/).pop() || '?').charAt(0).toUpperCase();
   $('hName').textContent = nm; $('hSub').textContent = [p.student_code && 'Mã ' + p.student_code, p.class_name && 'Lớp ' + p.class_name].filter(Boolean).join(' · ');
-  $('greet').textContent = 'Xin chào, ' + (nm.trim().split(/\s+/).pop() || nm) + ' 👋';
+  $('greet').textContent = '🚀 HÀNH TRÌNH BỨT PHÁ CỦA ' + (p.full_name || 'BẠN').trim().toLocaleUpperCase('vi');
 }
 
 // ---------- Hồ sơ ----------
@@ -608,13 +644,14 @@ function renderStats() {
   const secs = d.reduce((a, i) => a + (+i.secs || 0), 0);
   const rt = d.reduce((a, i) => a + (i.right || 0), 0), au = d.reduce((a, i) => a + (i.auto || 0), 0);
   const nP = d.filter(i => i.kind === 'P').length, nR = n - nP;
-  const card = (ico, label, val, sub, tone) => `<div class="bg-white rounded-2xl shadow-sm border p-4"><div class="flex items-center gap-2 text-sm text-slate-500"><span>${ico}</span>${label}</div>
-    <div class="text-3xl font-bold mt-1 ${tone || ''}">${val}</div><div class="text-xs text-slate-500 mt-0.5 truncate" title="${esc(sub)}">${esc(sub)}</div></div>`;
+  const chip = (ico, label, val, sub, bg, tone) => `<div class="rounded-xl ${bg} px-2 py-2 sm:px-3 sm:py-2.5 text-center min-w-0" title="${esc(sub)}">
+    <div class="text-[10px] sm:text-xs text-slate-600 truncate"><span aria-hidden="true">${ico}</span> ${label}</div>
+    <div class="text-lg sm:text-2xl font-extrabold leading-tight ${tone || 'text-slate-800'} truncate">${val}</div></div>`;
   $('statGrid').innerHTML =
-    card('✅', 'Bài đã làm', n, `${nP} luyện tập · ${nR} phòng thi`) +
-    card('📈', 'Điểm trung bình', fmtScore(avg == null ? null : Math.round(avg * 100) / 100), au ? `Tỉ lệ câu đúng ${Math.round(rt / au * 100)}%` : 'Chưa có bài chấm điểm', scoreColor(avg)) +
-    card('🏆', 'Điểm cao nhất', best ? fmtScore(best.score) : '—', best ? best.title : 'Chưa có bài chấm điểm', 'text-emerald-600') +
-    card('⏱️', 'Thời gian học', fmtDur(secs), n ? `Trung bình ${fmtDur(secs / n)}/bài` : 'Chưa có bài làm');
+    chip('✅', 'Bài làm', n, `${nP} luyện tập · ${nR} phòng thi`, 'bg-emerald-50') +
+    chip('📈', 'Điểm TB', fmtScore(avg == null ? null : Math.round(avg * 100) / 100), au ? `Tỉ lệ câu đúng ${Math.round(rt / au * 100)}%` : 'Chưa có bài chấm điểm', 'bg-sky-50') +
+    chip('🏆', 'Cao nhất', best ? fmtScore(best.score) : '—', best ? best.title : 'Chưa có bài chấm điểm', 'bg-amber-50') +
+    chip('⏱️', 'Thời gian', fmtDur(secs), n ? `Trung bình ${fmtDur(secs / n)}/bài` : 'Chưa có bài làm', 'bg-violet-50');
 }
 function renderDoing() {
   const l = S.items.filter(i => i.status === 'doing'), el = $('doingBox');
@@ -669,7 +706,12 @@ function goHw() {
   if (!/^[A-Z0-9]{4,12}$/.test(v)) return hwMsg('Mã giao bài gồm chữ và số, không dấu (ví dụ K7M2QX).');
   hwMsg(''); location.href = examUrl('hw=' + encodeURIComponent(v));
 }
+function renderHomeHw() {
+  const n = (S.hw || []).filter(a => a.state === 'open' || a.in_progress).length, el = $('hwBadge');
+  el.textContent = n; el.classList.toggle('hidden', !n); el.title = n + ' bài đang mở';
+}
 function renderHw() {
+  renderHomeHw();
   const l = S.hw || [];
   $('hwList').innerHTML = l.length ? l.map(a => {
     const open = a.state === 'open';
