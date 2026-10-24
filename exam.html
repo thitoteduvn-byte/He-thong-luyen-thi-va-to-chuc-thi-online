@@ -367,7 +367,7 @@ function sortParts() {            // sắp ổn định theo dạng: không làm
 const partOf = i => parts.find(p => i >= p.from && i <= p.to);
 
 function screen(name) {
-  if (name !== 'Result') reportOn = false;                 // báo lỗi chỉ tồn tại ở màn hình chữa bài / xem lại
+  if (name !== 'Result') { reportOn = false; tutorOn = false; }                 // báo lỗi chỉ tồn tại ở màn hình chữa bài / xem lại
   ['Join', 'Hw', 'Start', 'Exam', 'Result'].forEach(n => $('screen' + n).classList.toggle('hidden', n !== name));
   window.scrollTo(0, 0);
 }
@@ -772,7 +772,7 @@ async function submitExam(auto) {
 
   window._res = res;
   $('saveNote').innerHTML = '';
-  reportOn = true;                                         // đã nộp bài: được báo lỗi từng câu
+  reportOn = true; tutorOn = true;                         // đã nộp bài: được báo lỗi từng câu + hỏi Gia sư AI
   renderReview();
   screen('Result');
   practiceSaved = savePractice(res, autoN, pts);
@@ -839,11 +839,13 @@ function renderReview() {
         <b>${q.question_type === 'essay' ? 'Hướng dẫn chấm / Dàn ý:' : 'Lời giải:'}</b>
         <div class="whitespace-pre-wrap">${q.explanation ? tex(q.explanation) : 'Chưa có lời giải cho câu này.'}</div>
       </div>`}
+      ${tutorBox(i)}
     </div>`;
   }).join('');
   const anyLocked = questions.some(q => q.locked);
   if (anyLocked) $('review').innerHTML = coinBanner() + $('review').innerHTML;
   if (anyLocked && !coinInfo && !coinLoading) loadCoins();
+  if (tutorOn && !tutorInfo && !tutorLoading) loadTutorInfo();
   math();
   syncReports();
 }
@@ -897,6 +899,97 @@ async function unlockQ(i) {
   if (g.k !== undefined) window._res[i] = { ...window._res[i], k: g.k };
   renderReview();
   document.getElementById('rq' + i)?.scrollIntoView({ block: 'nearest' });
+}
+
+
+// =====================================================================
+// GIA SƯ AI cho câu làm sai (ai_tutor_setup.sql + Edge Function "ai-tutor")
+// Mở Gia sư cho một câu tốn xu (Pro: miễn phí) và mở luôn đáp án + lời giải của câu đó; xem lại miễn phí; có vài lượt hỏi thêm.
+// =====================================================================
+let tutorOn = false, tutorInfo = null, tutorLoading = false;
+const tutorState = {};                                                  // { questionId: { session } | { busy: true } }
+async function loadTutorInfo() {
+  tutorLoading = true;
+  try {
+    const { data, error } = await db.rpc('tutor_info', { p_ids: questions.map(q => q.id) });
+    tutorInfo = !error && data && data.on ? { ...data, opened: (data.opened || []).map(Number) } : { on: false };
+  } catch (e) { tutorInfo = { on: false }; }
+  tutorLoading = false;
+  if (tutorInfo.on) renderReview();
+}
+function tutorText(t) {                                                 // markdown tối giản; escape trước nên không chèn được HTML
+  return esc(t).replace(/^#{1,6}\s*(.+)$/gm, '<b>$1</b>').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(/^\s*[-*]\s+/gm, '• ').replace(/\n/g, '<br>');
+}
+function tutorAnswerText(q, a) {
+  if (a == null || a === '') return '(chưa trả lời)';
+  if (typeof a === 'object') return TF_KEYS.map(k => k + ') ' + (a[k] === 'Đ' ? 'Đúng' : a[k] === 'S' ? 'Sai' : 'chưa chọn')).join('; ');
+  return String(a);
+}
+function tutorChat(i) {
+  const st = tutorState[questions[i].id], s = st.session;
+  return `<div class="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-purple-50 p-4 space-y-3">
+    <div class="flex items-center gap-2 text-sm font-bold text-indigo-900"><span class="text-lg">🤖</span> Gia sư AI<span class="ml-auto text-[11px] font-medium bg-indigo-100 text-indigo-700 rounded px-2 py-0.5">Đã mở</span></div>
+    <div class="space-y-2 text-sm leading-relaxed">${s.messages.map(m => m.role === 'user'
+      ? `<div class="ml-8 p-2.5 rounded-xl bg-white border border-slate-200 text-slate-700">${esc(m.text)}</div>`
+      : `<div class="text-slate-700">${tutorText(m.text)}</div>`).join('')}</div>
+    ${s.followupsLeft > 0 ? `<div class="flex gap-2"><input id="tin${i}" maxlength="500" placeholder="Hỏi lại Gia sư nếu chưa hiểu…" onkeydown="if(event.key==='Enter')tutorAsk(${i})" class="flex-1 min-w-0 text-sm px-3 py-2 rounded-lg border border-slate-200">
+      <button type="button" id="tgo${i}" onclick="tutorAsk(${i})" class="px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold disabled:opacity-50 whitespace-nowrap">Gửi</button></div>
+      <div class="text-[11px] text-slate-400">Còn ${s.followupsLeft} lượt hỏi thêm (miễn phí)</div>` : '<div class="text-[11px] text-slate-400">Đã hết lượt hỏi thêm cho câu này.</div>'}</div>`;
+}
+function tutorBox(i) {
+  const q = questions[i], r = window._res[i];
+  if (!tutorOn || !tutorInfo || !tutorInfo.on || !q || q.question_type === 'essay' || !r || !['wrong', 'partial'].includes(r.s)) return '';
+  const st = tutorState[q.id] || {};
+  if (st.session) return `<div id="tut${i}" class="mt-3">${tutorChat(i)}</div>`;
+  if (st.busy) return `<div id="tut${i}" class="mt-3 p-4 rounded-xl border border-purple-100 bg-purple-50 text-purple-700 text-sm animate-pulse">⏳ Gia sư AI đang phân tích bài làm của em…</div>`;
+  const opened = tutorInfo.opened.includes(Number(q.id)), cost = tutorInfo.cost, bal = tutorInfo.balance;
+  const short = !opened && !tutorInfo.free && bal != null && bal < cost;
+  const label = opened ? '🤖 Xem lại lời giảng của Gia sư AI (miễn phí)' : tutorInfo.free ? '🤖 Hỏi Gia sư AI (miễn phí)' : `🤖 Hỏi Gia sư AI · ${cost} xu`;
+  return `<div id="tut${i}" class="mt-3 flex flex-wrap items-center gap-2">
+    <button type="button" onclick="tutorUnlock(${i})" ${short ? 'disabled' : ''} class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-semibold text-sm disabled:opacity-50">${label}</button>
+    ${opened || tutorInfo.free ? '' : `<span class="text-xs ${short ? 'text-amber-800' : 'text-slate-500'}">${short ? `Cần ${cost} xu, bạn còn ${bal} xu.` : `Giảng riêng chỗ em nhầm + mở luôn đáp án, lời giải · bạn còn ${bal ?? '…'} xu`}</span>`}</div>`;
+}
+const TUTOR_ERR = { unauthorized: 'Phiên đăng nhập đã hết hạn, hãy đăng nhập lại.', ai_failed: 'Gia sư AI đang bận. Xu của bạn chưa bị trừ, hãy thử lại sau ít phút.', not_eligible: 'Chỉ hỏi được Gia sư ở câu bạn đã làm và nộp (bài tự luyện hoặc bài giao có cho xem đáp án).',
+  daily_limit: 'Hôm nay bạn đã hỏi Gia sư khá nhiều câu rồi, mai hãy hỏi tiếp nhé.', followup_limit: 'Bạn đã dùng hết lượt hỏi thêm cho câu này.', students_only: 'Chỉ tài khoản học sinh dùng được Gia sư AI.', question_not_found: 'Không tìm thấy câu hỏi này.' };
+async function tutorCall(body) {
+  const { data, error } = await db.functions.invoke('ai-tutor', { body });
+  if (!error) return data;
+  let d = null; try { d = await error.context.json(); } catch (e) {}
+  return d && d.error ? d : { error: 'unknown' };
+}
+function tutorFail(res) {
+  if (res.error === 'insufficient_coins') { if (tutorInfo) tutorInfo.balance = res.balance ?? tutorInfo.balance; return rpToast(`Không đủ xu: cần ${res.cost ?? tutorInfo.cost} xu, bạn còn ${res.balance ?? 0} xu.`); }
+  rpToast(TUTOR_ERR[res.error] || 'Chưa dùng được Gia sư AI (có thể chưa được cài đặt). Vui lòng thử lại sau.');
+}
+async function tutorUnlock(i) {
+  const q = questions[i]; if (!q || (tutorState[q.id] || {}).busy) return;
+  const opened = tutorInfo.opened.includes(Number(q.id));
+  if (!opened && !tutorInfo.free && !confirm(`Mở Gia sư AI cho câu này với ${tutorInfo.cost} xu?\nGia sư sẽ giảng chỗ em nhầm, đồng thời mở luôn đáp án và lời giải của câu.`)) return;
+  tutorState[q.id] = { busy: true }; renderReview();
+  await practiceSaved;                                      // bài tự luyện phải lưu xong thì máy chủ mới nhận
+  const res = await tutorCall({ action: 'unlock', questionId: q.id, studentAnswer: tutorAnswerText(q, answers[i]) });
+  if (!res.session) { delete tutorState[q.id]; tutorFail(res); renderReview(); return; }
+  tutorState[q.id] = { session: res.session };
+  if (!tutorInfo.opened.includes(Number(q.id))) tutorInfo.opened.push(Number(q.id));
+  if (res.charged) { tutorInfo.balance = res.balance; CoinsUI.spent(res.cost, res.balance); }
+  if (q.locked) {                                           // Gia sư đã mở khóa đáp án + lời giải: lấy về (không tốn thêm xu)
+    const { data } = await db.rpc('explain_unlock', { p_question: q.id });
+    if (data) {
+      q.correct_answer = data.correct_answer; q.explanation = data.explanation; delete q.locked;
+      const g = q.correct_answer != null ? gradeQ(q, answers[i]) : {};
+      if (g.k !== undefined) window._res[i] = { ...window._res[i], k: g.k };
+    }
+  }
+  renderReview();
+  document.getElementById('tut' + i)?.scrollIntoView({ block: 'nearest' });
+}
+async function tutorAsk(i) {
+  const q = questions[i], inp = $('tin' + i), btn = $('tgo' + i), msg = inp ? inp.value.trim() : '';
+  if (!msg || !btn || btn.disabled) return;
+  btn.disabled = true; inp.disabled = true; btn.textContent = '…';
+  const res = await tutorCall({ action: 'ask', questionId: q.id, message: msg });
+  if (res.session) tutorState[q.id] = { session: res.session }; else tutorFail(res);
+  const box = $('tut' + i); if (box) { box.innerHTML = tutorChat(i); math(box); }
 }
 
 function toggleWrong() { onlyWrong = !onlyWrong; renderReview(); }
@@ -1260,7 +1353,7 @@ async function loadReview() {
     (pracMissing ? `<p>${pracMissing} câu hỏi của bài này không còn trong ngân hàng nên không hiển thị.</p>` : '');
   $('resultNav').innerHTML = res.map((r, i) => `<a href="#rq${i}" class="h-8 rounded text-xs font-semibold flex items-center justify-center text-white ${S_BG[r.s]}">${i + 1}</a>`).join('');
   ['resultNav', 'review', 'wrongBtn'].forEach(x => $(x).classList.remove('hidden'));
-  window._res = res; onlyWrong = false; reportOn = kind !== 'H'; renderReview(); screen('Result');     // báo lỗi câu hỏi chưa áp dụng cho bài giao
+  window._res = res; onlyWrong = false; reportOn = kind !== 'H'; tutorOn = kind !== 'R'; renderReview(); screen('Result');     // báo lỗi câu hỏi chưa áp dụng cho bài giao
 }
 let pracMissing = 0, essayFb = {};                          // essayFb[id câu] = {s, c, w}: điểm + nhận xét tự luận
 
@@ -1374,7 +1467,7 @@ function showHwResult(r, auto) {
   $('scoreNote').innerHTML = notes.map(t => `<p>${t}</p>`).join('');
   $('resultNav').innerHTML = res.map((z, i) => `<a href="#rq${i}" class="h-8 rounded text-xs font-semibold flex items-center justify-center text-white ${S_BG[z.s]}">${i + 1}</a>`).join('');
   ['resultNav', 'review', 'wrongBtn'].forEach(id => $(id).classList.remove('hidden'));
-  window._res = res; reportOn = false; renderReview(); screen('Result');
+  window._res = res; reportOn = false; tutorOn = true; renderReview(); screen('Result');
   if (auto) alert('Hết giờ! Bài làm đã được nộp tự động.');
 }
 
