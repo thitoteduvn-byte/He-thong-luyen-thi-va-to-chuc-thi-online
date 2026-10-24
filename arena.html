@@ -29,7 +29,18 @@
   .card::before { content: ''; position: absolute; width: 210px; height: 210px; right: -70px; top: -80px; border-radius: 50%;
     background: radial-gradient(circle, color-mix(in srgb, var(--ac) 55%, transparent), transparent 70%); opacity: .55; pointer-events: none; }
   .yr { font-weight: 900; font-size: 3.1rem; line-height: 1; letter-spacing: -.03em; color: transparent; -webkit-text-stroke: 1.5px color-mix(in srgb, var(--ac) 80%, white); opacity: .9; }
-  .go { background: linear-gradient(135deg, var(--ac), color-mix(in srgb, var(--ac) 55%, #ec4899)); color: #fff; font-weight: 800; letter-spacing: .02em; animation: pulseGlow 2.6s ease-in-out infinite; }
+  .go { position: relative; background: linear-gradient(135deg, color-mix(in srgb, var(--ac) 80%, white), color-mix(in srgb, var(--ac) 45%, #ec4899)); color: #fff; font-weight: 900; letter-spacing: .06em;
+    border: 1px solid rgba(255,255,255,.45); text-shadow: 0 0 10px rgba(255,255,255,.55); animation: neon 2s ease-in-out infinite; }
+  .go::after { content: '→'; margin-left: .45rem; display: inline-block; transition: transform .15s; } .go:hover::after { transform: translateX(4px); }
+  .go.nogo::after { content: none; }
+  @keyframes neon { 0%,100% { box-shadow: 0 0 6px 0 color-mix(in srgb, var(--ac) 70%, white), 0 0 18px 0 color-mix(in srgb, var(--ac) 55%, transparent); }
+                    50% { box-shadow: 0 0 12px 2px color-mix(in srgb, var(--ac) 80%, white), 0 0 34px 4px color-mix(in srgb, var(--ac) 65%, transparent); } }
+  .swords { display: inline-block; filter: drop-shadow(0 0 6px rgba(255,255,255,.85)) drop-shadow(0 0 16px rgba(129,140,248,.95)) drop-shadow(0 0 32px rgba(236,72,153,.7)); animation: floaty 4s ease-in-out infinite, swordGlow 2.4s ease-in-out infinite; }
+  @keyframes swordGlow { 0%,100% { filter: drop-shadow(0 0 4px rgba(255,255,255,.7)) drop-shadow(0 0 12px rgba(129,140,248,.8)) drop-shadow(0 0 22px rgba(236,72,153,.5)); }
+                         50% { filter: drop-shadow(0 0 8px rgba(255,255,255,1)) drop-shadow(0 0 22px rgba(129,140,248,1)) drop-shadow(0 0 44px rgba(236,72,153,.9)); } }
+  .hall { background: linear-gradient(135deg, #fbbf24, #f97316); color: #1c1003; font-weight: 800; border-radius: 9999px; padding: .55rem 1.2rem; box-shadow: 0 0 18px -2px rgba(251,191,36,.7); transition: filter .15s, transform .15s; }
+  .hall:hover { filter: brightness(1.1); transform: translateY(-1px); }
+  .crown { font-size: .8rem; color: #fde68a; background: rgba(251,191,36,.12); border: 1px solid rgba(251,191,36,.3); border-radius: 9999px; padding: .15rem .6rem; font-weight: 700; display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .go:hover { filter: brightness(1.12); }
   .chip { border: 1px solid var(--line); background: rgba(255,255,255,.04); border-radius: 9999px; padding: .42rem .95rem; font-size: .85rem; font-weight: 600; color: #c7c9f5; white-space: nowrap; cursor: pointer; transition: all .15s; }
   .chip:hover { background: rgba(255,255,255,.09); }
@@ -42,7 +53,7 @@
   .skeleton { background: linear-gradient(90deg, rgba(255,255,255,.04), rgba(255,255,255,.1), rgba(255,255,255,.04)); background-size: 200% 100%; animation: sk 1.3s infinite; border-radius: 22px; height: 250px; }
   @keyframes sk { to { background-position: -200% 0; } }
   .medal-1 { color: #fbbf24; } .medal-2 { color: #cbd5e1; } .medal-3 { color: #fb923c; }
-  @media (prefers-reduced-motion: reduce) { .floaty, .go, .skeleton { animation: none; } .card { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { .floaty, .go, .skeleton, .swords { animation: none; } .card { transition: none; } }
 </style>
 </head>
 <body class="min-h-screen">
@@ -57,10 +68,11 @@
 <main class="max-w-6xl mx-auto px-4 pb-16">
   <!-- HERO -->
   <section class="text-center pt-8 pb-6">
-    <div class="text-5xl"><span class="floaty">⚔️</span></div>
+    <div class="text-5xl sm:text-6xl"><span class="swords" aria-hidden="true">⚔️</span></div>
     <h1 class="mt-2 text-3xl sm:text-5xl font-black tracking-tight leading-tight"><span class="title-glow">ĐẤU TRƯỜNG ĐỀ THI THẬT</span></h1>
     <p class="mt-3 text-base sm:text-lg text-indigo-200/90 font-medium">Bạn đã sẵn sàng chinh phục đề thi? Chọn đề các năm, bấm giờ và thử sức như thi thật.</p>
     <div id="stats" class="mt-6 flex flex-wrap items-center justify-center gap-3"></div>
+    <button onclick="hall()" class="hall mt-5 text-sm sm:text-base" id="hallBtn">🏆 Bảng vàng vinh danh</button>
   </section>
 
   <!-- BỘ LỌC -->
@@ -163,10 +175,11 @@ function cardHtml(x) {
     <p class="mt-1 text-sm text-slate-300/90 relative">🏛️ ${esc(x.publisher)}</p>
     <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-semibold text-slate-100 relative"><span>⏱️ ${x.minutes} phút</span><span class="text-white/30">|</span><span>📝 ${x.total} câu</span></div>
     <p class="mt-2 text-sm text-orange-300 font-semibold relative">🔥 ${nf(x.plays)} lượt thử sức</p>
-    <div class="mt-2 relative">${status}</div>
-    <div class="mt-auto pt-4 flex gap-2 relative">
-      <button onclick="ready(${x.id})" class="go flex-1 rounded-2xl py-2.5 text-sm">${x.in_progress ? '▶ TIẾP TỤC LÀM BÀI' : '⚡ THI THỬ NGAY'}</button>
-      <button onclick="board(${x.id})" class="rounded-2xl border border-white/15 bg-white/5 hover:bg-white/10 px-3 text-lg" title="Bảng vàng" aria-label="Bảng vàng">🏆</button>
+    <div class="mt-2 relative flex flex-wrap items-center gap-1.5">${status}</div>
+    ${x.top_name ? `<div class="mt-2 relative"><span class="crown" title="Điểm cao nhất của đề này">👑 Thủ khoa: ${esc(x.top_name)} · ${fmtScore(x.top_score)}</span></div>` : ''}
+    <div class="mt-auto pt-4 relative">
+      <button onclick="ready(${x.id})" class="go w-full rounded-2xl py-3.5 text-base">${x.in_progress ? '▶ TIẾP TỤC LÀM BÀI' : '⚡ BẮT ĐẦU THI'}</button>
+      <button onclick="board(${x.id})" class="mt-2 w-full rounded-xl border border-amber-300/25 bg-amber-300/5 hover:bg-amber-300/15 text-amber-200 py-1.5 text-xs font-semibold" title="Bảng vàng" aria-label="Bảng vàng">🏆 Xem bảng vàng đề này</button>
     </div></article>`;
 }
 
@@ -187,6 +200,23 @@ function ready(id) {
     ${x.in_progress ? '<p class="mt-3 text-sm text-amber-300">Bạn đang có một lượt làm dở: bấm tiếp tục để làm tiếp.</p>' : ''}
     <div class="mt-5 flex gap-2"><button onclick="closeModal()" class="flex-1 rounded-2xl border border-white/15 py-2.5 text-sm font-semibold hover:bg-white/5">Để sau</button>
       <a href="${EXAM_URL}?hw=${encodeURIComponent(x.code)}&from=arena" class="go flex-[2] rounded-2xl py-2.5 text-sm text-center" style="--ac:${s.c}">${x.in_progress ? '▶ TIẾP TỤC' : '⚡ VÀO THI'}</a></div></div>`);
+}
+async function hall() {
+  const head = '<h3 class="text-xl font-extrabold text-center">🏆 Bảng vàng vinh danh</h3><p class="text-center text-sm text-slate-400 mt-1">Tổng điểm cao nhất trên mọi đề thi thật · bằng điểm thì ai nhanh hơn xếp trên</p>';
+  const foot = '<button onclick="closeModal()" class="mt-5 w-full rounded-2xl border border-white/15 py-2.5 text-sm font-semibold hover:bg-white/5">Đóng</button>';
+  openModal(head + '<p class="text-center text-slate-400 py-8 text-sm">Đang tải…</p>');
+  const { data, error } = await db.rpc('arena_hall', { p_limit: 10 });
+  if (error) return openModal(head + `<p class="text-center text-red-300 text-sm py-6">${esc(/arena_hall|schema cache|Could not find the function/i.test(error.message || '') ? 'Chưa cập nhật: quản trị hãy chạy lại file arena_setup.sql.' : error.message)}</p>` + foot);
+  const top = data?.top || [];
+  if (!top.length) return openModal(head + '<p class="text-center text-slate-300 py-8 text-sm">Chưa có ai trên bảng vàng.<br><b>Hãy thi một đề và trở thành người đầu tiên!</b> 🚀</p>' + foot);
+  const medal = r => r === 1 ? '🥇' : r === 2 ? '🥈' : r === 3 ? '🥉' : r;
+  const mm = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  const f = data.fastest;
+  openModal(head + `<div class="mt-4 space-y-1.5 max-h-[55vh] overflow-y-auto">${top.map(r => `<div class="flex items-center gap-3 rounded-xl px-3 py-2 ${r.me ? 'bg-indigo-500/25 border border-indigo-400/50' : 'bg-white/5'}">
+      <span class="w-7 text-center font-extrabold ${r.rank <= 3 ? 'medal-' + r.rank : 'text-slate-400'}">${medal(r.rank)}</span>
+      <span class="flex-1 min-w-0"><span class="block truncate font-semibold">${esc(r.name)}${r.me ? ' <span class="text-xs text-indigo-300">(bạn)</span>' : ''}</span><span class="block text-[11px] text-slate-400">${r.exams} đề · TB ${fmtScore(r.avg)}${r.secs ? ' · ' + mm(r.secs) : ''}</span></span>
+      <b class="text-right text-amber-300">${fmtScore(r.total)}<span class="text-[10px] text-slate-400 font-normal"> điểm</span></b></div>`).join('')}</div>
+    ${f ? `<p class="mt-3 text-xs text-center text-slate-300">⚡ Nhanh nhất (từ 8 điểm): <b>${esc(f.name)}</b> · ${mm(f.secs)} · ${fmtScore(f.score)} điểm · ${esc(f.title)}</p>` : ''}` + foot);
 }
 async function board(id) {
   const x = ALL.find(e => e.id === id); if (!x) return;
