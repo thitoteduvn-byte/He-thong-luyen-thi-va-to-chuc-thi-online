@@ -614,11 +614,14 @@ function showQuestion(i) {
   } else if (t === 'short_answer') {
     body = `<input id="ansText" value="${escA(a || '')}" oninput="typeAns(this.value)" placeholder="Nhập đáp án (số hoặc văn bản ngắn)" class="w-full border rounded-lg p-3">`;
   } else {
-    body = `<div class="flex flex-wrap gap-1 p-1.5 bg-slate-50 border rounded-lg" id="mathBar">${MATH_KEYS.map((k, j) =>
-        `<button type="button" onmousedown="event.preventDefault()" onclick="insMath(${j})" title="${esc(k[2] || k[0])}" class="min-w-[2.25rem] px-2 py-1 text-sm rounded border bg-white hover:bg-indigo-50 active:bg-indigo-100">${esc(k[0])}</button>`).join('')}</div>
-      <textarea id="ansText" rows="10" oninput="typeAns(this.value)" placeholder="Trình bày bài làm của bạn... Dùng thanh công thức phía trên hoặc gõ LaTeX trong $...$" class="w-full border rounded-lg p-3">${esc(a || '')}</textarea>
-      <div class="text-xs text-slate-500">Xem trước công thức:</div>
-      <div id="ansPrev" class="whitespace-pre-wrap border rounded-lg p-3 bg-slate-50 min-h-[3rem] text-slate-800"></div>`;
+    const hide = mathBarHidden(q);
+    body = `<div class="flex flex-wrap items-center gap-2 text-xs">
+        <button type="button" onclick="toggleMathBar()" id="mathToggle" class="px-2.5 py-1 rounded border bg-white hover:bg-slate-50 font-medium">${hide ? '∑ Hiện ký hiệu toán' : '∑ Ẩn ký hiệu toán'}</button>
+        <span class="text-slate-400">${hide ? 'Môn không dùng công thức: bạn có thể chỉ gõ văn bản.' : ''}</span></div>
+      <div class="${hide ? 'hidden' : 'flex'} flex-wrap gap-1 p-1.5 bg-slate-50 border rounded-lg" id="mathBar">${mathBarKeys()}</div>
+      <textarea id="ansText" rows="5" oninput="typeAns(this.value)" placeholder="Trình bày bài làm của bạn..${hide ? '.' : ' Dùng thanh công thức phía trên hoặc gõ LaTeX trong $...$'}" class="w-full border rounded-lg p-3">${esc(a || '')}</textarea>
+      <div class="text-xs text-slate-500">Xem trước bài làm${hide ? '' : ' (công thức)'}:</div>
+      <div id="ansPrev" class="whitespace-pre-wrap border rounded-lg p-3 bg-slate-50 min-h-[10rem] text-slate-800"></div>`;
     setTimeout(() => prevAns(), 0);
   }
   $('qbox').innerHTML = `
@@ -646,9 +649,27 @@ const MATH_KEYS = [
   ['→', '\\to ', ''], ['⇒', '\\Rightarrow ', ''], ['⇔', '\\Leftrightarrow ', ''], ['∈', '\\in ', ''], ['∞', '\\infty ', ''], ['∪', '\\cup ', ''], ['∩', '\\cap ', ''],
   ['ℝ', '\\mathbb{R}', ''], ['vectơ', '\\overrightarrow{|}', 'Vectơ'], ['°', '^\\circ ', 'Độ'], ['∥', '\\parallel ', ''], ['⊥', '\\perp ', ''], ['∠', '\\widehat{|}', 'Góc']
 ];
+// Ký hiệu toán do học sinh tự thêm (lưu trong trình duyệt) + nút ẩn/hiện thanh ký hiệu theo môn
+function customKeys() { try { const v = JSON.parse(lsGet('math_custom_keys') || '[]'); return Array.isArray(v) ? v.filter(k => Array.isArray(k) && k[0] && k[1]).slice(0, 60) : []; } catch (e) { return []; } }
+const allMathKeys = () => MATH_KEYS.concat(customKeys());
+const mathHideKey = q => 'math_hide_' + String((q && q.subject) || (document.getElementById('subject') && document.getElementById('subject').value) || 'all').toLowerCase();
+const mathBarHidden = q => lsGet(mathHideKey(q)) === '1';
+function mathBarKeys() {
+  const n = MATH_KEYS.length;
+  return allMathKeys().map((k, j) => `<button type="button" onmousedown="event.preventDefault()" onclick="insMath(${j})" title="${esc(k[2] || k[1])}" class="min-w-[2.25rem] px-2 py-1 text-sm rounded border ${j >= n ? 'bg-amber-50 border-amber-300' : 'bg-white'} hover:bg-indigo-50 active:bg-indigo-100">${esc(k[0])}${j >= n ? `<span onclick="event.stopPropagation(); delMathKey(${j - n})" title="Xóa ký hiệu này" class="ml-1 text-[10px] text-slate-400 hover:text-red-600">✕</span>` : ''}</button>`).join('')
+    + `<button type="button" onmousedown="event.preventDefault()" onclick="addMathKey()" title="Thêm ký hiệu toán của riêng bạn" class="px-2 py-1 text-sm rounded border border-dashed border-indigo-400 text-indigo-700 bg-white hover:bg-indigo-50">＋ Thêm ký hiệu</button>`;
+}
+function addMathKey() {
+  const label = (prompt('Tên hiển thị trên nút (VD: ∮ hoặc "tích phân vòng"):') || '').trim().slice(0, 12); if (!label) return;
+  const code = (prompt('Mã LaTeX sẽ chèn vào bài (VD: \\oint ). Dùng dấu | để đặt vị trí con trỏ, VD: \\frac{|}{}', '') || '').trim().slice(0, 80); if (!code) return;
+  const k = customKeys(); k.push([label, code, 'Ký hiệu của bạn']); lsSet('math_custom_keys', JSON.stringify(k));
+  $('mathBar').innerHTML = mathBarKeys();
+}
+function delMathKey(i) { const k = customKeys(); k.splice(i, 1); lsSet('math_custom_keys', JSON.stringify(k)); $('mathBar').innerHTML = mathBarKeys(); }
+function toggleMathBar() { const q = questions[cur], h = !mathBarHidden(q); lsSet(mathHideKey(q), h ? '1' : '0'); showQuestion(cur); }
 function insMath(j) {
   const ta = $('ansText'); if (!ta) return;
-  let snip = MATH_KEYS[j][1];
+  let snip = allMathKeys()[j][1];
   const st = ta.selectionStart ?? ta.value.length, en = ta.selectionEnd ?? st;
   const before = ta.value.slice(0, st), sel = ta.value.slice(st, en);
   const inside = ((before.replace(/\\\$/g, '').match(/\$/g) || []).length % 2) === 1;   // con trỏ đang nằm trong $...$ ?
